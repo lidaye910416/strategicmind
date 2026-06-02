@@ -1,0 +1,24 @@
+You are generating a strategic agent profile based on entity information.
+
+# Entity Information
+Name: {name}
+Type: {entity_type}
+Summary: {summary}
+Attributes: {attributes}
+
+# Context
+{context}
+
+# Task
+Generate a comprehensive strategic profile including:
+- Primary interests
+- Secondary interests
+- Red lines (non-negotiable positions)
+- Risk tolerance (0.0 to 1.0)
+- Time horizon (short/medium/long)
+- Influence weight (0.0 to 1.0)
+- Credibility (0.0 to 1.0)
+- Initial beliefs on key topics
+
+# Output Format
+Provide output in JSON format.

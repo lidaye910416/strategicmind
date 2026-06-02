@@ -1,0 +1,15 @@
+{
+  "primary_interests": ["string"],
+  "secondary_interests": ["string"],
+  "red_lines": ["string"],
+  "risk_tolerance": 0.5,
+  "time_horizon": "medium",
+  "influence_weight": 0.5,
+  "credibility": 0.8,
+  "beliefs": {
+    "topic": {
+      "position": 0.0,
+      "confidence": 1.0
+    }
+  }
+}

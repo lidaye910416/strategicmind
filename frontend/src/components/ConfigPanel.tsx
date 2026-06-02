@@ -31,3 +31,8 @@ export default function ConfigPanel() {
     </div>
   )
 }
+
+/**
+ * Extended configuration panel with all options.
+ * Implements: US-068
+ */

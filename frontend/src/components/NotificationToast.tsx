@@ -1,0 +1,38 @@
+/**
+ * NotificationToast - Pipeline completion notifications
+ * Implements: US-067
+ */
+import toast from 'react-hot-toast'
+import { useEffect } from 'react'
+
+interface Props {
+  status: 'running' | 'completed' | 'failed' | 'paused'
+  runId: string
+  stage?: string
+  onCompleted?: (runId: string) => void
+}
+
+export default function NotificationToast({ status, runId, stage, onCompleted }: Props) {
+  useEffect(() => {
+    if (status === 'completed') {
+      toast.success(
+        (t) => (
+          <span>
+            Pipeline completed —{' '}
+            <a href={`/report/${runId}`} onClick={() => toast.dismiss(t.id)}>
+              view report
+            </a>
+          </span>
+        ),
+        { duration: 8000 }
+      )
+      onCompleted?.(runId)
+    } else if (status === 'failed') {
+      toast.error(`Pipeline failed: ${stage || 'unknown stage'}`, { duration: 8000 })
+    } else if (status === 'paused') {
+      toast('Pipeline paused', { icon: '⏸️', duration: 4000 })
+    }
+  }, [status, runId, stage, onCompleted])
+
+  return null
+}

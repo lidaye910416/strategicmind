@@ -1,0 +1,20 @@
+You are generating a strategic agent profile for a group/organization.
+
+# Group Information
+Name: {name}
+Type: {entity_type}
+Summary: {summary}
+
+# Context
+{context}
+
+# Task
+Generate profile for the group's decision-making, including:
+- Group decision-making patterns
+- Coalitions and alliances
+- Public vs internal positions
+- Risk profile
+- Time horizon preferences
+
+# Output Format
+Provide output in JSON format.

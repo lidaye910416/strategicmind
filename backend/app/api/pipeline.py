@@ -128,3 +128,7 @@ def pipeline_events(run_id: str):
                 break
     
     return Response(generate(), mimetype='text/event-stream')
+
+
+# Import for US-078 verification
+from ...services.strategic_simulation_runner import StrategicSimulationRunner

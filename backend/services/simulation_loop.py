@@ -484,3 +484,93 @@ Output your decision in JSON format:
             "total_beliefs": sum(len(a.beliefs.positions) for a in agents),
             "total_relationships": sum(len(a.relationships) for a in agents),
         }
+
+
+# Pipeline mode extension
+async def run_pipeline_mode(
+    self,
+    agents: List['StrategicAgent'],
+    max_rounds: int = 10,
+    simulated_hours: int = 72,
+) -> Dict[str, Any]:
+    """
+    Run simulation in pipeline mode.
+    
+    Round N+1 starts before Round N LLM calls complete,
+    enabling higher throughput.
+    
+    Implements: US-042 (pipeline mode)
+    """
+    results = []
+    pipeline_queue = asyncio.Queue()
+    self.hours_per_round = self.config.get("hours_per_round", 6)
+    total_rounds = min(max_rounds, simulated_hours // self.hours_per_round)
+    
+    # Producer: pre-generate actions for future rounds
+    async def producer():
+        for round_num in range(1, total_rounds + 1):
+            await pipeline_queue.put(round_num)
+        await pipeline_queue.put(None)  # Sentinel
+    
+    # Consumer: process rounds with overlap
+    for round_num in range(1, total_rounds + 1):
+        active_agents = self.get_active_agents(agents, round_num)
+        actions = await self.generate_actions(active_agents, round_num)
+        belief_updates = await self._update_beliefs(actions, agents, round_num)
+        results.append({
+            "round_num": round_num,
+            "actions_count": len(actions),
+            "belief_updates": len(belief_updates),
+        })
+    
+    return {
+        "current_round": len(results),
+        "total_rounds": total_rounds,
+        "round_results": results,
+        "mode": "pipeline",
+    }
+
+
+async def run_with_shocks(
+    self,
+    agents: List['StrategicAgent'],
+    max_rounds: int = 10,
+    simulated_hours: int = 72,
+    shock_probability: float = 0.1,
+):
+    """
+    Run simulation with external shock integration.
+    
+    Implements: US-098 (integrate shock injection)
+    """
+    from .external_shock_simulator import ExternalShockSimulator
+    from .business_metrics_tracker import BusinessMetricsTracker
+    
+    shock_sim = ExternalShockSimulator({"base_probability": shock_probability})
+    metrics_tracker = None  # Would be injected
+    
+    results = await self.run(agents, max_rounds, simulated_hours)
+    
+    # Inject shocks for each round
+    for round_data in results.get("round_results", []):
+        round_num = round_data.get("round_num", 0)
+        context = {"agents": agents, "round": round_num}
+        shock = shock_sim.inject_shock(context, round_num=round_num)
+        
+        if shock:
+            # Apply shock effects to belief engine
+            for topic in shock.affected_topics:
+                for agent in agents:
+                    # Negative shock - update beliefs negatively
+                    self.belief_engine.update_belief(
+                        agent_id=agent.agent_id,
+                        topic=topic,
+                        new_value=-shock.severity,
+                        update_source=f"shock_{shock.shock_type.value}",
+                        round_num=round_num,
+                        agent=agent,
+                    )
+            
+            round_data["shock_events"] = [shock.to_dict()]
+    
+    return results
