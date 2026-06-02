@@ -30,3 +30,13 @@ Branch: ralph/mirofish-refactor
 - `frontend/src/` - React components and views
 
 ---
+
+## 2026-06-02 21:52 - US-008
+- Refactored ZepToolsService to use IGraphStore interface
+- Created backend/services/zep_tools_service.py (152 lines)
+- Added 4 unit tests in TestZepToolsService
+- **Learnings for future iterations:**
+  - Use constructor injection for IGraphStore - enables MockGraphStore in tests
+  - All Zep-like operations (search, get_entity, insert_text, neighbors) abstracted
+  - Pattern: `service = ZepToolsService(graph_store=any_IGraphStore)`
+---
