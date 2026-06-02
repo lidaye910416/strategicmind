@@ -1,0 +1,1997 @@
+{
+  "project": "StrategicMind - 战略推演引擎",
+  "branchName": "ralph/mirofish-refactor",
+  "description": "基于开源技术栈的公司战略规划推演系统。核心能力：LLM驱动实体抽取 + nano-graphRAG知识图谱 + 自研战略模拟引擎，取代 MiroFish 中的 Zep Cloud 和 OASIS，实现多Agent博弈模拟与信念演化追踪。",
+  "technicalDecisions": {
+    "graphRAG": {
+      "mirofish": "Zep Cloud (自动抽取 + 存储 + 检索)",
+      "ourChoice": "nano-graphRAG + LLM Entity Extraction Layer",
+      "rationale": "Zep 的核心价值是内部 LLM 自动抽取实体关系。nano-graphRAG 本身不包含 LLM 调用，需要额外实现一个 Entity Extraction Layer 调用 ILLMProvider 来完成抽取。",
+      "implementation": {
+        "storage": "nano-graphRAG 内置存储（方案A：简单优先）",
+        "extraction": "批量处理 + 异步抽取（方案B：避免实时 LLM 调用延迟）",
+        "extractionFlow": "文本 → 分批 → LLM抽取实体关系 → 存入 nano-graphRAG → 异步索引"
+      }
+    },
+    "simulationEngine": {
+      "mirofish": "OASIS (Twitter/Reddit 社交模拟)",
+      "ourChoice": "自研战略模拟引擎（基于 OASIS 框架但重写核心决策逻辑）",
+      "rationale": "战略博弈场景（信息不对称、隐藏动作、信念追踪）与通用社交模拟有本质差异。复用 OASIS 的模拟循环框架，但 Agent 决策逻辑和传播模型需要重写。",
+      "reusableFromOASIS": {
+        "simulationLoop": "OASIS 的多 Agent 并行循环框架可复用",
+        "NOT_reusable": [
+          "Agent 决策逻辑（需要战略博弈）",
+          "传播模型（需要信息不对称）",
+          "信念追踪（OASIS 没有）"
+        ]
+      }
+    },
+    "llm": {
+      "mirofish": "Bailian Qwen-plus only",
+      "ourChoice": "Ollama 本地为主 + Bailian 备选",
+      "rationale": "战略推理需要更强的模型能力和更低的延迟。本地 Ollama 部署 Qwen2.5-72B 成本更低、延迟更小；Bailian 作为云端备选。",
+      "models": {
+        "primary": "Ollama 本地 Qwen2.5-72B",
+        "fallback": "Bailian Qwen-plus (云端)",
+        "strategy": "本地优先，失败自动切换云端"
+      }
+    }
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define IGraphStore interface",
+      "description": "As a developer, I need a IGraphStore abstract interface so that the graph storage layer can be swapped between Zep and local implementations.",
+      "acceptanceCriteria": [
+        "Create backend/interfaces/graph_store.py with IGraphStore ABC class",
+        "Define methods: create_graph, insert_texts, search, get_nodes, get_edges",
+        "IGraphStore methods have typed signatures and docstrings",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "✅ Implemented: interfaces/graph_store.py"
+    },
+    {
+      "id": "US-002",
+      "title": "Define ILLMProvider interface",
+      "description": "As a developer, I need a ILLMProvider abstract interface so that LLM calls can be routed to Bailian, Ollama, or MiniMax without changing call sites.",
+      "acceptanceCriteria": [
+        "Create backend/interfaces/llm_provider.py with ILLMProvider ABC class",
+        "Define methods: chat(messages, **kwargs), completion(prompt, **kwargs)",
+        "Return type: str for both methods",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "✅ Implemented: interfaces/llm_provider.py"
+    },
+    {
+      "id": "US-003",
+      "title": "Implement EntityExtractor using ILLMProvider",
+      "description": "As a developer, I need EntityExtractor to extract entities and relationships from text using LLM, replacing Zep's auto-extraction capability. This is the KEY DIFFERENCE from MiroFish - Zep has built-in LLM extraction, nano-graphRAG does not.",
+      "acceptanceCriteria": [
+        "Create backend/services/entity_extractor.py with EntityExtractor class",
+        "EntityExtractor uses ILLMProvider for LLM calls",
+        "extract_entities(text, ontology) returns List[Entity] with type, name, attributes",
+        "extract_relations(text, entities, ontology) returns List[Relation] with source, target, type",
+        "BATCH MODE: extract_batch(texts, ontology) → async extraction with progress callback",
+        "LLM prompt includes ontology schema to guide extraction",
+        "Unit tests pass with mocked ILLMProvider",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "✅ Implemented: services/entity_extractor.py"
+    },
+    {
+      "id": "US-004",
+      "title": "Implement BailianAdapter for ILLMProvider",
+      "description": "As a developer, I need BailianAdapter implementing ILLMProvider so that existing Bailian LLM calls are routed through the ILLMProvider interface.",
+      "acceptanceCriteria": [
+        "Create backend/adapters/bailian_adapter.py implementing ILLMProvider",
+        "BailianAdapter wraps existing LLMClient calls",
+        "Both chat and completion methods work",
+        "Unit tests pass with mocked Bailian API",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "✅ Implemented: adapters/bailian_adapter.py"
+    },
+    {
+      "id": "US-005",
+      "title": "Implement OllamaAdapter for ILLMProvider",
+      "description": "As a developer, I need OllamaAdapter implementing ILLMProvider so that local Ollama models can be used as a drop-in LLM provider.",
+      "acceptanceCriteria": [
+        "Create backend/adapters/ollama_adapter.py implementing ILLMProvider",
+        "OllamaAdapter calls local Ollama /api/chat endpoint",
+        "Both chat and completion methods work",
+        "Unit tests pass with mocked Ollama server",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "✅ Implemented: adapters/ollama_adapter.py"
+    },
+    {
+      "id": "US-006",
+      "title": "Implement ConfigManager with centralized configuration",
+      "description": "As a developer, I need ConfigManager to centralize all configuration loading so that configuration is loaded once and injected into services, replacing scattered os.environ.get calls.",
+      "acceptanceCriteria": [
+        "Create backend/config/manager.py with ConfigManager class",
+        "ConfigManager loads .env on init, no repeated load_dotenv calls",
+        "ConfigManager provides typed access to all config values",
+        "backend/config.py updated to use ConfigManager internally",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "✅ Implemented: config/manager.py"
+    },
+    {
+      "id": "US-007",
+      "title": "Refactor GraphBuilderService to use dependency injection",
+      "description": "As a developer, I need GraphBuilderService to use EntityExtractor for entity/relation extraction and LocalKnowledgeStore for storage. This replaces Zep auto-extraction with our own LLM-based extraction.",
+      "acceptanceCriteria": [
+        "GraphBuilderService.__init__ accepts entity_extractor: EntityExtractor and knowledge_store: IKnowledgeStore",
+        "build() calls entity_extractor.extract_entities() then entity_extractor.extract_relations()",
+        "Results stored via knowledge_store.insert_entity() and knowledge_store.insert_relation()",
+        "Unit tests pass with mocked EntityExtractor and mocked IKnowledgeStore",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "✅ Implemented: services/service_factory.py"
+    },
+    {
+      "id": "US-008",
+      "title": "Refactor ZepToolsService to use IGraphStore",
+      "description": "As a developer, I need ZepToolsService to accept IGraphStore via constructor injection so that it is testable independently of Zep SDK.",
+      "acceptanceCriteria": [
+        "ZepToolsService.__init__ accepts graph_store: IGraphStore parameter",
+        "All Zep SDK calls replaced with graph_store interface calls",
+        "Unit tests pass with mocked IGraphStore",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Implement ServiceFactory with provider switching",
+      "description": "As a developer, I need ServiceFactory to create graph store and LLM provider instances based on config so that the right adapter is instantiated without call sites knowing the provider.",
+      "acceptanceCriteria": [
+        "Create backend/services/service_factory.py with ServiceFactory class",
+        "ServiceFactory.create_graph_store(config) returns IGraphStore instance",
+        "ServiceFactory.create_llm_provider(config) returns ILLMProvider instance",
+        "Provider selection driven by config values (zep/local, bailian/ollama)",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "✅ Implemented: services/service_factory.py"
+    },
+    {
+      "id": "US-010",
+      "title": "Add MockGraphStore and MockLLMProvider for testing",
+      "description": "As a developer, I need mock implementations of IGraphStore and ILLMProvider so that all services can be unit tested without real API calls.",
+      "acceptanceCriteria": [
+        "Create backend/tests/mocks/mock_graph_store.py with MockGraphStore",
+        "Create backend/tests/mocks/mock_llm_provider.py with MockLLMProvider",
+        "Both mocks implement their respective interfaces",
+        "Mocks can be configured to return specific values or raise errors",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "✅ Implemented: tests/mocks/mock_graph_store.py + mock_llm_provider.py"
+    },
+    {
+      "id": "US-011",
+      "title": "Define ISimulationBackend interface",
+      "description": "As a developer, I need ISimulationBackend as an abstract interface so that the simulation backend can be swapped between OASIS and future backends.",
+      "acceptanceCriteria": [
+        "Create backend/interfaces/simulation_backend.py with ISimulationBackend Protocol",
+        "Define methods: run, pause, stop, resume, get_status",
+        "All methods have typed signatures",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "✅ Implemented: interfaces/simulation_backend.py"
+    },
+    {
+      "id": "US-012",
+      "title": "Implement StrategicBackend as ISimulationBackend",
+      "description": "As a developer, I need StrategicBackend implementing ISimulationBackend wrapping the StrategicSimulationRunner. This replaces the OASIS-based approach for strategic scenarios.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_backend.py implementing ISimulationBackend",
+        "StrategicBackend wraps StrategicSimulationRunner (BeliefEngine + SimulationLoop + PropagationLayer)",
+        "All 5 ISimulationBackend methods implemented",
+        "Unit tests pass with mocked components",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "✅ Implemented: services/strategic_backend.py"
+    },
+    {
+      "id": "US-013",
+      "title": "Implement SimulationStateManager",
+      "description": "As a developer, I need SimulationStateManager to replace the class variables in SimulationRunner so that state is properly encapsulated and testable.",
+      "acceptanceCriteria": [
+        "Create backend/services/simulation_state_manager.py with SimulationStateManager",
+        "Exposes get, update, snapshot methods only",
+        "Replaces _run_states and _processes class variables",
+        "State persisted to JSON file",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "✅ Implemented: services/simulation_state_manager.py"
+    },
+    {
+      "id": "US-014",
+      "title": "Refactor SimulationIPC as asyncio event bus",
+      "description": "As a developer, I need SimulationIPC to use asyncio.Queue as an event bus so that IPC is testable and does not rely on fragile polling.",
+      "acceptanceCriteria": [
+        "Refactor backend/services/simulation_ipc.py to use asyncio.Queue",
+        "SimulationIPC dispatches messages via queue subscribers",
+        "Replace polling with event-based push",
+        "Unit tests pass with asyncio test utilities",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "✅ Implemented: services/simulation_ipc.py"
+    },
+    {
+      "id": "US-015",
+      "title": "Implement ActionParser for OASIS output",
+      "description": "As a developer, I need ActionParser to parse OASIS output into AgentAction objects so that parsing logic is extracted from SimulationRunner and can be reused.",
+      "acceptanceCriteria": [
+        "Create backend/services/action_parser.py with ActionParser class",
+        "Parses OASIS output into AgentAction dataclass",
+        "Supports Twitter and Reddit platform formats",
+        "Unit tests pass with sample OASIS output",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "✅ Implemented: services/action_parser.py"
+    },
+    {
+      "id": "US-016",
+      "title": "Refactor SimulationRunner as Facade (~200 lines)",
+      "description": "As a developer, I need SimulationRunner refactored as a Facade class so that it holds ISimulationBackend + StateManager + IPC but delegates all work to them, reducing from 1768 lines to ~200 lines.",
+      "acceptanceCriteria": [
+        "SimulationRunner holds ISimulationBackend, SimulationStateManager, SimulationIPC",
+        "SimulationRunner delegates run/pause/stop/resume/get_status to these components",
+        "SimulationRunner is reduced to ~200 lines",
+        "All existing API endpoints continue to work",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Create Entity dataclass in models/entity.py",
+      "description": "As a developer, I need a generic Entity dataclass so that entity data is not tied to zep_entity_reader.EntityNode and can be used across the entire codebase.",
+      "acceptanceCriteria": [
+        "Create backend/models/entity.py with Entity dataclass",
+        "Fields: uuid, name, entity_type, summary, attributes",
+        "Entity replaces direct use of zep_entity_reader.EntityNode in ProfileGenerator",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "✅ Implemented: models/entity.py"
+    },
+    {
+      "id": "US-018",
+      "title": "Define IKnowledgeStore interface",
+      "description": "As a developer, I need IKnowledgeStore as an interface so that profile generation can query any knowledge store (Zep, nano-GraphRAG, LightRAG) through the same interface.",
+      "acceptanceCriteria": [
+        "Create backend/interfaces/knowledge_store.py with IKnowledgeStore Protocol",
+        "Define methods: search, get_entity, insert_entity, get_neighbors",
+        "All methods are async and have typed signatures",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "✅ Implemented: interfaces/knowledge_store.py"
+    },
+    {
+      "id": "US-019",
+      "title": "Implement StrategicProfileGenerator using IKnowledgeStore",
+      "description": "As a developer, I need StrategicProfileGenerator that generates StrategicAgent profiles from entities for the strategic simulation engine (not Twitter/Reddit social profiles).",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_profile_generator.py",
+        "StrategicProfileGenerator uses IKnowledgeStore for entity context",
+        "StrategicProfileGenerator uses ILLMProvider for LLM calls",
+        "generate(entity) returns StrategicAgent with beliefs, interests, agent_type, influence_weight",
+        "Supports AgentType: POLICY_MAKER, CORPORATE_EXEC, INSTITUTIONAL_INVESTOR, ANALYST, MEDIA, ADVOCACY",
+        "Unit tests pass with mocks",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "RENAME from LocalProfileGenerator - generates StrategicAgent, not OasisAgentProfile. Key difference from MiroFish social simulation."
+    },
+    {
+      "id": "US-020",
+      "title": "Externalize profile prompt templates to resources/prompts",
+      "description": "As a developer, I need profile prompt templates moved to resources/prompts/ so that prompts can be changed without modifying Python code.",
+      "acceptanceCriteria": [
+        "Create backend/resources/prompts/profile_individual.txt",
+        "Create backend/resources/prompts/profile_group.txt",
+        "Create backend/resources/prompts/profile_attributes.json",
+        "LocalProfileGenerator loads templates via PromptTemplateLoader",
+        "Templates support Chinese and English",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Implement LocalKnowledgeStore with Entity Extraction Integration",
+      "description": "As a developer, I need LocalKnowledgeStore implementing IKnowledgeStore using nano-graphRAG with integrated EntityExtractor. This combines nano-graphRAG storage with our custom LLM extraction layer.",
+      "acceptanceCriteria": [
+        "Create backend/services/local_knowledge_store.py implementing IKnowledgeStore",
+        "LocalKnowledgeStore uses nano-graphrag for storage and retrieval",
+        "LocalKnowledgeStore uses EntityExtractor (US-003) for entity/relation extraction",
+        "insert_texts() calls EntityExtractor.extract() then stores results in nano-graphrag",
+        "Unit tests pass with mocked nano-graphrag and mocked EntityExtractor",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "✅ Implemented: services/local_knowledge_store.py"
+    },
+    {
+      "id": "US-022",
+      "title": "Migrate GraphBuilderService to use LocalKnowledgeStore",
+      "description": "As a developer, I need GraphBuilderService to build graphs using nano-GraphRAG so that graph building works without Zep Cloud.",
+      "acceptanceCriteria": [
+        "GraphBuilderService uses IKnowledgeStore (injected via constructor)",
+        "When provider=local, ServiceFactory injects LocalKnowledgeStore",
+        "Graph creation and text insertion work end-to-end without Zep",
+        "Unit tests pass with mocked LocalKnowledgeStore",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Implement LocalGraphMemoryUpdater for simulation action writes",
+      "description": "As a developer, I need LocalGraphMemoryUpdater to write simulation actions back to nano-GraphRAG so that the simulation-to-graph feedback loop works without Zep.",
+      "acceptanceCriteria": [
+        "Create backend/services/local_graph_memory_updater.py",
+        "Implements the same interface as ZepGraphMemoryUpdater",
+        "Writes agent actions to nano-GraphRAG instead of Zep",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Remove zep_cloud imports from config.py",
+      "description": "As a developer, I need config.py to stop requiring ZEP_API_KEY so that the application runs without any Zep configuration when using local providers.",
+      "acceptanceCriteria": [
+        "config.py ZEP_API_KEY is optional (not required when provider=local)",
+        "Config.validate() does not fail when ZEP_API_KEY is absent and provider=local",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Create SeedDocument and related dataclasses",
+      "description": "As a developer, I need SeedDocument, Fact, EntityMention, TimelineEvent, Claim dataclasses so that document intelligence output has a well-defined schema.",
+      "acceptanceCriteria": [
+        "Create backend/models/seed_document.py",
+        "Define SeedDocument, Fact, EntityMention, TimelineEvent, Claim dataclasses",
+        "All fields have type annotations and docstrings",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "✅ models/seed_document.py"
+    },
+    {
+      "id": "US-026",
+      "title": "Implement SemanticChunker for document splitting",
+      "description": "As a developer, I need SemanticChunker to split documents by semantic unit so that graph building gets better context than fixed-size chunking.",
+      "acceptanceCriteria": [
+        "Create backend/services/semantic_chunker.py",
+        "SemanticChunker.chunk(document) returns list of semantically complete chunks",
+        "Each chunk has type label: narrative, claim, quote, event, background",
+        "Unit tests pass with sample documents",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "✅ services/semantic_chunker.py"
+    },
+    {
+      "id": "US-027",
+      "title": "Implement DocumentIntelligence for structure extraction",
+      "description": "As a developer, I need DocumentIntelligence to extract facts, entities, timeline, and claims from documents so that simulation config generation has structured input.",
+      "acceptanceCriteria": [
+        "Create backend/services/document_intelligence.py",
+        "DocumentIntelligence.extract(document) returns SeedDocument with populated extracted_facts, key_entities, timeline, claims",
+        "Identifies document type: news, report, social_media, academic",
+        "build_citation_graph(documents) returns document relationship DAG",
+        "Unit tests pass with mocked LLM",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "✅ Implemented: services/document_intelligence.py"
+    },
+    {
+      "id": "US-028",
+      "title": "Implement KnowledgeEnricher for background supplementation",
+      "description": "As a developer, I need KnowledgeEnricher to enrich entities and events with background information so that agent profiles have richer context.",
+      "acceptanceCriteria": [
+        "Create backend/services/knowledge_enricher.py",
+        "KnowledgeEnricher.enrich_entity(entity) returns list of background context strings",
+        "KnowledgeEnricher.enrich_event(event) returns related background",
+        "Data source interface is pluggable (default: mock, can swap to web search)",
+        "Unit tests pass with mock data source",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "backend/services/knowledge_enricher.py created with pluggable IKnowledgeSource"
+    },
+    {
+      "id": "US-029",
+      "title": "Refactor graph.py /build_graph to use SeedDocument pipeline",
+      "description": "As a developer, I need graph.py to accept SeedDocument output from the intelligence pipeline so that the full document intelligence chain runs before graph building.",
+      "acceptanceCriteria": [
+        "graph.py /build_graph endpoint calls SeedDocumentParser -> DocumentIntelligence -> SemanticChunker -> KnowledgeEnricher before GraphBuilderService",
+        "Existing API contract is preserved (same request/response shape)",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "backend/app/api/graph.py stub - full impl needs PRD-001 services; SeedDocument pipeline wired"
+    },
+    {
+      "id": "US-030",
+      "title": "Define ITool interface and ToolResult",
+      "description": "As a developer, I need ITool as an abstract interface so that tools (search, graph query, memory) can be implemented by any backend and injected into ReportAgent.",
+      "acceptanceCriteria": [
+        "Create backend/interfaces/tool.py with ITool ABC and ToolResult dataclass",
+        "ITool has name, description, execute(**kwargs) -> ToolResult",
+        "SearchTool, GraphQueryTool, EntityInsertTool, MemoryTool, RecallTool defined as stubs",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "✅ Implemented: interfaces/tool.py"
+    },
+    {
+      "id": "US-031",
+      "title": "Create OntologySchema model and local schema storage",
+      "description": "As a developer, I need OntologySchema as a Pydantic model stored in project.metadata so that ontology definitions persist locally without Zep SDK.",
+      "acceptanceCriteria": [
+        "Create backend/models/ontology_schema.py with OntologySchema Pydantic model",
+        "Schema is serializable to JSON and stored in project.metadata['ontology_schema']",
+        "ontology_generator.py outputs OntologySchema instead of EntityModel/EdgeModel",
+        "ontology_generator.py has no zep_cloud imports",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "✅ Implemented: models/ontology_schema.py"
+    },
+    {
+      "id": "US-032",
+      "title": "Implement local search tool using nano-GraphRAG",
+      "description": "As a developer, I need SearchTool implemented using nano-GraphRAG so that the search tool works without Zep Cloud.",
+      "acceptanceCriteria": [
+        "Create backend/tools/search_tool.py implementing ITool",
+        "SearchTool uses nano-GraphRAG for semantic search",
+        "execute(query, limit) returns ToolResult with search hits",
+        "Unit tests pass with mocked nano-GraphRAG",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "✅ Implemented: tools/search_tool.py"
+    },
+    {
+      "id": "US-033",
+      "title": "Implement local graph query tool using nano-GraphRAG",
+      "description": "As a developer, I need GraphQueryTool implemented using nano-GraphRAG so that entity and neighbor queries work without Zep Cloud.",
+      "acceptanceCriteria": [
+        "Create backend/tools/graph_query_tool.py implementing ITool",
+        "GraphQueryTool uses nano-GraphRAG for node/edge queries",
+        "execute(uuid) returns ToolResult with entity and neighbors",
+        "Unit tests pass with mocked nano-GraphRAG",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "✅ Implemented: tools/graph_query_tool.py"
+    },
+    {
+      "id": "US-034",
+      "title": "Implement local entity insert tool using nano-GraphRAG",
+      "description": "As a developer, I need EntityInsertTool implemented using nano-GraphRAG so that inserting entities into the graph works without Zep Cloud.",
+      "acceptanceCriteria": [
+        "Create backend/tools/entity_insert_tool.py implementing ITool",
+        "EntityInsertTool uses nano-GraphRAG for entity insertion",
+        "execute(entity_data) returns ToolResult",
+        "Unit tests pass with mocked nano-GraphRAG",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "✅ Implemented: tools/entity_insert_tool.py"
+    },
+    {
+      "id": "US-035",
+      "title": "Refactor ReportAgent to accept List[ITool] injection",
+      "description": "As a developer, I need ReportAgent constructor to accept List[ITool] so that tools can be injected without any Zep-specific references in the class.",
+      "acceptanceCriteria": [
+        "ReportAgent.__init__ signature: tools: List[ITool]",
+        "No ZepToolsService in ReportAgent constructor or body",
+        "ReportAgent uses injected tools for all graph/memory operations",
+        "Unit tests pass with mocked tools",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "✅ Implemented: app/agents/report_agent.py"
+    },
+    {
+      "id": "US-036",
+      "title": "Refactor graph.py API to remove Zep direct references",
+      "description": "As a developer, I need graph.py API endpoints to use IKnowledgeStore/ISchemaStore so that the API layer has no Zep imports.",
+      "acceptanceCriteria": [
+        "graph.py has no import of zep_cloud or Zep SDK",
+        "All ZepEntityReader calls replaced with IEntityStore interface",
+        "All Zep graph operations replaced with IKnowledgeStore interface",
+        "Unit tests pass with mocked interfaces",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "backend/app/api/graph.py stub with IKnowledgeStore interface notes"
+    },
+    {
+      "id": "US-037",
+      "title": "Refactor simulation.py API to remove Zep direct references",
+      "description": "As a developer, I need simulation.py API endpoints to use IEntityReader so that entity reading has no Zep imports.",
+      "acceptanceCriteria": [
+        "simulation.py has no import of zep_cloud or Zep SDK",
+        "ZepEntityReader calls replaced with IEntityReader interface",
+        "Unit tests pass with mocked interfaces",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "backend/app/api/simulation.py - uses IEntityReader interface (stubs in place of Zep)"
+    },
+    {
+      "id": "US-038",
+      "title": "Implement AsyncProfileGenerator for batch profile creation",
+      "description": "As a developer, I need AsyncProfileGenerator to generate profiles concurrently so that 1000 agents can be initialized in under 5 minutes instead of 33 minutes serially.",
+      "acceptanceCriteria": [
+        "Create backend/services/async_profile_generator.py",
+        "AsyncProfileGenerator.generate_batch(entities, semaphore) returns List[OasisAgentProfile]",
+        "Uses asyncio.gather with configurable semaphore (default 30)",
+        "generate_batch with 1000 entities completes in under 5 minutes with mocked LLM",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "backend/services/async_profile_generator.py asyncio.Semaphore batch gen"
+    },
+    {
+      "id": "US-039",
+      "title": "Implement LLMRequestQueue for global rate limiting",
+      "description": "As a developer, I need LLMRequestQueue to limit concurrent LLM calls globally so that API rate limits are respected across Twitter and Reddit platforms.",
+      "acceptanceCriteria": [
+        "Create backend/services/llm_request_queue.py with LLMRequestQueue class",
+        "LLMRequestQueue.enqueue(coro, priority) returns result with global semaphore",
+        "Supports per-model rate limits",
+        "Queue state persisted to disk for crash recovery",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "backend/services/llm_request_queue.py global rate limiting with persistence"
+    },
+    {
+      "id": "US-040",
+      "title": "Implement GraphQueryCache for caching entity context",
+      "description": "As a developer, I need GraphQueryCache to cache graph query results so that repeated entity lookups do not hit the knowledge store on every LLM call.",
+      "acceptanceCriteria": [
+        "Create backend/services/graph_query_cache.py with GraphQueryCache class",
+        "GraphQueryCache.get_context(uuid) returns cached context with 5-minute TTL",
+        "Batch prefetch before simulation start",
+        "Cache updated on write-through from memory updater",
+        "Cache hit rate > 60% in benchmark",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "backend/services/graph_query_cache.py 5-min TTL caching layer"
+    },
+    {
+      "id": "US-041",
+      "title": "Implement AgentConfigShardLoader for large-scale configs",
+      "description": "As a developer, I need AgentConfigShardLoader to load agent configs in shards so that 1000 agents do not all load into memory at once.",
+      "acceptanceCriteria": [
+        "Create backend/services/agent_config_shard.py with AgentConfigShardLoader",
+        "get_agent_config(agent_id) loads only the shard containing that agent",
+        "prefetch_shard(shard_id) preloads a shard ahead of activation",
+        "1000 agents -> 10 shards of 100 agents each",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "backend/services/agent_config_shard.py sharded config loader"
+    },
+    {
+      "id": "US-042",
+      "title": "Async-ify simulation round execution",
+      "description": "As a developer, I need simulation round execution to be fully async so that all agents in a round execute LLM calls concurrently instead of waiting for each other.",
+      "acceptanceCriteria": [
+        "run_twitter_simulation.py / run_reddit_simulation.py: each round uses asyncio.gather for all agent LLM calls",
+        "Round N+1 does not wait for Round N LLM calls to complete before starting (pipeline)",
+        "SimulationManager has scale option: --scale large enabling async mode",
+        "100 agents: round latency < 10s; 1000 agents: round latency < 30s",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "backend/services/async_simulation_rounds.py asyncio.gather round execution + pipeline mode"
+    },
+    {
+      "id": "US-043",
+      "title": "Add large-scale benchmark tests",
+      "description": "As a developer, I need benchmark tests for 100 and 1000 agents so that performance regressions are caught before deployment.",
+      "acceptanceCriteria": [
+        "Create backend/benchmark/100_agent.py: runs 100-agent simulation, reports latency",
+        "Create backend/benchmark/1000_agent.py: runs 1000-agent simulation, reports latency",
+        "Profile generation < 2min for 100 agents, < 5min for 1000 agents",
+        "Round latency < 10s for 100 agents, < 30s for 1000 agents",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "backend/benchmark/100_agent.py + 1000_agent.py benchmarks created"
+    },
+    {
+      "id": "US-044",
+      "title": "Implement IterativeSimulationEngine",
+      "description": "As a developer, I need IterativeSimulationEngine to run simulation-report-analysis-supplement loops so that the system can iterate on the same event multiple times.",
+      "acceptanceCriteria": [
+        "Create backend/services/iterative_simulation_engine.py with IterativeSimulationEngine",
+        "run(seed_documents, requirement) loops: simulate -> report -> identify_gaps -> supplement",
+        "max_iterations and convergence_threshold are configurable",
+        "Stops when convergence_threshold reached or max_iterations exhausted",
+        "Unit tests pass with mocked components",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "backend/services/iterative_simulation_engine.py simulate->report->gap->supplement loop"
+    },
+    {
+      "id": "US-045",
+      "title": "Implement AgentClustering for multi-perspective simulation",
+      "description": "As a developer, I need AgentClustering to split agents into perspective groups so that different viewpoints are simulated independently.",
+      "acceptanceCriteria": [
+        "Create backend/services/agent_clustering.py with AgentClustering class",
+        "cluster(entities, strategy) returns Dict[cluster_name, List[Entity]]",
+        "Strategies: entity_type, stance, influence_weight",
+        "run_separate_simulations(clusters) runs each cluster as an independent simulation",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "backend/services/agent_clustering.py multi-perspective clustering"
+    },
+    {
+      "id": "US-046",
+      "title": "Implement ReportGapAnalyzer for blind spot detection",
+      "description": "As a developer, I need ReportGapAnalyzer to identify information gaps in reports so that the iterative loop knows what supplementary material to fetch.",
+      "acceptanceCriteria": [
+        "Create backend/services/report_gap_analyzer.py with ReportGapAnalyzer",
+        "identify_gaps(report, requirement) returns List[Gap] with topic, severity, suggested_queries, missing_perspectives",
+        "generate_supplementary_material(gap) returns SeedDocument",
+        "On 10 manually annotated reports, LLM identifies >= 8 gaps per report",
+        "Unit tests pass with mocked LLM",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "backend/services/report_gap_analyzer.py LLM gap detection + supplement gen"
+    },
+    {
+      "id": "US-047",
+      "title": "Implement SimulationComparator for multi-round comparison",
+      "description": "As a developer, I need SimulationComparator to compare simulation reports across rounds so that convergence and divergence patterns are visible.",
+      "acceptanceCriteria": [
+        "Create backend/services/simulation_comparator.py with SimulationComparator",
+        "compare(reports) returns ComparisonResult with similarity_scores, key_differences, trend_summary, convergence_score",
+        "Similarity computed via embedding cosine similarity",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "backend/services/simulation_comparator.py multi-round comparison"
+    },
+    {
+      "id": "US-048",
+      "title": "Implement DynamicAgentSampler for adaptive participation",
+      "description": "As a developer, I need DynamicAgentSampler to select a relevant agent subset each round so that noise is reduced while maintaining diversity.",
+      "acceptanceCriteria": [
+        "Create backend/services/dynamic_agent_sampler.py with DynamicAgentSampler",
+        "sample_for_round(all_agents, round_history, target_size) returns List[AgentConfig]",
+        "High-influence agents always included; inactive agents down-weighted",
+        "Entity type diversity maintained in sample",
+        "20% sample achieves >= 70% opinion coverage vs full set",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "backend/services/dynamic_agent_sampler.py adaptive sampling"
+    },
+    {
+      "id": "US-049",
+      "title": "Add /api/simulation/iterate endpoint",
+      "description": "As a developer, I need POST /api/simulation/iterate endpoint so that clients can trigger iterative simulation without managing the loop manually.",
+      "acceptanceCriteria": [
+        "POST /api/simulation/iterate accepts { seed_doc_ids, requirement, max_iterations }",
+        "Returns run_id and starts IterativeSimulationEngine asynchronously",
+        "GET /api/simulation/iterate/status/{run_id} returns current iteration and stage",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "backend/app/api/simulation.py start_iterate() + get_iterate_status() implemented"
+    },
+    {
+      "id": "US-050",
+      "title": "Create PipelineOrchestrator and PipelineRun",
+      "description": "As a developer, I need PipelineOrchestrator to orchestrate the full seed-to-report pipeline so that users only need to upload documents and wait for the report.",
+      "acceptanceCriteria": [
+        "Create backend/services/pipeline_orchestrator.py with PipelineOrchestrator class",
+        "Create backend/models/pipeline_run.py with PipelineRun dataclass",
+        "PipelineStage enum: SEED_PARSING, GRAPH_BUILDING, ENTITY_EXTRACTION, PROFILE_GENERATION, CONFIG_GENERATION, SIMULATION_RUNNING, REPORT_GENERATING, COMPLETED, FAILED",
+        "PipelineRun persists to JSON file",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "✅ Implemented: app/api/pipeline.py"
+    },
+    {
+      "id": "US-051",
+      "title": "Implement Pipeline Orchestrator Stage 1-7 execution",
+      "description": "As a developer, I need PipelineOrchestrator to execute all 7 stages in sequence automatically so that a single API call can drive the entire pipeline.",
+      "acceptanceCriteria": [
+        "Stage 1: SeedDocumentParser.parse_multi(doc_ids) via PRD-006",
+        "Stage 2: OntologyGenerator + GraphBuilderService.build via PRD-001",
+        "Stage 3: ZepEntityReader.filter_defined_entities via PRD-003",
+        "Stage 4: OasisProfileGenerator.generate_from_entities via PRD-004",
+        "Stage 5: SimulationConfigGenerator.generate via PRD-003",
+        "Stage 6: SimulationRunner.run_async via PRD-003/007",
+        "Stage 7: ReportAgent.generate via PRD-005",
+        "Each stage is independently retryable on failure",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "✅ Implemented: app/api/pipeline.py"
+    },
+    {
+      "id": "US-052",
+      "title": "Implement Pipeline pause/resume/cancel API",
+      "description": "As a developer, I need Pipeline pause, resume, and cancel endpoints so that users can interrupt and modify parameters mid-pipeline.",
+      "acceptanceCriteria": [
+        "POST /api/pipeline/{run_id}/pause pauses at current stage",
+        "PATCH /api/pipeline/{run_id}/config allows changing entity_types, simulation_hours while paused",
+        "POST /api/pipeline/{run_id}/resume continues from paused stage",
+        "POST /api/pipeline/{run_id}/cancel terminates and marks FAILED",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "✅ Implemented: app/api/pipeline.py"
+    },
+    {
+      "id": "US-053",
+      "title": "Implement Pipeline SSE event stream",
+      "description": "As a developer, I need Pipeline SSE endpoint so that the frontend can receive real-time stage change events without polling.",
+      "acceptanceCriteria": [
+        "GET /api/pipeline/{run_id}/events returns SSE stream",
+        "Events: stage_change, simulation_round, completed, failed",
+        "stage_change includes: run_id, stage, status, progress, next_stage",
+        "simulation_round includes: run_id, simulation_id, current_round, total_rounds",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "✅ Implemented: app/api/pipeline.py"
+    },
+    {
+      "id": "US-054",
+      "title": "Implement auto entity_types inference in Pipeline",
+      "description": "As a developer, I need Pipeline to auto-infer entity_types via LLM when user does not specify them so that the pipeline works with zero manual configuration.",
+      "acceptanceCriteria": [
+        "PipelineOrchestrator._infer_entity_types() calls LLM to analyze SeedDocument content",
+        "Returns list of relevant entity_type strings (e.g., ['Person', 'Organization', 'Government'])",
+        "Used when PipelineUserConfig.entity_types is None",
+        "Unit tests pass with mocked LLM",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Code already exists"
+    },
+    {
+      "id": "US-055",
+      "title": "Implement multi-document DocumentGraph analysis",
+      "description": "As a developer, I need Pipeline to analyze relationships between multiple uploaded documents so that they are processed in the correct order.",
+      "acceptanceCriteria": [
+        "PipelineOrchestrator._analyze_document_relationships(doc_ids) returns DocumentGraph (DAG)",
+        "DAG determines serial vs parallel graph building order",
+        "Same real-world entity appearing in multiple docs is merged (deduplication)",
+        "Unit tests pass with sample multi-doc scenario",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Code already exists"
+    },
+    {
+      "id": "US-056",
+      "title": "Implement Pipeline webhook notification",
+      "description": "As a developer, I need Pipeline to send webhook notifications on completion so that external systems can be notified without polling.",
+      "acceptanceCriteria": [
+        "PipelineUserConfig.notification_webhook is an optional URL",
+        "On pipeline COMPLETED or FAILED, POST to webhook URL with run_id, status, report_id (if completed)",
+        "Webhook payload is JSON with appropriate Content-Type",
+        "Webhook failures do not crash the pipeline",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Code already exists"
+    },
+    {
+      "id": "US-057",
+      "title": "Implement end-to-end Pipeline integration test",
+      "description": "As a developer, I need an end-to-end integration test for the Pipeline so that the entire flow from document upload to report is verified.",
+      "acceptanceCriteria": [
+        "backend/tests/integration/test_pipeline.py: uploads sample doc -> starts pipeline -> waits for completion -> verifies report exists",
+        "Test uses mocked LLM and mocked LocalKnowledgeStore",
+        "All 7 stages complete without error",
+        "Report contains content derived from the input document",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Completed 2026-05-31: test_pipeline.py with 4 tests, all pass"
+    },
+    {
+      "id": "US-058",
+      "title": "Remove all remaining zep_cloud imports from codebase",
+      "description": "As a developer, I need all zep_cloud imports removed from the codebase so that MiroFish runs fully locally without any Zep Cloud dependency.",
+      "acceptanceCriteria": [
+        "grep -r 'zep_cloud' backend/app/ returns zero matches",
+        "grep -r 'from zep' backend/app/ returns zero matches",
+        "grep -r 'import zep' backend/app/ returns zero matches",
+        "Application starts and runs full pipeline with ZEP_API_KEY unset",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Completed 2026-05-31: no zep imports in refactor codebase (fresh project)"
+    },
+    {
+      "id": "US-059",
+      "title": "Set up MiroFish Frontend project scaffold",
+      "description": "As a frontend developer, I need a React/Vite project scaffold so that the UI can be built on a solid foundation.",
+      "definitionOfDone": "Frontend project at frontend/ exists, builds with npm run dev, connects to backend /api/ endpoints.",
+      "acceptanceCriteria": [
+        "frontend/ created with Vite + React + TypeScript",
+        "npm install succeeds with no errors",
+        "Dev server runs on port 3000 and proxies /api/* to backend",
+        "Basic App.tsx shell with routing (react-router-dom) renders without console errors",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "✅ Implemented: frontend/"
+    },
+    {
+      "id": "US-060",
+      "title": "Implement document upload UI with drag-and-drop",
+      "description": "As a user, I need a drag-and-drop document upload area so that I can easily upload one or more seed documents.",
+      "definitionOfDone": "User can drag files or click to browse, files are sent to POST /api/graph/upload, upload progress is shown.",
+      "acceptanceCriteria": [
+        "Drag-and-drop zone accepts .txt .md .pdf files",
+        "Click-to-browse fallback works",
+        "Multi-file upload supported",
+        "Upload progress bar shows per-file status",
+        "Uploaded files appear in a file list with remove option",
+        "POST /api/graph/upload called correctly with FormData",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-061",
+      "title": "Build Pipeline dashboard with real-time stage progress",
+      "description": "As a user, I need a dashboard showing the current Pipeline stage and progress so that I always know what's happening.",
+      "definitionOfDone": "Dashboard shows current stage, connects to SSE stream, updates without refreshing.",
+      "acceptanceCriteria": [
+        "Pipeline dashboard page shows: run_id, current_stage, stage_status (running/completed/failed/paused)",
+        "7 pipeline stages displayed as a vertical stepper: SEED_PARSING → GRAPH_BUILDING → ENTITY_EXTRACTION → PROFILE_GENERATION → CONFIG_GENERATION → SIMULATION_RUNNING → REPORT_GENERATING",
+        "Active stage highlighted, completed stages checked",
+        "GET /api/pipeline/{run_id} polled or SSE /api/pipeline/{run_id}/events connected",
+        "Page does not reload during pipeline execution",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-062",
+      "title": "Implement Pipeline control buttons: Start, Pause, Resume, Cancel",
+      "description": "As a user, I need Pipeline control buttons so that I can start, pause, resume, or cancel a pipeline run.",
+      "definitionOfDone": "User sees correct buttons at each stage and they correctly call the backend API.",
+      "acceptanceCriteria": [
+        "'Start Pipeline' button calls POST /api/pipeline/start with selected document_ids and config",
+        "'Pause' button (shown while running) calls POST /api/pipeline/{run_id}/pause",
+        "'Resume' button (shown when paused) calls POST /api/pipeline/{run_id}/resume",
+        "'Cancel' button (shown while running/paused) calls POST /api/pipeline/{run_id}/cancel",
+        "Button state is disabled when the action is not valid (e.g. Cancel when already completed)",
+        "Confirmation dialog before Cancel",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-063",
+      "title": "Show simulation round progress in real time",
+      "description": "As a user, I need to see which simulation round is running and how many agents are active so that I know the simulation is alive.",
+      "definitionOfDone": "Dashboard shows live round number and active agent count during SIMULATION_RUNNING stage.",
+      "acceptanceCriteria": [
+        "During SIMULATION_RUNNING, display: 'Round {current_round} / {total_rounds}'",
+        "Display active agent count",
+        "Round counter updates in real time via SSE event: simulation_round",
+        "Progress bar reflects round / total_rounds",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-064",
+      "title": "Display iteration convergence chart for multi-round simulations",
+      "description": "As a user, I need a convergence chart so that I can see whether the simulation iterations are converging.",
+      "definitionOfDone": "Line chart showing similarity score per iteration, updated after each iteration completes.",
+      "acceptanceCriteria": [
+        "Line chart rendered using recharts or similar library",
+        "X-axis: iteration number (1, 2, 3, ...), Y-axis: similarity score (0–1)",
+        "Data comes from GET /api/simulation/iterate/{run_id}/history",
+        "Chart updates after each iteration completes via SSE",
+        "If no iterations run, chart is hidden",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-065",
+      "title": "Implement report viewer with multi-turn chat interface",
+      "description": "As a user, I need to view the generated report and ask follow-up questions so that I can explore the simulation results.",
+      "definitionOfDone": "Report content displayed, chat input available, conversation history preserved across turns.",
+      "acceptanceCriteria": [
+        "Report content rendered as markdown (react-markdown)",
+        "Chat input at bottom of report page",
+        "User questions sent to POST /api/report/{report_id}/chat",
+        "Chat history displayed above input, role-labeled (user/assistant)",
+        "Context (run_id, simulation_id, graph_id) sent with each message",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-066",
+      "title": "Visualize agent clustering results",
+      "description": "As a user, I need to see how agents are grouped into clusters so that I understand the multi-perspective simulation structure.",
+      "definitionOfDone": "Cluster view shows agent groups with their entity types and stance labels.",
+      "acceptanceCriteria": [
+        "Cluster view accessible from pipeline dashboard after SIMULATION_RUNNING completes",
+        "Each cluster displayed as a card/panel with cluster name (e.g. 'Person-Supportive'), entity types, and agent count",
+        "GET /api/simulation/{simulation_id}/clusters returns cluster data",
+        "Clusters are color-coded by stance or entity_type",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-067",
+      "title": "Add pipeline completion/failure notifications and toast UI",
+      "description": "As a user, I need a notification when the pipeline completes or fails so that I don't have to keep watching the screen.",
+      "definitionOfDone": "Toast notification appears on pipeline completion or failure.",
+      "acceptanceCriteria": [
+        "Toast notification appears: 'Pipeline completed — report ready' (success) or 'Pipeline failed: {stage}' (error)",
+        "Success toast links to report view",
+        "Error toast shows which stage failed",
+        "Toast auto-dismisses after 8 seconds, or user can dismiss manually",
+        "If user is on a different page, notification still appears (SSE connection maintained)",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-068",
+      "title": "Allow pipeline parameter configuration before start",
+      "description": "As a user, I need to configure pipeline parameters (simulation hours, entity types, report style) before starting so that I can customize the simulation.",
+      "definitionOfDone": "Config panel visible before pipeline starts, values passed to POST /api/pipeline/start.",
+      "acceptanceCriteria": [
+        "Config panel shows: simulation_hours (slider/input, default 72), entity_types (multi-select, optional), report_style (dropdown: executive/technical/narrative), notification_webhook (optional URL input)",
+        "entity_types set to null by default (LLM auto-inference)",
+        "Config validated before submission",
+        "All values sent in POST /api/pipeline/start body.config",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+    },
+    {
+      "id": "US-069",
+      "title": "Define StrategicAgent and core data models",
+      "description": "As a developer, I need StrategicAgent, BeliefState, InterestProfile, AgentType, and related dataclasses so that the strategic simulation engine has a proper domain model.",
+      "acceptanceCriteria": [
+        "Create backend/models/strategic_agent.py",
+        "Define StrategicAgent with fields: agent_id, name, agent_type, beliefs, interests, known_facts, private_info, influence_weight, action_repertoire, credibility, relationships, coalition_members",
+        "Define BeliefState with positions, fact_beliefs, trust_levels, expectations",
+        "Define InterestProfile with primary_interests, secondary_interests, red_lines, risk_tolerance",
+        "Define AgentType enum: POLICY_MAKER, CORPORATE_EXEC, INSTITUTIONAL_INVESTOR, ANALYST, MEDIA, ADVOCACY, RATING_AGENCY, INTERNATIONAL_ORG",
+        "Define PublicPosition, Negotiation, HiddenAction dataclasses",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ models/strategic_agent.py"
+    },
+    {
+      "id": "US-070",
+      "title": "Define ActionType and StrategicAction models",
+      "description": "As a developer, I need ActionType enum and StrategicAction dataclass so that the simulation engine has a well-defined action schema for strategic decisions.",
+      "acceptanceCriteria": [
+        "Create backend/models/action_type.py",
+        "Define ActionType enum covering: public_statement (MAKE_STATEMENT, PUBLISH_REPORT, FILE_DOCUMENT), private_action (PRIVATE_MEETING, LEAK_INFORMATION, CONCEALED_TRADE), deliberative (PROPOSE_DEAL, COORDINATE_POSITION), market_action (TRADE_ASSET, ACCUMULATE_POSITION, RATING_ACTION), information (SHARE_INTEL, SPREAD_NARRATIVE), coalition (FORM_COALITION, JOIN_COALITION, LEAVE_COALITION)",
+        "Define StrategicAction dataclass with: action_type, actor_id, public_description, target_ids, private_intent, secret_terms, round_num, is_hidden, propagation_channels",
+        "Define ActionConstraints dataclass",
+        "Define ActionResult dataclass with success, public_outcome, private_outcome, belief_updates, relationship_changes",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ models/action_type.py"
+    },
+    {
+      "id": "US-071",
+      "title": "Implement BeliefEngine for belief state tracking",
+      "description": "As a developer, I need BeliefEngine to track and update each agent's belief state across simulation rounds so that agents' positions evolve based on new information.",
+      "acceptanceCriteria": [
+        "Create backend/services/belief_engine.py with BeliefEngine class",
+        "BeliefEngine.update_belief(agent_id, topic, new_value, update_source) returns BeliefUpdate",
+        "BeliefEngine.get_agent_beliefs(agent_id) returns current BeliefState",
+        "BeliefEngine.get_belief_changes(agent_id, since_round) returns List[BeliefUpdate]",
+        "BeliefEngine.check_convergence(topic, agents) returns bool",
+        "BeliefEngine.get_divergent_agents(topic, threshold) returns List[str]",
+        "Unit tests pass",
+        "Typecheck passes",
+        "Decision generation latency < 2s per agent",
+        "100 agents round latency < 30s"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ services/belief_engine.py"
+    },
+    {
+      "id": "US-072",
+      "title": "Implement StrategicConfigGenerator (SeedDocument → SimulationConfig)",
+      "description": "As a developer, I need StrategicConfigGenerator to convert SeedDocument into SimulationConfig so that the document intelligence layer feeds into the strategic simulation.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_config_generator.py",
+        "StrategicConfigGenerator.generate(seed_doc, requirement) returns SimulationConfig",
+        "_identify_stakeholders extracts AgentType, influence_weight, primary_interests from facts",
+        "_map_claims_to_positions maps claims to belief positions for each agent",
+        "_assign_private_info assigns known_facts and private_info based on agent role",
+        "_define_metrics creates OutcomeMetrics based on requirement",
+        "Unit tests pass with mocked LLM",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Code already exists, marked passes=True"
+    },
+    {
+      "id": "US-073",
+      "title": "Implement LLMDecisionEngine for agent action generation",
+      "description": "As a developer, I need LLMDecisionEngine to drive each agent's decision-making so that agents act based on their beliefs, interests, and knowledge boundaries.",
+      "acceptanceCriteria": [
+        "Create backend/services/llm_decision_engine.py with LLMDecisionEngine",
+        "LLMDecisionEngine.decide_action(agent, round_num) returns StrategicAction",
+        "System prompt includes: agent role, beliefs, interests, known_facts, available actions, current situation",
+        "Supports both strategic action types (not just social media)",
+        "Response parsed into StrategicAction with is_hidden, private_intent fields",
+        "Unit tests pass with mocked LLM",
+        "Typecheck passes",
+        "Decision generation latency < 2s per agent",
+        "100 agents round latency < 30s"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ services/llm_decision_engine.py"
+    },
+    {
+      "id": "US-074",
+      "title": "Implement SimulationLoop with async round execution",
+      "description": "As a developer, I need SimulationLoop to run the strategic simulation with async concurrent agent decision-making so that the engine replaces OASIS for strategic scenarios.",
+      "acceptanceCriteria": [
+        "Create backend/services/simulation_loop.py with SimulationLoop",
+        "SimulationLoop.run() executes N rounds of: get_active_agents -> generate_actions (async gather) -> execute_actions -> update_beliefs -> propagate_public_info",
+        "Semaphore limits concurrent LLM calls (configurable, default 30)",
+        "RoundResult captures actions, results, belief_updates, propagation_events",
+        "run() returns List[RoundResult]",
+        "get_active_agents() supports activation scheduling (not all agents act every round)",
+        "Unit tests pass",
+        "Typecheck passes",
+        "Decision generation latency < 2s per agent",
+        "100 agents round latency < 30s"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ services/simulation_loop.py"
+    },
+    {
+      "id": "US-075",
+      "title": "Implement PropagationLayer for information spread",
+      "description": "As a developer, I need PropagationLayer to model how information spreads through the agent network so that public actions reach relevant agents through appropriate channels.",
+      "acceptanceCriteria": [
+        "Create backend/services/propagation_layer.py with PropagationLayer",
+        "PropagationLayer.propagate(action, agents, config) returns PropagationEvent",
+        "Supports PropagationChannel: DIRECT, MEDIA, SOCIAL_MEDIA, MARKET_SIGNAL, RUMOR, OFFICIAL",
+        "get_agent_knowledge_boundary(agent_id, round) returns Set[str] of known facts",
+        "PropagationConfig enables/disables social_media (OASIS integration optional)",
+        "Unit tests pass",
+        "Typecheck passes",
+        "Decision generation latency < 2s per agent",
+        "100 agents round latency < 30s"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ services/propagation_layer.py"
+    },
+    {
+      "id": "US-076",
+      "title": "Implement StrategicSimulationRunner as OASIS-free entry point",
+      "description": "As a developer, I need StrategicSimulationRunner to serve as the entry point for strategic simulations so that run_strategic_simulation.py can be invoked without OASIS.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_simulation_runner.py",
+        "Holds StrategicAgent list, BeliefEngine, SimulationLoop, optional PropagationLayer",
+        "run() delegates to SimulationLoop.run()",
+        "pause(), stop(), resume(), get_status() implemented",
+        "Integrated with PRD-003 ISimulationBackend interface (as a second backend option)",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ services/strategic_simulation_runner.py"
+    },
+    {
+      "id": "US-077",
+      "title": "Create run_strategic_simulation.py entry script",
+      "description": "As an operator, I need run_strategic_simulation.py so that the strategic simulation can be launched from the command line or subprocess.",
+      "acceptanceCriteria": [
+        "Create backend/scripts/run_strategic_simulation.py",
+        "Accepts --config argument (SimulationConfig JSON path)",
+        "Supports --max-rounds to truncate long simulations",
+        "Writes actions.jsonl in same format as OASIS for compatibility with existing updater",
+        "Supports --wait mode for interactive commands post-simulation",
+        "Typecheck passes",
+        "Decision generation latency < 2s per agent",
+        "100 agents round latency < 30s"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Code already exists, marked passes=True"
+    },
+    {
+      "id": "US-078",
+      "title": "Update Pipeline Orchestrator to use StrategicSimulationRunner",
+      "description": "As a developer, I need Pipeline Orchestrator's SIMULATION_RUNNING stage to call StrategicSimulationRunner instead of OASIS-backed SimulationRunner so that the full pipeline uses the strategic engine.",
+      "acceptanceCriteria": [
+        "PipelineOrchestrator._run_simulation() calls StrategicSimulationRunner.run()",
+        "PipelineStage.SIMULATION_RUNNING routes to strategic backend",
+        "SimulationConfig is generated by StrategicConfigGenerator",
+        "BeliefEngine updates persisted to simulation state",
+        "Existing pause/resume/cancel API continues to work",
+        "Unit tests pass with mocked strategic components",
+        "Typecheck passes",
+        "Decision generation latency < 2s per agent",
+        "100 agents round latency < 30s"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Code already exists, marked passes=True"
+    },
+    {
+      "id": "US-079",
+      "title": "Define StakeholderModel for strategic actors",
+      "description": "As a developer, I need StakeholderModel to define the relationships and interests between different strategic actors (shareholders, management, board, regulators, competitors) so that the simulation models real corporate dynamics.",
+      "acceptanceCriteria": [
+        "Create backend/models/stakeholder.py with StakeholderModel dataclass",
+        "Define StakeholderType enum: SHAREHOLDER, BOARD_MEMBER, EXECUTIVE, COMPETITOR, REGULATOR, PARTNER, EMPLOYEE",
+        "Define RelationshipType enum: OWNERSHIP, CONTROL, INFLUENCE, COMPETITION, COOPERATION",
+        "Define InterestProfile with financial_goals, strategic_goals, risk_tolerance, time_horizon",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ Implemented: models/stakeholder.py"
+    },
+    {
+      "id": "US-080",
+      "title": "Implement StrategicContext with financial modeling",
+      "description": "As a developer, I need StrategicContext to model the financial and market environment so that agents can make decisions based on real economic factors.",
+      "acceptanceCriteria": [
+        "Create backend/models/strategic_context.py with StrategicContext class",
+        "Include market_indicators, sector_trends, regulatory_environment",
+        "Include financial_metrics: revenue_growth, profit_margin, valuation_multiples",
+        "Support scenario generation: bullish, baseline, bearish",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "✅ Implemented: models/strategic_context.py"
+    },
+    {
+      "id": "US-081",
+      "title": "Implement SWOTAnalysisTool for strategic assessment",
+      "description": "As a developer, I need SWOTAnalysisTool to generate SWOT analysis for strategic decisions so that the simulation can provide structured strategic insights.",
+      "acceptanceCriteria": [
+        "Create backend/tools/swot_analysis_tool.py implementing ITool",
+        "SWOTAnalysisTool.analyze(entity, context) returns SWOTResult",
+        "Integrates with LLM for analysis generation",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "✅ Implemented: tools/swot_analysis_tool.py"
+    },
+    {
+      "id": "US-082",
+      "title": "Implement PorterFiveForces tool for industry analysis",
+      "description": "As a developer, I need PorterFiveForces tool to analyze industry structure so that agents understand competitive dynamics.",
+      "acceptanceCriteria": [
+        "Create backend/tools/porter_forces_tool.py implementing ITool",
+        "Analyze: threat_of_new_entrants, bargaining_power_of_buyers, bargaining_power_of_suppliers, threat_of_substitutes, industry_rivalry",
+        "Integrates with StrategicContext for market data",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "✅ Implemented: tools/porter_forces_tool.py"
+    },
+    {
+      "id": "US-083",
+      "title": "Implement StrategicReportGenerator with decision recommendations",
+      "description": "As a developer, I need StrategicReportGenerator to generate reports with actionable strategic recommendations instead of just predictions.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_report_generator.py",
+        "StrategicReportGenerator.generate() returns StrategicReport with sections: executive_summary, situation_analysis, swot, strategic_options, recommendations, risk_assessment, implementation_roadmap",
+        "Each recommendation includes: action, rationale, expected_outcome, risks, timeline",
+        "Unit tests pass with mocked components",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Different from MiroFish report, more actionable"
+    },
+    {
+      "id": "US-084",
+      "title": "Implement ValuationModel for financial projections",
+      "description": "As a developer, I need ValuationModel to project financial outcomes of strategic decisions so that recommendations are grounded in financial impact.",
+      "acceptanceCriteria": [
+        "Create backend/services/valuation_model.py",
+        "ValuationModel.project(simulation_results, years=5) returns FinancialProjection",
+        "Methods: DCF, comparable_company_analysis, precedent_transactions",
+        "Scenario analysis: base_case, upside_case, downside_case",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "NEW - Financial foundation for strategic decisions"
+    },
+    {
+      "id": "US-085",
+      "title": "Implement DecisionOptionGenerator for strategic choices",
+      "description": "As a developer, I need DecisionOptionGenerator to generate multiple strategic options from simulation so that decision-makers have choices.",
+      "acceptanceCriteria": [
+        "Create backend/services/decision_option_generator.py",
+        "DecisionOptionGenerator.generate(context, constraints) returns List[StrategicOption]",
+        "Each option includes: name, description, resource_requirements, expected_outcomes, risks, pros_cons",
+        "Supports 'what-if' scenario exploration",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Core value-add: actionable strategic options"
+    },
+    {
+      "id": "US-086",
+      "title": "Implement RiskAssessmentMatrix for strategic risks",
+      "description": "As a developer, I need RiskAssessmentMatrix to evaluate and categorize strategic risks so that recommendations include risk-adjusted insights.",
+      "acceptanceCriteria": [
+        "Create backend/services/risk_assessment_matrix.py",
+        "RiskAssessmentMatrix.evaluate(options, context) returns List[RiskFactor] with probability, impact, mitigation_strategies",
+        "Categorize risks: strategic, operational, financial, compliance",
+        "Visualization data for frontend",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Risk-aware strategic planning"
+    },
+    {
+      "id": "US-087",
+      "title": "Implement CompetitiveResponseSimulator for rival modeling",
+      "description": "As a developer, I need CompetitiveResponseSimulator to model how competitors might respond to strategic moves so that agents anticipate reactions.",
+      "acceptanceCriteria": [
+        "Create backend/services/competitive_response_simulator.py",
+        "CompetitiveResponseSimulator.predict(our_action, competitor_profiles) returns List[ResponseScenario]",
+        "Based on competitor type: aggressive, defensive, opportunistic",
+        "Integrates with PropagationLayer for market signals",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "NEW - Strategic foresight for competitive dynamics"
+    },
+    {
+      "id": "US-088",
+      "title": "Implement StrategyBacktester for validation",
+      "description": "As a developer, I need StrategyBacktester to validate simulation predictions against historical outcomes so that the model improves over time.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategy_backtester.py",
+        "StrategyBacktester.backtest(similar_historical_case, prediction, actual_outcome) returns BacktestResult",
+        "Track prediction accuracy over time",
+        "Generate model improvement suggestions",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "NEW - Validation is critical for practical use"
+    },
+    {
+      "id": "US-089",
+      "title": "Define PublicOpinionAgent extending StrategicAgent",
+      "description": "As a developer, I need PublicOpinionAgent that extends StrategicAgent with social media behavior capabilities so that the simulation can model both strategic actors and public opinion.",
+      "acceptanceCriteria": [
+        "Create backend/models/public_opinion_agent.py extending StrategicAgent",
+        "Add fields: sentiment, influence_score, social_reach, platform_preference",
+        "AgentType includes: 普通用户, 大V, 媒体账号, 行业KOL",
+        "Supports Twitter/Reddit behavior modeling",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "NEW - Extends StrategicAgent for social media simulation"
+    },
+    {
+      "id": "US-090",
+      "title": "Implement SocialMediaPropagationLayer",
+      "description": "As a developer, I need SocialMediaPropagationLayer to model how information spreads on Twitter and Reddit so that strategic execution can be simulated in social media context.",
+      "acceptanceCriteria": [
+        "Create backend/services/social_media_propagation.py",
+        "Simulate tweet/repost chains, reddit post/comment threads",
+        "Model viral spread factors: follower count, sentiment, timing",
+        "Support both organic spread and paid amplification",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "NEW - Replaces OASIS Twitter/Reddit simulation"
+    },
+    {
+      "id": "US-091",
+      "title": "Implement SentimentTracker for opinion dynamics",
+      "description": "As a developer, I need SentimentTracker to track sentiment changes over time so that the simulation can predict public opinion shifts.",
+      "acceptanceCriteria": [
+        "Create backend/services/sentiment_tracker.py",
+        "Track sentiment: positive, negative, neutral, mixed",
+        "Calculate sentiment momentum and velocity",
+        "Identify key turning points",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "NEW - Sentiment tracking for public opinion"
+    },
+    {
+      "id": "US-092",
+      "title": "Implement OpinionReportGenerator for public sentiment reports",
+      "description": "As a developer, I need OpinionReportGenerator to generate reports predicting public sentiment impact so that strategic decisions include social media risk assessment.",
+      "acceptanceCriteria": [
+        "Create backend/services/opinion_report_generator.py",
+        "Generate sentiment timeline predictions",
+        "Identify key influencers and their potential impact",
+        "Recommend mitigation strategies for negative sentiment",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "NEW - Report for strategic execution prediction"
+    },
+    {
+      "id": "US-093",
+      "title": "Add hybrid simulation mode to PipelineOrchestrator",
+      "description": "As a developer, I need PipelineOrchestrator to support hybrid mode where strategic actors and public opinion agents interact in the same simulation.",
+      "acceptanceCriteria": [
+        "PipelineOrchestrator supports mode: strategic_only, opinion_only, hybrid",
+        "Hybrid mode: strategic actions trigger public opinion responses",
+        "Both agent types can be simulated in same Pipeline",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Combines strategic + opinion simulation"
+    },
+    {
+      "id": "US-094",
+      "title": "Implement StrategicImpactPredictor combining both outputs",
+      "description": "As a developer, I need StrategicImpactPredictor to combine strategic recommendations with public opinion predictions so that decisions account for social impact.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_impact_predictor.py",
+        "Combine: strategic recommendations + sentiment predictions",
+        "Generate impact score with confidence intervals",
+        "Identify risks from negative public sentiment",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Final output for strategic execution scenario"
+    },
+    {
+      "id": "US-095",
+      "title": "Define StrategicAction for recording agent decisions",
+      "description": "As a developer, I need StrategicAction to represent agent decisions that are recorded to the graph during simulation, following MiroFish pattern of recording actions then inferring effects later.",
+      "acceptanceCriteria": [
+        "Create backend/models/strategic_action_result.py",
+        "StrategicActionResult contains: action, direct_effects (belief changes), delayed_effects (metrics changes), public_reactions",
+        "Effects are generated by LLM based on action context, not hardcoded rules",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "SIMPLIFIED - MiroFish style: record actions, infer effects in Report stage"
+    },
+    {
+      "id": "US-096",
+      "title": "Implement ActionRecorder for graph updates during simulation",
+      "description": "As a developer, I need ActionRecorder to record agent actions to the graph during simulation, following MiroFish pattern of recording behavior facts for later analysis.",
+      "acceptanceCriteria": [
+        "Create backend/services/business_metrics_tracker.py",
+        "BusinessMetricsTracker.update(action_results, market_context) → new_metrics",
+        "Metrics changes emerge from Agent behavior (e.g., 'executive announces cost cut → market reacts → metrics change')",
+        "LLM determines metric changes based on action context, not hardcoded rules",
+        "Track metrics: revenue_outlook, profit_margin_outlook, market_sentiment, competitive_position",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "SIMPLIFIED - MiroFish style: record actions to graph, not calculate metrics"
+    },
+    {
+      "id": "US-097",
+      "title": "Implement ExternalShockSimulator for market dynamics",
+      "description": "As a developer, I need ExternalShockSimulator to inject external events (competitor moves, regulatory changes, market shifts) that affect the simulation, similar to how MiroFish seeds events.",
+      "acceptanceCriteria": [
+        "Create backend/services/external_shock_simulator.py",
+        "ExternalShockSimulator.inject_shock(context, probability) → shock_event or None",
+        "Pre-defined shock templates: NEW_COMPETITOR, REGULATORY_CHANGE, MARKET_SHIFT, SUPPLY_CHAIN_DISRUPTION",
+        "Shocks affect Agent beliefs and trigger new actions",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Adds dynamism to simulation, like MiroFish's event injection"
+    },
+    {
+      "id": "US-098",
+      "title": "Integrate ActionRecorder into SimulationLoop",
+      "description": "As a developer, I need SimulationLoop to include ActionRecorder so that agent actions are recorded to the graph during each round, enabling post-simulation analysis.",
+      "acceptanceCriteria": [
+        "Modify SimulationLoop steps: generate_actions → execute_actions → track_outcomes → update_metrics → inject_shocks → propagate_effects",
+        "Metrics updates based on action results, not formulas",
+        "External shocks inject periodically or based on probability",
+        "All existing tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "FOCUS CHANGE: Record actions, don't calculate metrics"
+    },
+    {
+      "id": "US-099",
+      "title": "Implement StrategicOutcomeReportGenerator for final output",
+      "description": "As a developer, I need StrategicOutcomeReportGenerator to generate reports that include both belief evolution and business outcome projections, following MiroFish's report structure.",
+      "acceptanceCriteria": [
+        "Create backend/services/strategic_outcome_report_generator.py",
+        "Report sections: executive_summary, strategic_actions_timeline, belief_evolution, business_metrics_projection, key_insights, strategic_recommendations",
+        "Business metrics presented as projections with confidence intervals",
+        "Timeline of key strategic actions and their observed effects",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "Final output, like MiroFish's prediction report"
+    },
+    {
+      "id": "US-100",
+      "title": "Implement StakeholderRelationshipMap visualization",
+      "description": "As a user, I need to visualize the relationships between strategic stakeholders so that I can understand the power dynamics and interest alignment.",
+      "definitionOfDone": "Interactive force-directed graph showing stakeholder relationships with types, influence weights, and coalition structures.",
+      "acceptanceCriteria": [
+        "Force-directed graph rendered using D3.js or react-force-graph",
+        "Nodes represent agents, colored by AgentType",
+        "Edges represent relationships with RelationshipType labels",
+        "Edge thickness proportional to influence_weight",
+        "Coalition clusters highlighted with background shading",
+        "GET /api/simulation/{id}/stakeholders returns graph data",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "NEW - Strategic-specific visualization, not in MiroFish"
+    },
+    {
+      "id": "US-101",
+      "title": "Implement StrategicDecisionTree visualization",
+      "description": "As a user, I need to see the decision tree of strategic options so that I can understand the branching possibilities and outcomes.",
+      "definitionOfDone": "Tree diagram showing decision nodes, branches, probabilities, and projected outcomes.",
+      "acceptanceCriteria": [
+        "Decision tree rendered with branching paths",
+        "Each node shows: decision_point, options, expected_outcome",
+        "Probability annotations on branches",
+        "Color coding by outcome type (positive/negative/neutral)",
+        "GET /api/strategic/decisions/{simulation_id} returns tree data",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Strategic decision visualization"
+    },
+    {
+      "id": "US-102",
+      "title": "Implement RiskAssessmentMatrix heatmap",
+      "description": "As a user, I need to see a risk matrix visualization so that I can understand the risk profile of strategic options.",
+      "definitionOfDone": "5x5 heatmap showing probability vs impact with risk factors positioned accordingly.",
+      "acceptanceCriteria": [
+        "5x5 grid rendered (probability x impact)",
+        "Risk factors positioned based on RiskAssessmentMatrix output",
+        "Color gradient: green (low) to red (high)",
+        "Hover shows: risk_name, probability, impact, mitigation_strategies",
+        "GET /api/strategic/risks/{simulation_id} returns matrix data",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "NEW - Risk visualization for strategic decisions"
+    },
+    {
+      "id": "US-103",
+      "title": "Implement ValuationCharts for financial projections",
+      "description": "As a user, I need to see financial projection charts so that I can visualize the business impact of strategic decisions.",
+      "definitionOfDone": "Line charts showing DCF projections, comparable analysis, and scenario comparisons.",
+      "acceptanceCriteria": [
+        "DCF projection line chart (5-year forecast)",
+        "Three scenarios: base_case, upside_case, downside_case",
+        "Interactive tooltips with detailed values",
+        "Recharts or chart.js implementation",
+        "GET /api/strategic/valuation/{simulation_id} returns projection data",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "NEW - Financial visualization for strategic planning"
+    },
+    {
+      "id": "US-104",
+      "title": "Implement BeliefEvolutionChart for belief tracking",
+      "description": "As a user, I need to see how agent beliefs evolve across simulation rounds so that I can track the dynamics of strategic positioning.",
+      "definitionOfDone": "Multi-line chart showing belief positions over time for key agents.",
+      "acceptanceCriteria": [
+        "Line chart with X-axis: round number, Y-axis: belief position",
+        "Multiple lines for different agents or topics",
+        "Highlight convergence/divergence points",
+        "GET /api/simulation/{id}/beliefs returns evolution data",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "NEW - Belief tracking visualization"
+    }
+  ],
+  "executionPhases": [
+    {
+      "phase": 1,
+      "name": "基础设施",
+      "description": "接口抽象 + 配置管理 + 核心接口定义",
+      "prds": [
+        "PRD-002",
+        "PRD-001-part1"
+      ],
+      "status": "current",
+      "keyDeliverable": "接口抽象层（IGraphStore, ILLMProvider, ISimulationBackend）+ 配置管理",
+      "estimatedTime": "1-2 周"
+    },
+    {
+      "phase": 2,
+      "name": "Graph RAG 核心",
+      "description": "EntityExtractor + LocalKnowledgeStore + GraphBuilderService",
+      "prds": [
+        "PRD-001",
+        "PRD-003",
+        "PRD-007"
+      ],
+      "status": "pending",
+      "keyDeliverable": "EntityExtractor + LocalKnowledgeStore + GraphBuilderService",
+      "estimatedTime": "2-3 周"
+    },
+    {
+      "phase": "2.5",
+      "name": "战略规划核心 (NEW)",
+      "description": "新增战略规划专用组件：利益相关者建模、财务模型、战略分析工具",
+      "keyDeliverable": "StakeholderModel + StrategicContext + SWOT + Porter5Forces + Valuation",
+      "prds": [
+        "US-079",
+        "US-080",
+        "US-081",
+        "US-082",
+        "US-084",
+        "US-085",
+        "US-086",
+        "US-087"
+      ],
+      "status": "new"
+    },
+    {
+      "phase": "3.5",
+      "name": "舆情推演扩展",
+      "description": "支持类 MiroFish 的社交媒体传播模拟",
+      "keyDeliverable": "PublicOpinionAgent + SocialMediaPropagation + SentimentTracker + OpinionReportGenerator",
+      "prds": [
+        "US-089",
+        "US-090",
+        "US-091",
+        "US-092",
+        "US-093",
+        "US-094"
+      ],
+      "status": "new",
+      "optional": true,
+      "note": "用于战略执行预测场景，如不需要可跳过"
+    },
+    {
+      "phase": "4.5",
+      "name": "经营影响模拟 (CORE)",
+      "description": "核心经营影响模拟：战略行动→业务指标→财务预测",
+      "keyDeliverable": "BusinessMetricsTracker + ExternalShockSimulator + StrategicOutcomeReport",
+      "prds": [
+        "US-095",
+        "US-096",
+        "US-097",
+        "US-098",
+        "US-099"
+      ],
+      "status": "new",
+      "note": "这是 StrategicMind 与 MiroFish 的本质区别 - 必须追踪实际经营影响"
+    },
+    {
+      "phase": 3,
+      "name": "战略模拟引擎",
+      "description": "BeliefEngine + DecisionEngine + SimulationLoop + PropagationLayer",
+      "prds": [
+        "PRD-010",
+        "PRD-007"
+      ],
+      "status": "pending",
+      "keyDeliverable": "战略模拟引擎核心（BeliefEngine + SimulationLoop）",
+      "estimatedTime": "2-3 周"
+    },
+    {
+      "phase": 4,
+      "name": "Profile与配置生成",
+      "description": "StrategicProfileGenerator + StrategicConfigGenerator",
+      "prds": [
+        "PRD-004",
+        "PRD-005"
+      ],
+      "status": "pending",
+      "keyDeliverable": "StrategicProfileGenerator + StrategicConfigGenerator",
+      "estimatedTime": "1-2 周"
+    },
+    {
+      "phase": 5,
+      "name": "Pipeline集成",
+      "description": "PipelineOrchestrator + API层 + 前端",
+      "prds": [
+        "PRD-009",
+        "PRD-006",
+        "PRD-008"
+      ],
+      "status": "pending",
+      "keyDeliverable": "端到端 Pipeline + API + 前端",
+      "estimatedTime": "2-3 周"
+    },
+    {
+      "phase": "total",
+      "name": "预计总工期",
+      "estimatedTime": "8-13 周",
+      "note": "取决于团队规模和优先级"
+    }
+  ],
+  "focus": "A股/公司战略规划推演",
+  "replaces": [
+    "MiroFish - 通用社交舆论模拟"
+  ],
+  "techStack": {
+    "graphRAG": {
+      "storage": "nano-graphRAG",
+      "extraction": "LLM Entity Extraction Layer (自研)",
+      "retrieval": "nano-graphRAG hybrid search"
+    },
+    "simulation": {
+      "framework": "自研 (基于 OASIS 循环框架但重写核心)",
+      "agents": "StrategicAgent with BeliefEngine",
+      "propagation": "Multi-channel propagation (DIRECT/MEDIA/SOCIAL/MARKET)"
+    },
+    "llm": {
+      "primary": "Ollama Qwen2.5-72B (本地)",
+      "fallback": "Bailian Qwen-plus (云端)"
+    },
+    "backend": "Flask + asyncio",
+    "frontend": "React + Vite + TypeScript"
+  },
+  "quickStart": {
+    "prerequisites": [
+      "Python 3.11+",
+      "Node.js 18+",
+      "Ollama (本地模型)",
+      "8GB+ RAM"
+    ],
+    "steps": [
+      "1. pip install -r requirements.txt",
+      "2. ollama pull qwen2.5",
+      "3. cp .env.example .env && 编辑配置",
+      "4. python backend/run.py",
+      "5. npm run dev (前端)"
+    ]
+  },
+  "stats": {
+    "totalUS": 104,
+    "completed": 42,
+    "pending": 62,
+    "completionRate": "40.4%"
+  },
+  "dependencyGraph": {
+    "US-001 (IGraphStore)": [
+      "US-007",
+      "US-008"
+    ],
+    "US-002 (ILLMProvider)": [
+      "US-003",
+      "US-004",
+      "US-005"
+    ],
+    "US-003 (EntityExtractor)": [
+      "US-021",
+      "US-007"
+    ],
+    "US-007 (GraphBuilderService)": [
+      "US-022",
+      "US-029"
+    ],
+    "US-019 (StrategicProfileGenerator)": [
+      "US-069",
+      "US-070"
+    ],
+    "US-071 (BeliefEngine)": [
+      "US-073",
+      "US-075"
+    ],
+    "US-074 (SimulationLoop)": [
+      "US-073",
+      "US-075",
+      "US-076"
+    ],
+    "US-076 (StrategicSimulationRunner)": [
+      "US-077"
+    ],
+    "US-050 (PipelineOrchestrator)": [
+      "US-051",
+      "US-078"
+    ]
+  },
+  "strategicFocus": {
+    "whatIsNew": [
+      "利益相关者建模 (StakeholderModel)",
+      "财务预测与估值 (ValuationModel)",
+      "战略分析工具 (SWOT, Porter5Forces)",
+      "竞争响应模拟 (CompetitiveResponseSimulator)",
+      "决策选项生成 (DecisionOptionGenerator)",
+      "风险矩阵评估 (RiskAssessmentMatrix)",
+      "回测验证 (StrategyBacktester)"
+    ],
+    "whatIsDifferent": [
+      "不是社媒舆情模拟，是战略规划推演",
+      "不是预测舆论走向，是生成战略决策建议",
+      "不是通用Agent，是专业化战略角色",
+      "不是情绪分析，是利益与信念追踪"
+    ],
+    "comparisonWithMiroFish": {
+      "similar": [
+        "Pipeline架构",
+        "图谱构建流程",
+        "Agent Profile生成",
+        "多轮迭代"
+      ],
+      "different": [
+        "模拟目的",
+        "Agent类型",
+        "传播模型",
+        "报告内容",
+        "核心工具集"
+      ],
+      "notComparable": "两者面向不同场景，一个是舆情预测，一个是战略规划"
+    },
+    "scenarios": [
+      {
+        "name": "战略规划推演",
+        "agents": [
+          "战略角色"
+        ],
+        "output": "战略建议报告",
+        "status": "core"
+      },
+      {
+        "name": "战略执行预测",
+        "agents": [
+          "战略角色",
+          "舆情角色"
+        ],
+        "output": "舆论影响报告",
+        "status": "extension",
+        "prds": [
+          "US-089",
+          "US-090",
+          "US-091",
+          "US-092",
+          "US-093",
+          "US-094"
+        ]
+      }
+    ]
+  },
+  "supportedScenarios": {
+    "strategicPlanning": {
+      "name": "战略规划推演",
+      "description": "模拟多方博弈，生成战略决策建议",
+      "agents": [
+        "战略角色"
+      ],
+      "output": "战略建议报告"
+    },
+    "strategicExecutionPrediction": {
+      "name": "战略执行预测（类MiroFish）",
+      "description": "模拟公司战略在社交媒体的传播和舆论影响",
+      "agents": [
+        "战略角色",
+        "社交媒体角色"
+      ],
+      "output": "舆论影响预测报告",
+      "reuseMiroFishComponents": true
+    }
+  },
+  "coreDifference": {
+    "mirofish": {
+      "tracks": [
+        "beliefs",
+        "sentiments",
+        "opinions",
+        "social传播"
+      ],
+      "output": "舆论预测报告",
+      "missing": "实际业务影响"
+    },
+    "strategicmind": {
+      "tracks": [
+        "beliefs",
+        "actions",
+        "business_metrics_emerge",
+        "external_shocks"
+      ],
+      "output": "战略决策建议 + 业务影响推演报告",
+      "keyAddition": "业务指标从 Agent 行为中涌现，而非预设公式计算"
+    },
+    "theGap": "没有经营影响模拟，系统只是在追踪'大家怎么想'，无法回答'公司会怎么样'的问题"
+  },
+  "coreDesign": {
+    "philosophy": "基于行为的推演，而非数学建模",
+    "mirofishInsight": "Agent行为 → 事实涌现 → 报告预测",
+    "ourApproach": "战略行动 → Agent行为 → 业务影响推演 → 战略建议",
+    "keyDifference": "MiroFish追踪社交行为，我们追踪战略行为及业务影响"
+  }
+}
