@@ -13,25 +13,37 @@ from typing import Optional, List
 from dotenv import load_dotenv
 
 
-@dataclass
 class Config:
-    """Application configuration"""
+    """Application configuration - reads env vars lazily for UPLOAD_FOLDER.
+
+    Most fields are set at load time. UPLOAD_FOLDER is a property so tests
+    and runtime code can override it via the UPLOAD_FOLDER env var without
+    having to reload the entire module.
+    """
     SECRET_KEY: str = "strategicmind-secret-key"
     DEBUG: bool = True
     
     # LLM Configuration
-    LLM_API_KEY: Optional[str] = None
+    LLM_API_KEY = None
     LLM_BASE_URL: str = "https://api.openai.com/v1"
     LLM_MODEL_NAME: str = "qwen-plus"
     
     # Graph Store Configuration (Zep is OPTIONAL)
     GRAPH_STORE_PROVIDER: str = "local"  # local or zep
-    ZEP_API_KEY: Optional[str] = None  # Only required when provider=zep
+    ZEP_API_KEY = None  # Only required when provider=zep
     
     # File Upload Configuration
     MAX_CONTENT_LENGTH: int = 50 * 1024 * 1024
-    UPLOAD_FOLDER: str = "./uploads"
-    ALLOWED_EXTENSIONS: tuple = ('pdf', 'md', 'txt', 'markdown')
+    _UPLOAD_FOLDER_DEFAULT: str = "./uploads"
+    ALLOWED_EXTENSIONS = ('pdf', 'md', 'txt', 'markdown')
+
+    @property
+    def UPLOAD_FOLDER(self) -> str:  # type: ignore[override]
+        return os.environ.get("UPLOAD_FOLDER", self._UPLOAD_FOLDER_DEFAULT)
+
+    @UPLOAD_FOLDER.setter
+    def UPLOAD_FOLDER(self, value: str) -> None:
+        self._UPLOAD_FOLDER_DEFAULT = value
     
     # Simulation Configuration
     SIMULATION_MAX_ROUNDS: int = 10
@@ -72,6 +84,10 @@ def load_config() -> Config:
     config.LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', config.LLM_MODEL_NAME)
     config.GRAPH_STORE_PROVIDER = os.environ.get('GRAPH_STORE_PROVIDER', 'local')
     config.ZEP_API_KEY = os.environ.get('ZEP_API_KEY')  # Optional
+    # File upload directory (allow override for tests / non-default deploys)
+    env_upload = os.environ.get('UPLOAD_FOLDER')
+    if env_upload:
+        config.UPLOAD_FOLDER = env_upload
     return config
 
 

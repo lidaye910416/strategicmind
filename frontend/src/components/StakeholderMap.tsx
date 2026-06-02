@@ -2,7 +2,7 @@
  * StakeholderRelationshipMap - Force-directed graph of stakeholders
  * Implements: US-100
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import api from '../services/api'
 
 interface Stakeholder {
@@ -19,16 +19,15 @@ interface Props {
 
 export default function StakeholderMap({ simulationId }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [stakeholders, setStakeholders] = useState<Stakeholder[]>([])
 
   useEffect(() => {
     loadStakeholders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simulationId])
 
   const loadStakeholders = async () => {
     try {
       const response = await api.get(`/simulation/${simulationId}/stakeholders`)
-      setStakeholders(response.data.stakeholders || [])
       drawGraph(response.data.stakeholders || [])
     } catch (error) {
       console.error('Failed to load stakeholders:', error)

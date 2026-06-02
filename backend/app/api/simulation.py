@@ -9,14 +9,14 @@ from flask import Blueprint, request, jsonify
 import uuid
 import asyncio
 
-from .config import config
-from ..services.simulation_runner import SimulationRunner
-from ..services.strategic_backend import StrategicBackend
-from ..services.simulation_state_manager import SimulationStateManager, RunState
-from ..services.simulation_ipc import SimulationIPC
-from ..services.local_knowledge_store import LocalKnowledgeStore
-from ..services.local_graph_store import LocalGraphStore
-from ..adapters.bailian_adapter import BailianAdapter
+from ..config import config
+from backend.services.simulation_runner import SimulationRunner
+from backend.services.strategic_backend import StrategicBackend
+from backend.services.simulation_state_manager import SimulationStateManager, RunState
+from backend.services.simulation_ipc import SimulationIPC
+from backend.services.local_knowledge_store import LocalKnowledgeStore
+from backend.services.local_graph_store import LocalGraphStore
+from backend.adapters.bailian_adapter import BailianAdapter
 
 simulation_bp = Blueprint('simulation', __name__, url_prefix='/api/simulation')
 

@@ -5,8 +5,9 @@ Implements US-035 (refactored to use ITool)
 """
 
 from typing import List, Dict, Any, Optional
-from ..interfaces.tool import ITool, ToolResult
-from ..interfaces.llm_provider import ILLMProvider
+
+from backend.interfaces.tool import ITool, ToolResult
+from backend.interfaces.llm_provider import ILLMProvider
 
 
 class ReportAgent:

@@ -13,6 +13,11 @@ from typing import List, Dict, Any, Optional
 from ..interfaces.llm_provider import ILLMProvider
 
 
+class LLMError(Exception):
+    """Raised when an LLM adapter call fails."""
+    pass
+
+
 class OllamaAdapter(ILLMProvider):
     """
     Local Ollama server adapter implementing ILLMProvider.

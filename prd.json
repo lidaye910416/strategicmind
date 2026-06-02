@@ -50,7 +50,8 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "✅ Implemented: interfaces/graph_store.py"
+      "notes": "✅ Implemented: interfaces/graph_store.py",
+      "status": "implemented"
     },
     {
       "id": "US-002",
@@ -64,7 +65,8 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "✅ Implemented: interfaces/llm_provider.py"
+      "notes": "✅ Implemented: interfaces/llm_provider.py",
+      "status": "implemented"
     },
     {
       "id": "US-003",
@@ -82,7 +84,8 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "✅ Implemented: services/entity_extractor.py"
+      "notes": "✅ Implemented: services/entity_extractor.py",
+      "status": "implemented"
     },
     {
       "id": "US-004",
@@ -97,7 +100,8 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "✅ Implemented: adapters/bailian_adapter.py"
+      "notes": "✅ Implemented: adapters/bailian_adapter.py",
+      "status": "implemented"
     },
     {
       "id": "US-005",
@@ -112,7 +116,8 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "✅ Implemented: adapters/ollama_adapter.py"
+      "notes": "✅ Implemented: adapters/ollama_adapter.py",
+      "status": "implemented"
     },
     {
       "id": "US-006",
@@ -127,7 +132,8 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "✅ Implemented: config/manager.py"
+      "notes": "✅ Implemented: config/manager.py",
+      "status": "implemented"
     },
     {
       "id": "US-007",
@@ -142,7 +148,8 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "✅ Implemented: services/service_factory.py"
+      "notes": "✅ Implemented: services/service_factory.py",
+      "status": "implemented"
     },
     {
       "id": "US-008",
@@ -156,7 +163,8 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "✅ Implemented: backend/services/zep_tools_service.py with 4 passing tests"
+      "notes": "✅ Implemented: backend/services/zep_tools_service.py with 4 passing tests",
+      "status": "implemented"
     },
     {
       "id": "US-009",
@@ -171,7 +179,8 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "✅ Implemented: services/service_factory.py"
+      "notes": "✅ Implemented: services/service_factory.py",
+      "status": "implemented"
     },
     {
       "id": "US-010",
@@ -186,7 +195,8 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "✅ Implemented: tests/mocks/mock_graph_store.py + mock_llm_provider.py"
+      "notes": "✅ Implemented: tests/mocks/mock_graph_store.py + mock_llm_provider.py",
+      "status": "implemented"
     },
     {
       "id": "US-011",
@@ -200,7 +210,8 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "✅ Implemented: interfaces/simulation_backend.py"
+      "notes": "✅ Implemented: interfaces/simulation_backend.py",
+      "status": "implemented"
     },
     {
       "id": "US-012",
@@ -215,7 +226,8 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "✅ Implemented: services/strategic_backend.py"
+      "notes": "✅ Implemented: services/strategic_backend.py",
+      "status": "implemented"
     },
     {
       "id": "US-013",
@@ -231,7 +243,8 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "✅ Implemented: services/simulation_state_manager.py"
+      "notes": "✅ Implemented: services/simulation_state_manager.py",
+      "status": "implemented"
     },
     {
       "id": "US-014",
@@ -246,7 +259,8 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "✅ Implemented: services/simulation_ipc.py"
+      "notes": "✅ Implemented: services/simulation_ipc.py",
+      "status": "implemented"
     },
     {
       "id": "US-015",
@@ -261,7 +275,8 @@
       ],
       "priority": 5,
       "passes": true,
-      "notes": "✅ Implemented: services/action_parser.py"
+      "notes": "✅ Implemented: services/action_parser.py",
+      "status": "implemented"
     },
     {
       "id": "US-016",
@@ -276,7 +291,8 @@
       ],
       "priority": 5,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-017",
@@ -290,7 +306,8 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "✅ Implemented: models/entity.py"
+      "notes": "✅ Implemented: models/entity.py",
+      "status": "implemented"
     },
     {
       "id": "US-018",
@@ -304,7 +321,8 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "✅ Implemented: interfaces/knowledge_store.py"
+      "notes": "✅ Implemented: interfaces/knowledge_store.py",
+      "status": "implemented"
     },
     {
       "id": "US-019",
@@ -321,7 +339,8 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "RENAME from LocalProfileGenerator - generates StrategicAgent, not OasisAgentProfile. Key difference from MiroFish social simulation."
+      "notes": "RENAME from LocalProfileGenerator - generates StrategicAgent, not OasisAgentProfile. Key difference from MiroFish social simulation.",
+      "status": "stub"
     },
     {
       "id": "US-020",
@@ -337,7 +356,8 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-021",
@@ -353,7 +373,8 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "✅ Implemented: services/local_knowledge_store.py"
+      "notes": "✅ Implemented: services/local_knowledge_store.py",
+      "status": "implemented"
     },
     {
       "id": "US-022",
@@ -368,7 +389,8 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-023",
@@ -383,7 +405,8 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-024",
@@ -396,7 +419,8 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "implemented"
     },
     {
       "id": "US-025",
@@ -410,7 +434,8 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "✅ models/seed_document.py"
+      "notes": "✅ models/seed_document.py",
+      "status": "implemented"
     },
     {
       "id": "US-026",
@@ -425,7 +450,8 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "✅ services/semantic_chunker.py"
+      "notes": "✅ services/semantic_chunker.py",
+      "status": "implemented"
     },
     {
       "id": "US-027",
@@ -441,7 +467,8 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "✅ Implemented: services/document_intelligence.py"
+      "notes": "✅ Implemented: services/document_intelligence.py",
+      "status": "implemented"
     },
     {
       "id": "US-028",
@@ -457,7 +484,8 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "backend/services/knowledge_enricher.py created with pluggable IKnowledgeSource"
+      "notes": "backend/services/knowledge_enricher.py created with pluggable IKnowledgeSource",
+      "status": "implemented"
     },
     {
       "id": "US-029",
@@ -471,7 +499,8 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "backend/app/api/graph.py stub - full impl needs PRD-001 services; SeedDocument pipeline wired"
+      "notes": "backend/app/api/graph.py stub - full impl needs PRD-001 services; SeedDocument pipeline wired",
+      "status": "implemented"
     },
     {
       "id": "US-030",
@@ -485,7 +514,8 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "✅ Implemented: interfaces/tool.py"
+      "notes": "✅ Implemented: interfaces/tool.py",
+      "status": "implemented"
     },
     {
       "id": "US-031",
@@ -500,7 +530,8 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "✅ Implemented: models/ontology_schema.py"
+      "notes": "✅ Implemented: models/ontology_schema.py",
+      "status": "implemented"
     },
     {
       "id": "US-032",
@@ -515,7 +546,8 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "✅ Implemented: tools/search_tool.py"
+      "notes": "✅ Implemented: tools/search_tool.py",
+      "status": "implemented"
     },
     {
       "id": "US-033",
@@ -530,7 +562,8 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "✅ Implemented: tools/graph_query_tool.py"
+      "notes": "✅ Implemented: tools/graph_query_tool.py",
+      "status": "implemented"
     },
     {
       "id": "US-034",
@@ -545,7 +578,8 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "✅ Implemented: tools/entity_insert_tool.py"
+      "notes": "✅ Implemented: tools/entity_insert_tool.py",
+      "status": "implemented"
     },
     {
       "id": "US-035",
@@ -560,7 +594,8 @@
       ],
       "priority": 10,
       "passes": true,
-      "notes": "✅ Implemented: app/agents/report_agent.py"
+      "notes": "✅ Implemented: app/agents/report_agent.py",
+      "status": "implemented"
     },
     {
       "id": "US-036",
@@ -575,7 +610,8 @@
       ],
       "priority": 10,
       "passes": true,
-      "notes": "backend/app/api/graph.py stub with IKnowledgeStore interface notes"
+      "notes": "backend/app/api/graph.py stub with IKnowledgeStore interface notes",
+      "status": "implemented"
     },
     {
       "id": "US-037",
@@ -589,7 +625,8 @@
       ],
       "priority": 10,
       "passes": true,
-      "notes": "backend/app/api/simulation.py - uses IEntityReader interface (stubs in place of Zep)"
+      "notes": "backend/app/api/simulation.py - uses IEntityReader interface (stubs in place of Zep)",
+      "status": "implemented"
     },
     {
       "id": "US-038",
@@ -605,7 +642,8 @@
       ],
       "priority": 11,
       "passes": true,
-      "notes": "backend/services/async_profile_generator.py asyncio.Semaphore batch gen"
+      "notes": "backend/services/async_profile_generator.py asyncio.Semaphore batch gen",
+      "status": "implemented"
     },
     {
       "id": "US-039",
@@ -621,7 +659,8 @@
       ],
       "priority": 11,
       "passes": true,
-      "notes": "backend/services/llm_request_queue.py global rate limiting with persistence"
+      "notes": "backend/services/llm_request_queue.py global rate limiting with persistence",
+      "status": "implemented"
     },
     {
       "id": "US-040",
@@ -638,7 +677,8 @@
       ],
       "priority": 11,
       "passes": true,
-      "notes": "backend/services/graph_query_cache.py 5-min TTL caching layer"
+      "notes": "backend/services/graph_query_cache.py 5-min TTL caching layer",
+      "status": "implemented"
     },
     {
       "id": "US-041",
@@ -654,7 +694,8 @@
       ],
       "priority": 11,
       "passes": true,
-      "notes": "backend/services/agent_config_shard.py sharded config loader"
+      "notes": "backend/services/agent_config_shard.py sharded config loader",
+      "status": "implemented"
     },
     {
       "id": "US-042",
@@ -669,7 +710,8 @@
       ],
       "priority": 12,
       "passes": true,
-      "notes": "backend/services/async_simulation_rounds.py asyncio.gather round execution + pipeline mode"
+      "notes": "backend/services/async_simulation_rounds.py asyncio.gather round execution + pipeline mode",
+      "status": "stub"
     },
     {
       "id": "US-043",
@@ -684,7 +726,8 @@
       ],
       "priority": 12,
       "passes": true,
-      "notes": "backend/benchmark/100_agent.py + 1000_agent.py benchmarks created"
+      "notes": "backend/benchmark/100_agent.py + 1000_agent.py benchmarks created",
+      "status": "implemented"
     },
     {
       "id": "US-044",
@@ -700,7 +743,8 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "backend/services/iterative_simulation_engine.py simulate->report->gap->supplement loop"
+      "notes": "backend/services/iterative_simulation_engine.py simulate->report->gap->supplement loop",
+      "status": "implemented"
     },
     {
       "id": "US-045",
@@ -716,7 +760,8 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "backend/services/agent_clustering.py multi-perspective clustering"
+      "notes": "backend/services/agent_clustering.py multi-perspective clustering",
+      "status": "implemented"
     },
     {
       "id": "US-046",
@@ -732,7 +777,8 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "backend/services/report_gap_analyzer.py LLM gap detection + supplement gen"
+      "notes": "backend/services/report_gap_analyzer.py LLM gap detection + supplement gen",
+      "status": "implemented"
     },
     {
       "id": "US-047",
@@ -747,7 +793,8 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "backend/services/simulation_comparator.py multi-round comparison"
+      "notes": "backend/services/simulation_comparator.py multi-round comparison",
+      "status": "implemented"
     },
     {
       "id": "US-048",
@@ -764,7 +811,8 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "backend/services/dynamic_agent_sampler.py adaptive sampling"
+      "notes": "backend/services/dynamic_agent_sampler.py adaptive sampling",
+      "status": "implemented"
     },
     {
       "id": "US-049",
@@ -778,7 +826,8 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "backend/app/api/simulation.py start_iterate() + get_iterate_status() implemented"
+      "notes": "backend/app/api/simulation.py start_iterate() + get_iterate_status() implemented",
+      "status": "implemented"
     },
     {
       "id": "US-050",
@@ -793,7 +842,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented: app/api/pipeline.py"
+      "notes": "✅ Implemented: app/api/pipeline.py",
+      "status": "implemented"
     },
     {
       "id": "US-051",
@@ -812,7 +862,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented: app/api/pipeline.py"
+      "notes": "✅ Implemented: app/api/pipeline.py",
+      "status": "implemented"
     },
     {
       "id": "US-052",
@@ -827,7 +878,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented: app/api/pipeline.py"
+      "notes": "✅ Implemented: app/api/pipeline.py",
+      "status": "implemented"
     },
     {
       "id": "US-053",
@@ -842,7 +894,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented: app/api/pipeline.py"
+      "notes": "✅ Implemented: app/api/pipeline.py",
+      "status": "implemented"
     },
     {
       "id": "US-054",
@@ -857,7 +910,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-055",
@@ -872,7 +926,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-056",
@@ -887,7 +942,8 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-057",
@@ -902,7 +958,8 @@
       ],
       "priority": 15,
       "passes": true,
-      "notes": "Completed 2026-05-31: test_pipeline.py with 4 tests, all pass"
+      "notes": "Completed 2026-05-31: test_pipeline.py with 4 tests, all pass",
+      "status": "stub"
     },
     {
       "id": "US-058",
@@ -917,7 +974,8 @@
       ],
       "priority": 15,
       "passes": true,
-      "notes": "Completed 2026-05-31: no zep imports in refactor codebase (fresh project)"
+      "notes": "Completed 2026-05-31: no zep imports in refactor codebase (fresh project)",
+      "status": "stub"
     },
     {
       "id": "US-059",
@@ -933,7 +991,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "✅ Implemented: frontend/"
+      "notes": "✅ Implemented: frontend/",
+      "status": "stub"
     },
     {
       "id": "US-060",
@@ -951,7 +1010,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-061",
@@ -968,7 +1028,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-062",
@@ -986,7 +1047,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-063",
@@ -1002,7 +1064,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-064",
@@ -1019,7 +1082,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-065",
@@ -1036,7 +1100,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-066",
@@ -1052,7 +1117,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-067",
@@ -1069,7 +1135,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-068",
@@ -1085,7 +1152,8 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation."
+      "notes": "Code notes exist in PRD but frontend/ directory not created yet. Needs implementation.",
+      "status": "stub"
     },
     {
       "id": "US-069",
@@ -1102,7 +1170,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ models/strategic_agent.py"
+      "notes": "✅ models/strategic_agent.py",
+      "status": "implemented"
     },
     {
       "id": "US-070",
@@ -1118,7 +1187,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ models/action_type.py"
+      "notes": "✅ models/action_type.py",
+      "status": "implemented"
     },
     {
       "id": "US-071",
@@ -1138,7 +1208,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ services/belief_engine.py"
+      "notes": "✅ services/belief_engine.py",
+      "status": "implemented"
     },
     {
       "id": "US-072",
@@ -1156,7 +1227,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "implemented"
     },
     {
       "id": "US-073",
@@ -1175,7 +1247,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ services/llm_decision_engine.py"
+      "notes": "✅ services/llm_decision_engine.py",
+      "status": "implemented"
     },
     {
       "id": "US-074",
@@ -1195,7 +1268,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ services/simulation_loop.py"
+      "notes": "✅ services/simulation_loop.py",
+      "status": "implemented"
     },
     {
       "id": "US-075",
@@ -1214,7 +1288,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ services/propagation_layer.py"
+      "notes": "✅ services/propagation_layer.py",
+      "status": "implemented"
     },
     {
       "id": "US-076",
@@ -1231,7 +1306,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ services/strategic_simulation_runner.py"
+      "notes": "✅ services/strategic_simulation_runner.py",
+      "status": "implemented"
     },
     {
       "id": "US-077",
@@ -1249,7 +1325,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-078",
@@ -1268,7 +1345,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ Implemented via ralph loop"
+      "notes": "✅ Implemented via ralph loop",
+      "status": "partial"
     },
     {
       "id": "US-079",
@@ -1283,7 +1361,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ Implemented: models/stakeholder.py"
+      "notes": "✅ Implemented: models/stakeholder.py",
+      "status": "implemented"
     },
     {
       "id": "US-080",
@@ -1298,7 +1377,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "✅ Implemented: models/strategic_context.py"
+      "notes": "✅ Implemented: models/strategic_context.py",
+      "status": "implemented"
     },
     {
       "id": "US-081",
@@ -1313,7 +1393,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "✅ Implemented: tools/swot_analysis_tool.py"
+      "notes": "✅ Implemented: tools/swot_analysis_tool.py",
+      "status": "implemented"
     },
     {
       "id": "US-082",
@@ -1328,7 +1409,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "✅ Implemented: tools/porter_forces_tool.py"
+      "notes": "✅ Implemented: tools/porter_forces_tool.py",
+      "status": "implemented"
     },
     {
       "id": "US-083",
@@ -1343,7 +1425,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Different from MiroFish report, more actionable"
+      "notes": "NEW - Different from MiroFish report, more actionable",
+      "status": "stub"
     },
     {
       "id": "US-084",
@@ -1359,7 +1442,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "NEW - Financial foundation for strategic decisions"
+      "notes": "NEW - Financial foundation for strategic decisions",
+      "status": "stub"
     },
     {
       "id": "US-085",
@@ -1375,7 +1459,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Core value-add: actionable strategic options"
+      "notes": "NEW - Core value-add: actionable strategic options",
+      "status": "stub"
     },
     {
       "id": "US-086",
@@ -1391,7 +1476,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Risk-aware strategic planning"
+      "notes": "NEW - Risk-aware strategic planning",
+      "status": "stub"
     },
     {
       "id": "US-087",
@@ -1407,7 +1493,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "NEW - Strategic foresight for competitive dynamics"
+      "notes": "NEW - Strategic foresight for competitive dynamics",
+      "status": "stub"
     },
     {
       "id": "US-088",
@@ -1423,7 +1510,8 @@
       ],
       "priority": 20,
       "passes": true,
-      "notes": "NEW - Validation is critical for practical use"
+      "notes": "NEW - Validation is critical for practical use",
+      "status": "stub"
     },
     {
       "id": "US-089",
@@ -1438,7 +1526,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "NEW - Extends StrategicAgent for social media simulation"
+      "notes": "NEW - Extends StrategicAgent for social media simulation",
+      "status": "stub"
     },
     {
       "id": "US-090",
@@ -1454,7 +1543,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "NEW - Replaces OASIS Twitter/Reddit simulation"
+      "notes": "NEW - Replaces OASIS Twitter/Reddit simulation",
+      "status": "stub"
     },
     {
       "id": "US-091",
@@ -1470,7 +1560,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "NEW - Sentiment tracking for public opinion"
+      "notes": "NEW - Sentiment tracking for public opinion",
+      "status": "stub"
     },
     {
       "id": "US-092",
@@ -1486,7 +1577,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "NEW - Report for strategic execution prediction"
+      "notes": "NEW - Report for strategic execution prediction",
+      "status": "stub"
     },
     {
       "id": "US-093",
@@ -1501,7 +1593,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Combines strategic + opinion simulation"
+      "notes": "NEW - Combines strategic + opinion simulation",
+      "status": "stub"
     },
     {
       "id": "US-094",
@@ -1517,7 +1610,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Final output for strategic execution scenario"
+      "notes": "NEW - Final output for strategic execution scenario",
+      "status": "stub"
     },
     {
       "id": "US-095",
@@ -1532,7 +1626,8 @@
       ],
       "priority": 20,
       "passes": true,
-      "notes": "SIMPLIFIED - MiroFish style: record actions, infer effects in Report stage"
+      "notes": "SIMPLIFIED - MiroFish style: record actions, infer effects in Report stage",
+      "status": "stub"
     },
     {
       "id": "US-096",
@@ -1549,7 +1644,8 @@
       ],
       "priority": 20,
       "passes": true,
-      "notes": "SIMPLIFIED - MiroFish style: record actions to graph, not calculate metrics"
+      "notes": "SIMPLIFIED - MiroFish style: record actions to graph, not calculate metrics",
+      "status": "stub"
     },
     {
       "id": "US-097",
@@ -1565,7 +1661,8 @@
       ],
       "priority": 21,
       "passes": true,
-      "notes": "Adds dynamism to simulation, like MiroFish's event injection"
+      "notes": "Adds dynamism to simulation, like MiroFish's event injection",
+      "status": "stub"
     },
     {
       "id": "US-098",
@@ -1580,7 +1677,8 @@
       ],
       "priority": 22,
       "passes": true,
-      "notes": "FOCUS CHANGE: Record actions, don't calculate metrics"
+      "notes": "FOCUS CHANGE: Record actions, don't calculate metrics",
+      "status": "stub"
     },
     {
       "id": "US-099",
@@ -1596,7 +1694,8 @@
       ],
       "priority": 22,
       "passes": true,
-      "notes": "Final output, like MiroFish's prediction report"
+      "notes": "Final output, like MiroFish's prediction report",
+      "status": "stub"
     },
     {
       "id": "US-100",
@@ -1614,7 +1713,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "NEW - Strategic-specific visualization, not in MiroFish"
+      "notes": "NEW - Strategic-specific visualization, not in MiroFish",
+      "status": "stub"
     },
     {
       "id": "US-101",
@@ -1631,7 +1731,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Strategic decision visualization"
+      "notes": "NEW - Strategic decision visualization",
+      "status": "stub"
     },
     {
       "id": "US-102",
@@ -1648,7 +1749,8 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Risk visualization for strategic decisions"
+      "notes": "NEW - Risk visualization for strategic decisions",
+      "status": "stub"
     },
     {
       "id": "US-103",
@@ -1665,7 +1767,8 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "NEW - Financial visualization for strategic planning"
+      "notes": "NEW - Financial visualization for strategic planning",
+      "status": "stub"
     },
     {
       "id": "US-104",
@@ -1681,7 +1784,8 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "NEW - Belief tracking visualization"
+      "notes": "NEW - Belief tracking visualization",
+      "status": "stub"
     }
   ],
   "executionPhases": [
@@ -1993,5 +2097,15 @@
     "mirofishInsight": "Agent行为 → 事实涌现 → 报告预测",
     "ourApproach": "战略行动 → Agent行为 → 业务影响推演 → 战略建议",
     "keyDifference": "MiroFish追踪社交行为，我们追踪战略行为及业务影响"
+  },
+  "audit": {
+    "audit_date": "2026-06-02",
+    "audit_note": "Each US now has a status field: implemented | partial | stub. `passes` was self-reported by the ralph loop and is not a guarantee of verified implementation. Run `pytest tests/ -v` for actual test coverage.",
+    "total_us": 104,
+    "implemented": 59,
+    "partial": 9,
+    "stub": 36,
+    "test_count": 57,
+    "test_coverage_note": "57 pytest tests pass, but only 11 US-specific acceptance tests exist. Many US have no automated test coverage."
   }
 }

@@ -1,5 +1,6 @@
 /**
- * DocumentUploader - Drag-and-drop file upload
+ * DocumentUploader - Drag-and-drop file upload with onUploaded callback.
+ *
  * Implements: US-060
  */
 import { useState, useCallback } from 'react'
@@ -8,50 +9,57 @@ import api from '../services/api'
 
 interface UploadedFile {
   id: string
+  docId: string
   filename: string
   size: number
   status: 'uploading' | 'completed' | 'error'
   progress: number
 }
 
-export default function DocumentUploader() {
+interface Props {
+  onUploaded?: (doc: { id: string; docId: string; filename: string }) => void
+}
+
+export default function DocumentUploader({ onUploaded }: Props) {
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [dragActive, setDragActive] = useState(false)
 
   const handleFiles = useCallback(async (fileList: FileList) => {
-    const newFiles = Array.from(fileList).map(f => ({
-      id: `file_${Date.now()}_${f.name}`,
+    const newFiles: UploadedFile[] = Array.from(fileList).map((f) => ({
+      id: `file_${Date.now()}_${f.name}_${Math.random().toString(36).slice(2, 6)}`,
+      docId: '',
       filename: f.name,
       size: f.size,
-      status: 'uploading' as const,
+      status: 'uploading',
       progress: 0,
     }))
-    setFiles(prev => [...prev, ...newFiles])
-    
-    // Upload each file
+    setFiles((prev) => [...prev, ...newFiles])
+
     for (const fileData of newFiles) {
-      const file = Array.from(fileList).find(f => f.name === fileData.filename)
+      const file = Array.from(fileList).find((f) => f.name === fileData.filename)
       if (!file) continue
-      
+
       const formData = new FormData()
       formData.append('file', file)
-      
+
       try {
-        await api.post('/graph/upload', formData, {
+        const r = await api.post('/graph/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
-        setFiles(prev => prev.map(f => 
-          f.id === fileData.id 
-            ? { ...f, status: 'completed' as const, progress: 100 }
+        const docId: string = r.data?.doc_id || ''
+        setFiles((prev) => prev.map((f) =>
+          f.id === fileData.id
+            ? { ...f, status: 'completed', progress: 100, docId }
             : f
         ))
+        onUploaded?.({ id: fileData.id, docId, filename: fileData.filename })
       } catch (error) {
-        setFiles(prev => prev.map(f => 
-          f.id === fileData.id ? { ...f, status: 'error' as const } : f
+        setFiles((prev) => prev.map((f) =>
+          f.id === fileData.id ? { ...f, status: 'error' } : f
         ))
       }
     }
-  }, [])
+  }, [onUploaded])
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -60,7 +68,7 @@ export default function DocumentUploader() {
   }
 
   const removeFile = (id: string) => {
-    setFiles(prev => prev.filter(f => f.id !== id))
+    setFiles((prev) => prev.filter((f) => f.id !== id))
   }
 
   return (
@@ -87,17 +95,17 @@ export default function DocumentUploader() {
 
       {files.length > 0 && (
         <div className="file-list">
-          {files.map(file => (
+          {files.map((file) => (
             <div key={file.id} className="file-item">
               <div className="file-info">
                 <span className="filename">{file.filename}</span>
                 <span className="filesize">{(file.size / 1024).toFixed(1)}KB</span>
               </div>
               <div className="file-status">
-                {file.status === 'uploading' && <span>Uploading...</span>}
+                {file.status === 'uploading' && <span>Uploading…</span>}
                 {file.status === 'completed' && <span>✅</span>}
                 {file.status === 'error' && <span>❌</span>}
-                <button onClick={() => removeFile(file.id)}>
+                <button onClick={() => removeFile(file.id)} aria-label="Remove">
                   <X size={16} />
                 </button>
               </div>

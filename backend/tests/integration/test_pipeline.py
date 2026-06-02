@@ -30,8 +30,19 @@ async def test_e2e_pipeline():
     
     # Setup
     mock_llm = MockLLMProvider()
-    mock_llm.set_response('{"name": "Test Corp", "entity_type": "Organization", "summary": "A test company"}')
-    
+    # Graph builder, simulation loop and report agent will all call the LLM.
+    # Provide a long list of valid responses (entity JSON) and rely on the
+    # mock's cycle behaviour for any extras.
+    entity_response = (
+        '[{"name": "Apple Inc.", "entity_type": "Organization", '
+        '"summary": "A technology company"}, '
+        '{"name": "Tim Cook", "entity_type": "Person", '
+        '"summary": "CEO of Apple"}]'
+    )
+    # Queue many entity responses so the simulation loop's repeated
+    # LLM calls don't fall through to the default "Mock response".
+    mock_llm.set_responses([entity_response] * 32)
+
     mock_graph = MockGraphStore()
     knowledge_store = LocalKnowledgeStore(
         graph_store=mock_graph,
@@ -71,8 +82,10 @@ async def test_e2e_pipeline():
     # Stage 5: Report generation
     search_tool = SearchTool(knowledge_store)
     report_agent = ReportAgent(tools=[search_tool], llm_provider=mock_llm)
-    
-    mock_llm.set_response("# Strategic Report\n\n## Summary\nTest report content")
+
+    # The report step needs a *text* response, not JSON. Reset and inject.
+    report_response = "# Strategic Report\n\n## Summary\nTest report content"
+    mock_llm.set_response(report_response)
     report = await report_agent.generate(sim_result)
     assert "Strategic Report" in report
 

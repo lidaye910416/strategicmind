@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { useEffect } from 'react'
 
 interface Props {
-  status: 'running' | 'completed' | 'failed' | 'paused'
+  status: 'running' | 'completed' | 'failed' | 'paused' | 'cancelled'
   runId: string
   stage?: string
   onCompleted?: (runId: string) => void

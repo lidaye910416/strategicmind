@@ -9,15 +9,16 @@ from flask import Blueprint, request, jsonify, send_from_directory
 import os
 import uuid
 
-from .config import config
-from ..services.graph_builder_service import GraphBuilderService
-from ..services.entity_extractor import EntityExtractor
-from ..services.semantic_chunker import SemanticChunker
-from ..services.document_intelligence import DocumentIntelligence
-from ..services.knowledge_enricher import KnowledgeEnricher
-from ..services.local_knowledge_store import LocalKnowledgeStore
-from ..services.local_graph_store import LocalGraphStore
-from ..adapters.bailian_adapter import BailianAdapter
+from ..config import config
+from backend.services.graph_builder_service import GraphBuilderService
+from backend.services.entity_extractor import EntityExtractor
+from backend.services.semantic_chunker import SemanticChunker
+from backend.services.document_intelligence import DocumentIntelligence
+from backend.services.knowledge_enricher import KnowledgeEnricher
+from backend.services.local_knowledge_store import LocalKnowledgeStore
+from backend.services.local_graph_store import LocalGraphStore
+from backend.adapters.bailian_adapter import BailianAdapter
+from backend.models.seed_document import SeedDocument, DocumentType
 
 graph_bp = Blueprint('graph', __name__, url_prefix='/api/graph')
 
@@ -88,7 +89,6 @@ def build_graph():
                     filepath = os.path.join(config.UPLOAD_FOLDER, filename)
                     with open(filepath, "r", encoding="utf-8") as f:
                         content = f.read()
-                    from ..models.seed_document import SeedDocument, DocumentType
                     seed_doc = SeedDocument(
                         doc_id=doc_id,
                         title=filename,

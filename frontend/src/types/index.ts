@@ -1,8 +1,16 @@
 // API Types
-export interface PipelineStatus {
+export type PipelineStatus =
+  | 'idle'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export interface PipelineStatusResponse {
   run_id: string
-  current_stage: PipelineStage
-  status: 'running' | 'completed' | 'failed' | 'paused'
+  current_stage: PipelineStage | string
+  status: PipelineStatus | string
   progress: number
   current_round?: number
   total_rounds?: number
