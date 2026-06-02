@@ -8,6 +8,7 @@ from backend.services.belief_engine import BeliefEngine
 from backend.services.entity_extractor import EntityExtractor
 from backend.services.propagation_layer import PropagationLayer, PropagationChannel
 from backend.services.action_parser import ActionParser, Platform
+from backend.tests.mocks.mock_graph_store import MockGraphStore
 from backend.tests.mocks.mock_llm_provider import MockLLMProvider
 from backend.models.strategic_agent import StrategicAgent, AgentType
 
@@ -124,3 +125,50 @@ class TestActionParser:
         actions = parser.parse_json(data)
         assert len(actions) == 1
         assert actions[0].platform == Platform.TWITTER
+
+
+class TestZepToolsService:
+    """Tests for ZepToolsService (US-008)"""
+    
+    @pytest.mark.asyncio
+    async def test_search(self):
+        from backend.services.zep_tools_service import ZepToolsService
+        store = MockGraphStore()
+        store.set_search_results([{"text": "result", "score": 0.9}])
+        
+        service = ZepToolsService(graph_store=store)
+        results = await service.search("default", "test")
+        
+        assert len(results) == 1
+        assert results[0]["score"] == 0.9
+    
+    @pytest.mark.asyncio
+    async def test_get_entity(self):
+        from backend.services.zep_tools_service import ZepToolsService
+        store = MockGraphStore()
+        store.add_node("default", {"id": "entity_1", "name": "Test Entity"})
+        
+        service = ZepToolsService(graph_store=store)
+        entity = await service.get_entity("default", "entity_1")
+        
+        assert entity is not None
+        assert entity["name"] == "Test Entity"
+    
+    @pytest.mark.asyncio
+    async def test_insert_text(self):
+        from backend.services.zep_tools_service import ZepToolsService
+        store = MockGraphStore()
+        service = ZepToolsService(graph_store=store)
+        
+        result = await service.insert_text("default", "Sample text")
+        
+        assert result["inserted_count"] == 1
+    
+    @pytest.mark.asyncio
+    async def test_create_and_delete_graph(self):
+        from backend.services.zep_tools_service import ZepToolsService
+        store = MockGraphStore()
+        service = ZepToolsService(graph_store=store)
+        
+        assert await service.create_graph("test_graph") is True
+        assert await service.delete_graph("test_graph") is True
