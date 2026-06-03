@@ -1,5 +1,5 @@
 """
-ActionParser - Parse OASIS output into AgentAction objects
+ActionParser - Parse agent action output into structured objects
 
 This service extracts parsing logic from SimulationRunner so it can
 be reused across different components.
@@ -23,7 +23,7 @@ class Platform(str, Enum):
 
 @dataclass
 class AgentAction:
-    """Parsed agent action from OASIS output"""
+    """Parsed agent action"""
     platform: Platform
     agent_id: int
     agent_name: str
@@ -50,9 +50,9 @@ class AgentAction:
 
 class ActionParser:
     """
-    Parser for OASIS social media output.
+    Parser for structured agent action output.
     
-    This service parses OASIS simulation output into structured
+    This service parses simulation output into structured
     AgentAction objects for downstream processing.
     
     Supported formats:
@@ -101,7 +101,7 @@ class ActionParser:
         Parse Twitter simulation output.
         
         Args:
-            output: Raw OASIS Twitter output text
+            output: Raw agent action text
             round_num: Current simulation round
             
         Returns:
@@ -140,7 +140,7 @@ class ActionParser:
         Parse Reddit simulation output.
         
         Args:
-            output: Raw OASIS Reddit output text
+            output: Raw Reddit-style output text
             round_num: Current simulation round
             
         Returns:
@@ -176,7 +176,7 @@ class ActionParser:
     
     def parse_json(self, data: Dict[str, Any], round_num: int = 0) -> List[AgentAction]:
         """
-        Parse JSON format OASIS output.
+        Parse JSON format agent action output.
         
         Args:
             data: JSON data with actions array

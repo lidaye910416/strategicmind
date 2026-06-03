@@ -52,8 +52,21 @@ def describe_provider(provider_name: Optional[str] = None) -> dict:
     name = (
         provider_name
         or os.environ.get("LLM_PROVIDER")
+        or os.environ.get("STRATEGICMIND_LLM_OVERRIDE")
         or ("bailian" if os.environ.get("LLM_API_KEY") else "ollama")
     ).lower()
+    # If STRATEGICMIND_LLM_OVERRIDE points to a fully qualified class,
+    # derive a friendly name from the class name
+    if "." in name and name not in ("ollama", "bailian", "mock"):
+        cls = name.rsplit(".", 1)[-1]
+        # Common patterns: MockLLMProvider -> mock
+        for known in ("OllamaAdapter", "BailianAdapter", "MockLLMProvider"):
+            if known.lower() in cls.lower():
+                name = known.lower().replace("adapter", "").replace("llmprovider", "").strip()
+                if not name: name = "mock"
+                break
+        else:
+            name = cls.lower().replace("adapter", "").replace("llmprovider", "mock") or "custom"
     info = {
         "provider": name,
         "is_local": name == "ollama",

@@ -1,7 +1,7 @@
 """
 SocialMediaPropagationLayer - Twitter/Reddit information spread
 
-Replaces OASIS Twitter/Reddit simulation.
+Social-media-style propagation for StrategicMind.
 Models viral spread factors: followers, sentiment, timing.
 
 Implements: US-090

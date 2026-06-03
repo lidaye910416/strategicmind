@@ -3,9 +3,9 @@ ISimulationBackend interface - Abstract interface for simulation backends
 
 This interface allows swapping between different simulation implementations:
     - StrategicSimulationRunner: For strategic planning scenarios
-    - OASISBackend: For social media simulation (future, optional)
+    - (SocialMediaBackend, future): For social media simulation
 
-The strategic backend replaces OASIS for strategic scenarios where:
+The strategic backend is used for strategic scenarios where:
     - Information asymmetry exists
     - Hidden actions are possible
     - Belief tracking is required

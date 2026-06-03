@@ -15,7 +15,7 @@ class StrategicProfileGenerator:
     """
     Generates StrategicAgent profiles from knowledge store entities.
     
-    This replaces OASIS profile generator for strategic scenarios.
+    Strategic profile generator for strategic scenarios.
     
     Usage:
         generator = StrategicProfileGenerator(knowledge_store, llm_provider)

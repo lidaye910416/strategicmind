@@ -5,7 +5,7 @@ This service tracks and updates each agent's belief state across simulation
 rounds, enabling belief evolution based on new information.
 
 This is a core component of the strategic simulation engine, replacing
-OASIS's lack of belief tracking.
+the lack of belief tracking in simpler simulators.
 """
 
 from typing import Dict, List, Optional, Set, Tuple

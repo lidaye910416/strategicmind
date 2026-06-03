@@ -4,7 +4,7 @@ StrategicAgent and related models - Core domain models for strategic simulation
 This module defines the domain models for the strategic simulation engine,
 including agent profiles, belief states, and interest profiles.
 
-These models replace OASIS agent profiles for strategic scenarios.
+These models are the StrategicMind agent profiles for strategic scenarios.
 """
 
 from dataclasses import dataclass, field
@@ -172,7 +172,7 @@ class StrategicAgent:
     Strategic agent representing a stakeholder in the simulation.
     
     This is the core agent model for strategic simulation, replacing
-    OASIS agent profiles with a focus on:
+    StrategicMind agent profiles with a focus on:
         - Belief tracking and evolution
         - Interest alignment
         - Action repertoire

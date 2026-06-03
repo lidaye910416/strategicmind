@@ -4,7 +4,7 @@ ActionType and StrategicAction - Action models for strategic simulation
 This module defines the action schema for strategic decisions,
 including public actions, private actions, and deliberation.
 
-These models replace OASIS social media action types with strategic
+These models are the StrategicMind action types for strategic
 action types focused on business and policy decisions.
 """
 

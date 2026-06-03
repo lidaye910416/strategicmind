@@ -1,5 +1,5 @@
 """
-StrategicSimulationRunner - OASIS-free entry point for strategic simulation
+StrategicSimulationRunner - entry point for strategic simulation
 
 This is the main entry point for running strategic simulations,
 integrating BeliefEngine, SimulationLoop, and PropagationLayer.
@@ -19,7 +19,7 @@ class StrategicSimulationRunner:
     """
     Main runner for strategic simulations.
     
-    This replaces OASIS for strategic scenarios, providing:
+    This is the strategic simulation engine, providing:
         - Belief tracking
         - Strategic decision-making
         - Information propagation

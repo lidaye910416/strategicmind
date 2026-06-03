@@ -1,9 +1,8 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
+/* App-level styles */
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #f5f5f7;
@@ -14,119 +13,34 @@ body {
   min-height: 100vh;
 }
 
-.dashboard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 2rem;
-  background: white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.dashboard-header h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.dashboard-main {
-  max-width: 1200px;
-  margin: 2rem auto;
-  padding: 0 2rem;
-}
-
-.drop-zone {
-  border: 2px dashed #ccc;
-  border-radius: 12px;
-  padding: 3rem;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.drop-zone:hover {
-  border-color: #0071e3;
-  background: #f8f8ff;
-}
-
-.drop-zone .hint {
-  color: #86868b;
-  font-size: 0.875rem;
-  margin-top: 0.5rem;
-}
-
-.start-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 2rem auto;
-  padding: 1rem 2rem;
-  background: #0071e3;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.start-btn:hover {
-  background: #0077ed;
-}
-
-.stage-stepper {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin: 2rem 0;
-}
-
-.stage-item {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: white;
-  border-radius: 8px;
-}
-
-.stage-item.completed {
-  background: #d4edda;
-}
-
-.stage-item.active {
-  background: #cce5ff;
-  border: 2px solid #0071e3;
-}
-
-.stage-marker {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #ccc;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-}
-
-.stage-item.completed .stage-marker {
-  background: #28a745;
-  color: white;
-}
-
-.stage-item.active .stage-marker {
-  background: #0071e3;
-  color: white;
-}
-
-.progress-bar {
-  height: 8px;
-  background: #e0e0e0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: #0071e3;
-  transition: width 0.3s;
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4;
+  }
+  .input {
+    @apply block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none;
+  }
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+  .badge-running { @apply badge bg-blue-100 text-blue-700; }
+  .badge-completed { @apply badge bg-green-100 text-green-700; }
+  .badge-failed { @apply badge bg-red-100 text-red-700; }
+  .badge-paused { @apply badge bg-yellow-100 text-yellow-700; }
+  .badge-cancelled { @apply badge bg-gray-100 text-gray-700; }
 }

@@ -1,7 +1,7 @@
 """
 StrategicBackend - ISimulationBackend implementation for strategic scenarios
 
-This backend replaces OASIS for strategic scenarios with:
+Strategic backend for strategic scenarios with:
     - Belief tracking
     - Information asymmetry
     - Strategic game theory

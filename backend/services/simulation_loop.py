@@ -2,7 +2,7 @@
 SimulationLoop - Async simulation round execution
 
 This is the core simulation loop that executes strategic scenarios,
-replacing OASIS for strategic planning use cases.
+for strategic planning use cases.
 
 Features:
     - Async concurrent agent decision-making

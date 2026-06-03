@@ -4,6 +4,7 @@
  */
 import toast from 'react-hot-toast'
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 
 interface Props {
   status: 'running' | 'completed' | 'failed' | 'paused' | 'cancelled'
@@ -19,20 +20,19 @@ export default function NotificationToast({ status, runId, stage, onCompleted }:
         (t) => (
           <span>
             Pipeline completed —{' '}
-            <a href={`/report/${runId}`} onClick={() => toast.dismiss(t.id)}>
+            <Link to={`/report/${runId}`} onClick={() => toast.dismiss(t.id)} className="underline font-semibold">
               view report
-            </a>
+            </Link>
           </span>
         ),
         { duration: 8000 }
       )
       onCompleted?.(runId)
     } else if (status === 'failed') {
-      toast.error(`Pipeline failed: ${stage || 'unknown stage'}`, { duration: 8000 })
+      toast.error(`Pipeline failed${stage ? ` at ${stage}` : ''}`, { duration: 8000 })
     } else if (status === 'paused') {
       toast('Pipeline paused', { icon: '⏸️', duration: 4000 })
     }
   }, [status, runId, stage, onCompleted])
-
   return null
 }
