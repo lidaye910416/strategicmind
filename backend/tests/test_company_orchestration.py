@@ -332,3 +332,126 @@ class TestFlaskAPI(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestTopicEmergence(unittest.TestCase):
+    """议题涌现引擎测试"""
+    
+    def setUp(self):
+        from backend.services.topic_emergence import TopicEmergenceEngine
+        self.engine = TopicEmergenceEngine(llm_provider=None)
+    
+    def test_revenue_decline_emerges_topic(self):
+        """营收下滑应涌现相关议题"""
+        prev = {"revenue_outlook": 0.5}
+        curr = {"revenue_outlook": 0.3, "market_sentiment": 0.5, "competitive_position": 0.5}
+        topics = self.engine.detect_signals(prev, curr)
+        signals = [t.signal for t in topics]
+        self.assertIn(
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.REVENUE_DECLINE,
+            signals,
+        )
+    
+    def test_revenue_growth_emerges_topic(self):
+        """营收增长应涌现相关议题"""
+        prev = {"revenue_outlook": 0.3}
+        curr = {"revenue_outlook": 0.6, "market_sentiment": 0.5, "competitive_position": 0.5}
+        topics = self.engine.detect_signals(prev, curr)
+        signals = [t.signal for t in topics]
+        self.assertIn(
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.REVENUE_GROWTH,
+            signals,
+        )
+    
+    def test_margin_decline_emerges_topic(self):
+        """毛利率下降应涌现相关议题"""
+        prev = {"profit_margin_outlook": 0.3, "revenue_outlook": 0.5}
+        curr = {"profit_margin_outlook": 0.1, "revenue_outlook": 0.5, "market_sentiment": 0.5, "competitive_position": 0.5}
+        topics = self.engine.detect_signals(prev, curr)
+        signals = [t.signal for t in topics]
+        self.assertIn(
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.MARGIN_DECLINE,
+            signals,
+        )
+    
+    def test_macro_down_emerges_topic(self):
+        """宏观下行应涌现相关议题"""
+        topics = self.engine.detect_signals(
+            prev_metrics=None,
+            curr_metrics={},
+            market_env={"sector_growth_rate": -0.05, "consumer_sentiment": 0},
+        )
+        signals = [t.signal for t in topics]
+        self.assertIn(
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.MACRO_DOWN,
+            signals,
+        )
+    
+    def test_no_signals_on_stable_metrics(self):
+        """指标稳定时不应涌现议题"""
+        prev = {"revenue_outlook": 0.5, "profit_margin_outlook": 0.3, "competitive_position": 0.5}
+        curr = {"revenue_outlook": 0.5, "profit_margin_outlook": 0.3, "market_sentiment": 0.5, "competitive_position": 0.5}
+        topics = self.engine.detect_signals(prev, curr)
+        # 应该没有信号，或信号非常少
+        self.assertLessEqual(len(topics), 1)
+    
+    def test_topics_sorted_by_severity(self):
+        """涌现议题应按严重度降序"""
+        prev = {"revenue_outlook": 0.5}
+        curr = {"revenue_outlook": -0.3, "market_sentiment": -0.5, "competitive_position": -0.3, "profit_margin_outlook": -0.3}
+        market_env = {"sector_growth_rate": -0.1, "consumer_sentiment": -0.5, "policy_pressure": 0.8, "policy_stance": "RESTRICTIVE"}
+        topics = self.engine.detect_signals(prev, curr, market_env)
+        for i in range(len(topics) - 1):
+            self.assertGreaterEqual(topics[i].severity, topics[i+1].severity)
+    
+    def test_max_three_topics(self):
+        """涌现议题最多 3 个"""
+        prev = {"revenue_outlook": 0.5, "profit_margin_outlook": 0.3, "competitive_position": 0.5}
+        curr = {"revenue_outlook": -0.5, "profit_margin_outlook": -0.3, "market_sentiment": -0.5, "competitive_position": -0.5}
+        market_env = {"sector_growth_rate": -0.1, "consumer_sentiment": -0.5, "policy_pressure": 0.8, "policy_stance": "RESTRICTIVE"}
+        topics = self.engine.detect_signals(prev, curr, market_env)
+        self.assertLessEqual(len(topics), 3)
+    
+    def test_infer_signal_from_text(self):
+        """从文本推断信号"""
+        self.assertEqual(
+            self.engine._infer_signal_from_text("营收下滑如何应对"),
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.REVENUE_DECLINE
+        )
+        self.assertEqual(
+            self.engine._infer_signal_from_text("现金流紧张如何处理"),
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.CASH_FLOW_TIGHT
+        )
+        self.assertEqual(
+            self.engine._infer_signal_from_text("是否加大研发投入"),
+            __import__('backend.services.topic_emergence', fromlist=['MetricSignal']).MetricSignal.RD_INSUFFICIENT
+        )
+
+
+class TestEmergenceAPI(unittest.TestCase):
+    """涌现 API 测试"""
+    
+    @classmethod
+    def setUpClass(cls):
+        from app import create_app
+        cls.app = create_app()
+        cls.client = cls.app.test_client()
+    
+    def test_emerge_topics_api(self):
+        """POST /api/company/<id>/emerge-topics"""
+        r = self.client.post('/api/company/setup', json={
+            'company_name': '涌现测试', 'business_model': 'PLATFORM_BASED',
+        })
+        cid = r.get_json()['company_id']
+        
+        r = self.client.post(f'/api/company/{cid}/emerge-topics', json={
+            'prev_metrics': {'revenue_outlook': 0.5},
+            'curr_metrics': {'revenue_outlook': 0.2, 'market_sentiment': 0.5, 'competitive_position': 0.5},
+        })
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('emerged_topics', data)
+        self.assertGreater(data['count'], 0)
+        # 应该有营收下滑信号
+        signals = [t['signal'] for t in data['emerged_topics']]
+        self.assertIn('REVENUE_DECLINE', signals)

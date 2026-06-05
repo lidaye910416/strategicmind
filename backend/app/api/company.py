@@ -474,3 +474,67 @@ def get_interview_history(company_id: str, agent_id: str):
         "agent_id": agent_id,
         "history": [m.to_dict() for m in history],
     })
+
+
+@company_bp.route("/<company_id>/emerge-topics", methods=["POST"])
+def emerge_topics(company_id: str):
+    """从指标变化中涌现下一回合的战略议题"""
+    ctx = _COMPANY_REGISTRY.get(company_id)
+    if not ctx:
+        return jsonify({"error": "公司不存在"}), 404
+    
+    data = request.get_json() or {}
+    prev_metrics = data.get("prev_metrics")
+    curr_metrics = data.get("curr_metrics", {})
+    market_env = data.get("market_env") or ctx.market_env.snapshot()
+    
+    from backend.services.topic_emergence import TopicEmergenceEngine
+    engine = TopicEmergenceEngine(llm_provider=None)
+    topics = engine.detect_signals(
+        prev_metrics=prev_metrics,
+        curr_metrics=curr_metrics,
+        market_env=market_env,
+    )
+    
+    return jsonify({
+        "company_id": company_id,
+        "emerged_topics": [t.to_dict() for t in topics],
+        "count": len(topics),
+    })
+
+
+@company_bp.route("/<company_id>/simulate-emergent", methods=["POST"])
+def simulate_emergent(company_id: str):
+    """运行涌现驱动的多轮推演（议题从指标变化中自动生成）"""
+    ctx = _COMPANY_REGISTRY.get(company_id)
+    if not ctx:
+        return jsonify({"error": "公司不存在"}), 404
+    
+    data = request.get_json() or {}
+    max_rounds = int(data.get("max_rounds", 5))
+    initial_topic = data.get("initial_topic", "是否加大 AI 研发投入")
+    
+    # 同步运行涌现驱动的多轮推演
+    import asyncio
+    from backend.services.company_aware_simulation import CompanyAwareSimulation
+    
+    try:
+        from backend.services.llm_factory import get_llm_provider
+        llm = get_llm_provider()
+    except Exception:
+        # Dummy LLM
+        class DummyLLM:
+            async def chat(self, messages): return ""
+        llm = DummyLLM()
+    
+    sim = CompanyAwareSimulation(
+        company_context=ctx,
+        llm_provider=llm,
+        config={"topics": [initial_topic]},
+    )
+    
+    # Override topics to be just the initial one
+    sim.topics = [initial_topic]
+    
+    result = asyncio.run(sim.run(max_rounds=max_rounds))
+    return jsonify(result)

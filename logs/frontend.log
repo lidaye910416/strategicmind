@@ -36,3 +36,11 @@ AggregateError [ECONNREFUSED]:
 23:25:01 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
 23:25:14 [vite] hmr update /src/components/AgentInterview.tsx, /src/index.css
 23:25:27 [vite] hmr update /src/components/AgentInterview.tsx, /src/index.css
+23:52:26 [vite] http proxy error: /api/pipeline/run_253dc643
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+23:52:26 [vite] http proxy error: /api/pipeline/runs
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
