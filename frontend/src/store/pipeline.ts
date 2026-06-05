@@ -45,16 +45,27 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       es.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data)
-          if (data.stage) get().setProgress(data.stage, data.progress ?? get().progress)
+          // Backend serializes PipelineRun as `current_stage` (see
+          // services/pipeline_orchestrator._snapshot). Accept both spellings
+          // for safety with any older clients.
+          const stage = data.current_stage ?? data.stage
+          if (stage) {
+            const pct = typeof data.progress === 'number' ? data.progress : get().progress
+            get().setProgress(stage, pct)
+          }
           if (data.status) get().setStatus(data.status as PipelineStatus)
         } catch { /* ignore malformed events */ }
       }
       es.onerror = () => {
-        es.close()
+        // Don't close immediately on transient errors - the EventSource
+        // will auto-retry. Only give up on terminal status.
+        if (['completed', 'failed', 'cancelled'].includes(get().status)) {
+          es.close()
+        }
       }
       return runId
     } catch (e: any) {
-      set({ status: 'failed', error: e?.message || 'Failed to start pipeline' })
+      set({ status: 'failed', error: e?.message || '启动推演失败' })
       return null
     }
   },

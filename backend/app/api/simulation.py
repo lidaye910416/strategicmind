@@ -157,6 +157,62 @@ def get_clusters(run_id: str):
     return jsonify({"clusters": clusters})
 
 
+@simulation_bp.route('/<run_id>/rounds', methods=['GET'])
+def get_rounds(run_id: str):
+    """Per-round detailed data: actions, belief updates, propagation events.
+
+    Returns one entry per round, in order, with all the data needed to
+    render a MiroFish-style round-by-round timeline.
+    """
+    snap = _get_run(run_id)
+    if not snap:
+        return jsonify({"error": "Run not found"}), 404
+    sim = snap.get("artifacts", {}).get("SIMULATION_RUNNING", {})
+    rounds = sim.get("round_results", []) if isinstance(sim, dict) else []
+
+    # Build an actor-id -> name map from PROFILE_GENERATION so the
+    # frontend can show "Stakeholder_1" instead of a uuid.
+    prof = snap.get("artifacts", {}).get("PROFILE_GENERATION", {})
+    agents = prof.get("agents", []) if isinstance(prof, dict) else []
+    id_to_name: dict = {}
+    for a in agents:
+        aid = a.get("agent_id")
+        nm = a.get("name") or a.get("type") or aid
+        if aid:
+            id_to_name[aid] = nm
+
+    out = []
+    for r in rounds:
+        actions = r.get("actions", []) or []
+        # Enrich each action with actor_name. Fall back to a short
+        # hash of the actor_id when the PROFILE_GENERATION map
+        # doesn't have it (different agent pools can disagree).
+        for a in actions:
+            aid = a.get("actor_id", "")
+            if aid in id_to_name:
+                a["actor_name"] = id_to_name[aid]
+            else:
+                short = aid[:8] if isinstance(aid, str) and len(aid) >= 8 else aid
+                a["actor_name"] = f"Agent_{short}" if short else "Unknown"
+        out.append({
+            "round_num": r.get("round_num"),
+            "simulated_hour": r.get("simulated_hour", 0),
+            "active_agents": r.get("active_agents", []),
+            "actions": actions,
+            "belief_updates": r.get("belief_updates", []),
+            "propagation_events": r.get("propagation_events", []),
+            "start_time": r.get("start_time"),
+            "end_time": r.get("end_time"),
+        })
+    return jsonify({
+        "run_id": run_id,
+        "total_rounds": sim.get("total_rounds", len(out)),
+        "current_round": sim.get("current_round", len(out)),
+        "rounds": out,
+        "actor_names": id_to_name,
+    })
+
+
 @simulation_bp.route('/<run_id>/beliefs', methods=['GET'])
 def get_beliefs(run_id: str):
     """Belief evolution over rounds (synthesized from simulation artifacts)."""

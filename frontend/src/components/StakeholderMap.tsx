@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Users, AlertCircle } from 'lucide-react'
 import api from '../services/api'
+import { SIMULATION } from '../i18n/zh'
 
 interface Stakeholder {
   stakeholder_id: string
@@ -22,6 +23,11 @@ const COLORS: Record<string, string> = {
   EXECUTIVE: '#3b6bff',
   COMPETITOR: '#ff9800',
   REGULATOR: '#4caf50',
+  CORPORATE_EXEC: '#3b6bff',
+  GOVERNMENT: '#4caf50',
+  CUSTOMER: '#00bcd4',
+  PARTNER: '#795548',
+  EMPLOYEE: '#9c27b0',
 }
 
 export default function StakeholderMap({ simulationId }: Props) {
@@ -36,7 +42,7 @@ export default function StakeholderMap({ simulationId }: Props) {
         setCount(data.length)
         drawGraph(data)
       })
-      .catch((e) => setError(e?.response?.data?.error || 'Failed to load stakeholders'))
+      .catch((e) => setError(e?.response?.data?.error || SIMULATION.failed))
   }, [simulationId])
 
   const drawGraph = (data: Stakeholder[]) => {
@@ -84,14 +90,15 @@ export default function StakeholderMap({ simulationId }: Props) {
       ctx.fillStyle = '#1f2937'
       ctx.font = '11px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(s.name.substring(0, 20), pos.x, pos.y + 5 + s.influence_weight * 15 + 14)
+      const label = s.name.substring(0, 20)
+      ctx.fillText(label, pos.x, pos.y + 5 + s.influence_weight * 15 + 14)
     })
   }
 
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1">
-        <Users size={16} /> Stakeholder Relationships ({count})
+        <Users size={16} /> {SIMULATION.stakeholdersTitle(count)}
       </h3>
       {error ? (
         <div className="flex items-center gap-2 text-sm text-red-600 py-4">

@@ -2,6 +2,7 @@
  * StrategicDecisionTree - Tree visualization of decision options
  * Implements: US-101
  */
+
 interface DecisionNode {
   name: string
   outcome: 'positive' | 'negative' | 'neutral'
@@ -9,6 +10,12 @@ interface DecisionNode {
   probability?: number
 }
 interface Props { tree: DecisionNode }
+
+const OUTCOME_LABELS: Record<string, string> = {
+  positive: '正向',
+  negative: '负向',
+  neutral: '中性',
+}
 
 const OUTCOME_STYLES = {
   positive: { border: 'border-green-400', text: 'text-green-700', bg: 'bg-green-50' },
@@ -26,7 +33,7 @@ export default function DecisionTree({ tree }: Props) {
           {node.probability !== undefined && (
             <span className="text-xs text-gray-500">{(node.probability * 100).toFixed(0)}%</span>
           )}
-          <span className={`text-xs font-semibold ${s.text} uppercase`}>{node.outcome}</span>
+          <span className={`text-xs font-semibold ${s.text}`}>{OUTCOME_LABELS[node.outcome] || node.outcome}</span>
         </div>
         {node.children && node.children.length > 0 && (
           <div className="border-l-2 border-gray-200 ml-3 pl-2">

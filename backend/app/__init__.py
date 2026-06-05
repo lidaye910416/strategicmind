@@ -30,6 +30,8 @@ from .api.graph import graph_bp  # noqa: E402
 from .api.pipeline import pipeline_bp  # noqa: E402
 from .api.simulation import simulation_bp  # noqa: E402
 from .api.report import report_bp  # noqa: E402
+from .api.provider import provider_bp  # noqa: E402
+from .api.company import company_bp  # noqa: E402  # noqa: E402
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -59,6 +61,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(pipeline_bp)
     app.register_blueprint(simulation_bp)
     app.register_blueprint(report_bp)
+    app.register_blueprint(provider_bp)
+    app.register_blueprint(company_bp)
 
     # Health check
     @app.route("/api/health", methods=["GET"])
@@ -90,6 +94,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "/api/pipeline/<run_id>",
                 "/api/simulation/start",
                 "/api/simulation/<run_id>",
+                "/api/company/setup",
+                "/api/company/<company_id>",
+                "/api/company/<company_id>/resolve",
+                "/api/company/<company_id>/departments",
+                "/api/company/<company_id>/advance-quarter",
                 "/api/report/<report_id>",
                 "/api/report/<report_id>/chat",
             ],

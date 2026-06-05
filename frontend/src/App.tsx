@@ -1,14 +1,15 @@
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import AppRoutes from './router'
+import Layout from './components/layout/Layout'
 
 function App() {
   return (
     <BrowserRouter>
-      <div className="app">
+      <Layout>
         <Toaster position="top-right" />
         <AppRoutes />
-      </div>
+      </Layout>
     </BrowserRouter>
   )
 }

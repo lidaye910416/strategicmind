@@ -3,6 +3,7 @@
  * Implements: US-102
  */
 import { Shield } from 'lucide-react'
+import { SIMULATION } from '../i18n/zh'
 
 interface Risk { name: string; probability: number; impact: number; category: string; mitigation_strategies?: string[] }
 interface Props { risks: Risk[] }
@@ -24,15 +25,15 @@ export default function RiskMatrixHeatmap({ risks }: Props) {
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1">
-        <Shield size={16} /> Risk Assessment Matrix
+        <Shield size={16} /> {SIMULATION.riskTitle}
       </h3>
       {risks.length === 0 ? (
-        <p className="text-sm text-gray-400 py-4">No risks identified yet</p>
+        <p className="text-sm text-gray-400 py-4">{SIMULATION.riskEmpty}</p>
       ) : (
         <>
           <div className="flex">
             <div className="flex items-center justify-center w-6 text-xs text-gray-500" style={{ writingMode: 'vertical-rl' }}>
-              Impact →
+              影响 →
             </div>
             <div className="flex-1">
               {[4, 3, 2, 1, 0].map((y) => (
@@ -44,7 +45,7 @@ export default function RiskMatrixHeatmap({ risks }: Props) {
                       <div
                         key={`${x},${y}`}
                         className={`aspect-square ${HEAT_COLORS[c]} ${HEAT_TEXT[c]} rounded flex items-center justify-center text-xs font-semibold`}
-                        title={r ? `${r.name} (P:${r.probability.toFixed(2)}, I:${r.impact.toFixed(2)})` : ''}
+                        title={r ? `${r.name} (概率:${r.probability.toFixed(2)}, 影响:${r.impact.toFixed(2)})` : ''}
                       >
                         {c > 0 ? c : ''}
                       </div>
@@ -52,17 +53,17 @@ export default function RiskMatrixHeatmap({ risks }: Props) {
                   })}
                 </div>
               ))}
-              <div className="text-xs text-gray-500 text-center mt-1">Probability →</div>
+              <div className="text-xs text-gray-500 text-center mt-1">概率 →</div>
             </div>
           </div>
           <div className="mt-4 space-y-1">
-            <h4 className="text-xs font-semibold text-gray-700">Identified Risks</h4>
+            <h4 className="text-xs font-semibold text-gray-700">已识别风险</h4>
             {risks.map((r, i) => (
               <div key={i} className="text-xs bg-gray-50 rounded p-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-gray-900">{r.name}</span>
                   <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600">{r.category}</span>
-                  <span className="text-gray-500">Score: {(r.probability * r.impact).toFixed(2)}</span>
+                  <span className="text-gray-500">风险分: {(r.probability * r.impact).toFixed(2)}</span>
                 </div>
                 {r.mitigation_strategies && r.mitigation_strategies.length > 0 && (
                   <ul className="list-disc list-inside text-gray-600 mt-1">

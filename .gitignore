@@ -2,3 +2,7 @@
 # Runtime data
 backend/data/
 backend/uploads/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/

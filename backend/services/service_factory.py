@@ -89,8 +89,13 @@ class ServiceFactory:
                 timeout=self.config.llm.timeout,
             )
         elif provider == "minimax":
-            # Placeholder for MiniMax adapter
-            raise NotImplementedError("MiniMax adapter not yet implemented")
+            from ..adapters.minimax_adapter import MiniMaxAdapter
+            return MiniMaxAdapter(
+                api_key=self.config.llm.api_key,
+                base_url=self.config.llm.base_url,
+                model_name=self.config.llm.model_name,
+                timeout=self.config.llm.timeout,
+            )
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
     
@@ -171,5 +176,8 @@ class ServiceFactory:
         elif provider_type == "ollama":
             from ..adapters.ollama_adapter import OllamaAdapter
             return OllamaAdapter(**kwargs)
+        elif provider_type == "minimax":
+            from ..adapters.minimax_adapter import MiniMaxAdapter
+            return MiniMaxAdapter(**kwargs)
         else:
             raise ValueError(f"Unsupported provider: {provider_type}")

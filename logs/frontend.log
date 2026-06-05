@@ -1,0 +1,38 @@
+
+> strategicmind-frontend@1.0.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 238 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: use --host to expose
+21:51:47 [vite] hmr update /src/index.css, /src/views/Dashboard.tsx
+21:51:55 [vite] hmr update /src/components/PipelineDashboard.tsx, /src/index.css
+21:52:17 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+21:52:24 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+21:52:37 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+22:41:59 [vite] hmr update /src/router/index.tsx, /src/index.css
+22:42:07 [vite] hmr update /src/index.css, /src/router/index.tsx, /src/views/Demo.tsx, /src/views/Report.tsx, /src/views/Simulation.tsx, /src/views/Dashboard.tsx, /src/components/RecentRuns.tsx, /src/components/ReportViewer.tsx, /src/components/DemoCase.tsx, /src/components/SimulationRoundProgress.tsx, /src/components/BeliefEvolutionChart.tsx, /src/components/AgentClusterView.tsx, /src/components/NotificationToast.tsx, /src/components/StakeholderMap.tsx, /src/components/DocumentUploader.tsx, /src/components/PipelineDashboard.tsx, /src/components/ProviderPicker.tsx, /src/views/Workbench.tsx
+22:42:17 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+22:42:32 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+22:42:41 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+22:48:26 [vite] http proxy error: /api/pipeline/run_253dc643
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+22:48:26 [vite] http proxy error: /api/pipeline/runs
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+22:56:34 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+22:56:54 [vite] hmr update /src/index.css, /src/views/Workbench.tsx
+22:56:54 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+22:57:44 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+22:57:52 [vite] hmr update /src/index.css, /src/router/index.tsx, /src/views/Demo.tsx, /src/views/Report.tsx, /src/views/Simulation.tsx, /src/views/Dashboard.tsx, /src/components/RecentRuns.tsx, /src/components/ReportViewer.tsx, /src/components/DemoCase.tsx, /src/components/SimulationRoundProgress.tsx, /src/components/BeliefEvolutionChart.tsx, /src/components/AgentClusterView.tsx, /src/components/NotificationToast.tsx, /src/components/StakeholderMap.tsx, /src/components/DocumentUploader.tsx, /src/components/PipelineDashboard.tsx, /src/components/ProviderPicker.tsx, /src/views/Workbench.tsx
+23:04:20 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+23:04:47 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+23:07:26 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+23:25:01 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
+23:25:14 [vite] hmr update /src/components/AgentInterview.tsx, /src/index.css
+23:25:27 [vite] hmr update /src/components/AgentInterview.tsx, /src/index.css

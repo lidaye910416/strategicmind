@@ -138,10 +138,10 @@ class TestFrontendIntegration:
         assert "StrategicMind" in page.content()
         # Tailwind applied: min-h-screen class on the root
         assert page.locator(".min-h-screen").first.is_visible()
-        # Step labels
-        assert page.get_by_text("Upload seed documents").is_visible()
+        # Step labels (Chinese UI)
+        assert page.get_by_text("上传种子文档").is_visible()
         # Start button present but disabled
-        start_btn = page.get_by_role("button", name="Start Pipeline")
+        start_btn = page.get_by_role("button", name="启动推演")
         assert start_btn.is_disabled()
         page.close()
 
@@ -149,9 +149,9 @@ class TestFrontendIntegration:
         """Clicking Config reveals the configuration section."""
         page = browser.new_page()
         page.goto(vite_server, wait_until="networkidle")
-        page.get_by_role("button", name="Config").click()
-        assert page.get_by_text("Configuration").is_visible()
-        assert page.get_by_text("Simulation hours").is_visible()
+        page.get_by_role("button", name="配置").click()
+        assert page.get_by_text("仿真参数配置").is_visible()
+        assert page.get_by_text("模拟时长:").first.is_visible()
         page.close()
 
     def test_full_flow_via_proxy(self, backend_server, vite_server, browser):
@@ -194,6 +194,6 @@ class TestFrontendIntegration:
         page.goto(f"{vite_server}/simulation/{run_id}", wait_until="domcontentloaded")
         h1 = page.locator("h1")
         h1.wait_for(state="visible", timeout=10_000)
-        assert h1.inner_text().startswith("Simulation:")
+        assert h1.inner_text().startswith("推演视图")
 
         page.close()

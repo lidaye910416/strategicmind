@@ -4,8 +4,10 @@
  * Implements: US-060
  */
 import { useState, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, X, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import api from '../services/api'
+import { UPLOADER } from '../i18n/zh'
 
 interface UploadedFile {
   id: string
@@ -53,57 +55,89 @@ export default function DocumentUploader({ onUploaded }: Props) {
         setFiles((prev) => prev.map((f) =>
           f.id === fd.id ? { ...f, status: 'error' } : f
         ))
-        setError(`Failed to upload ${fd.filename}: ${e?.message || 'unknown error'}`)
+        setError(UPLOADER.failed(fd.filename, e?.message || '未知错误'))
       }
     }
   }, [onUploaded])
 
   return (
     <div className="space-y-3">
-      <div
-        className={`relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-          ${dragActive ? 'border-brand-500 bg-brand-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+      <motion.div
+        whileHover={{ scale: 1.005 }}
+        whileTap={{ scale: 0.995 }}
+        className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer
+                    transition-colors duration-200
+                    ${dragActive
+                      ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/30'
+                      : 'border-ink-300/60 dark:border-ink-700/60 bg-ink-50/40 dark:bg-ink-900/30 hover:border-brand-400 hover:bg-brand-50/40 dark:hover:border-brand-600 dark:hover:bg-brand-950/20'}`}
         onDragOver={(e) => { e.preventDefault(); setDragActive(true) }}
         onDragLeave={() => setDragActive(false)}
         onDrop={(e) => { e.preventDefault(); setDragActive(false); if (e.dataTransfer.files) handleFiles(e.dataTransfer.files) }}
         onClick={() => document.getElementById('file-input')?.click()}
       >
-        <div className="flex flex-col items-center gap-2 text-gray-500">
-          <Upload size={40} className="text-gray-400" />
-          <p className="font-medium text-gray-700">Drag &amp; drop files here, or click to browse</p>
-          <p className="text-xs">Supports: .txt, .md, .pdf</p>
+        <div className="flex flex-col items-center gap-2 text-ink-500 dark:text-ink-400">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500
+                          inline-flex items-center justify-center text-white shadow-soft">
+            <Upload size={22} />
+          </div>
+          <p className="font-medium text-ink-800 dark:text-ink-100 mt-1">{UPLOADER.dropOrClick}</p>
+          <p className="text-xs text-ink-500 dark:text-ink-400">{UPLOADER.supports}</p>
         </div>
         <input
           id="file-input" type="file" multiple accept=".txt,.md,.pdf"
           className="hidden"
           onChange={(e) => e.target.files && handleFiles(e.target.files)}
         />
-      </div>
+      </motion.div>
 
-      {error && (
-        <div className="card border-red-200 bg-red-50 text-red-700 text-sm">{error}</div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="card border-rose-200/60 dark:border-rose-900/50
+                       bg-rose-50/80 dark:bg-rose-950/30
+                       text-rose-700 dark:text-rose-300 text-sm"
+          >
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {files.length > 0 && (
-        <ul className="space-y-1">
+        <motion.ul
+          initial="hidden" animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.05 } } }}
+          className="space-y-1.5"
+        >
           {files.map((f) => (
-            <li key={f.id} className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-200 rounded text-sm">
+            <motion.li
+              key={f.id}
+              variants={{ hidden: { opacity: 0, x: -6 }, show: { opacity: 1, x: 0 } }}
+              className="flex items-center justify-between gap-2 px-3 py-2
+                         bg-white dark:bg-ink-900/60 border border-ink-200/60 dark:border-ink-800/60
+                         rounded-xl text-sm shadow-soft"
+            >
               <div className="flex items-center gap-2 min-w-0">
                 <FileIcon name={f.filename} />
-                <span className="truncate text-gray-700">{f.filename}</span>
-                <span className="text-xs text-gray-400 flex-shrink-0">{(f.size / 1024).toFixed(1)}KB</span>
+                <span className="truncate text-ink-800 dark:text-ink-100">{f.filename}</span>
+                <span className="text-xs text-ink-400 dark:text-ink-500 flex-shrink-0">
+                  {(f.size / 1024).toFixed(1)} KB
+                </span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {f.status === 'uploading' && <Loader2 size={14} className="animate-spin text-brand-600" />}
-                {f.status === 'completed' && <CheckCircle2 size={14} className="text-green-500" />}
-                {f.status === 'error' && <XCircle size={14} className="text-red-500" />}
-                <button onClick={() => setFiles((p) => p.filter((x) => x.id !== f.id))} className="text-gray-400 hover:text-gray-600">
+                {f.status === 'uploading' && <Loader2 size={14} className="animate-spin text-brand-500" />}
+                {f.status === 'completed' && <CheckCircle2 size={14} className="text-emerald-500" />}
+                {f.status === 'error' && <XCircle size={14} className="text-rose-500" />}
+                <button onClick={() => setFiles((p) => p.filter((x) => x.id !== f.id))}
+                        className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-200">
                   <X size={14} />
                 </button>
               </div>
-            </li>
+            </motion.li>
           ))}
-        </ul>
+        </motion.ul>
       )}
     </div>
   )
@@ -111,6 +145,13 @@ export default function DocumentUploader({ onUploaded }: Props) {
 
 function FileIcon({ name }: { name: string }) {
   const ext = name.split('.').pop()?.toLowerCase()
-  const color = ext === 'pdf' ? 'text-red-500' : ext === 'md' ? 'text-purple-500' : 'text-blue-500'
-  return <span className={`${color} font-mono text-xs uppercase`}>{ext || '?'}</span>
+  const map: Record<string, string> = {
+    pdf: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+    md: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+    txt: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  }
+  const color = map[ext || ''] || 'bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-300'
+  return <span className={`${color} font-mono text-[10px] uppercase font-bold px-1.5 py-0.5 rounded`}>
+    {ext || '?'}
+  </span>
 }

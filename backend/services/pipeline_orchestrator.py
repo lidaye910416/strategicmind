@@ -540,11 +540,34 @@ class PipelineOrchestrator:
         run.updated_at = time.time()
 
     def _snapshot(self, run: PipelineRun) -> Dict[str, Any]:
-        d = asdict(run)
-        d["current_stage"] = run.current_stage.value
-        # Don't serialize internal knowledge store handle
-        d["artifacts"].pop("_knowledge_store", None)
-        return d
+        """Build a JSON-safe dict view of the run.
+
+        Avoids asdict() (which deep-copies and races with the background
+        thread) — instead builds a fresh dict of JSON-serializable values
+        and stringifies any non-serializable artifact.
+        """
+        artifacts = {}
+        for k, v in (run.artifacts or {}).items():
+            if k == "_knowledge_store":
+                continue
+            try:
+                json.dumps(v, ensure_ascii=False, default=str)
+                artifacts[k] = v
+            except (TypeError, ValueError):
+                artifacts[k] = str(v)
+        return {
+            "run_id": run.run_id,
+            "status": run.status,
+            "current_stage": run.current_stage.value
+                if hasattr(run.current_stage, "value") else str(run.current_stage),
+            "progress": run.progress,
+            "config": run.config,
+            "completed_stages": list(run.completed_stages),
+            "artifacts": artifacts,
+            "error": run.error,
+            "started_at": run.started_at,
+            "updated_at": run.updated_at,
+        }
 
     def _save_checkpoint(self, run: PipelineRun) -> None:
         run.updated_at = time.time()
