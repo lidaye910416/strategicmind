@@ -128,17 +128,22 @@ class SimulationLoop:
                 simulated_hour=self.hours_per_round,
             )
             results.append(round_result)
-            
-            # Progress callback
+
+            # Progress callback (per-round event payload for event_bus).
+            # Callback signature: callable(dict) -> None; the dict matches
+            # the `round_completed` event schema in arch-spec §1.2.
             if progress_callback:
                 progress_callback({
+                    "type": "round_completed",
                     "round": round_num,
                     "total_rounds": total_rounds,
                     "progress": round_num / total_rounds,
-                    "active_agents": len(round_result.active_agents),
-                    "actions_count": len(round_result.actions),
+                    "actions": [a.to_dict() for a in round_result.actions],
+                    "belief_updates": list(round_result.belief_updates),
+                    "propagation_events": list(round_result.propagation_events),
+                    "active_agents": list(round_result.active_agents),
                 })
-            
+
             # Check for early convergence
             if self._check_convergence(agents, round_num):
                 break
