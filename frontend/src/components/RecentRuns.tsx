@@ -7,17 +7,19 @@
  * - 默认折叠，不占主屏空间
  * - 实时状态点 + 进度条
  * - 点击展开运行详情
+ * - PR-3 P2-1：行首 checkbox + 顶部"对比选中 (N)" 入口（featureFlags.compareRuns = true 时启用）
  */
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, Activity, Loader2, RefreshCcw, Inbox, ChevronRight,
-  Trash2, X, Check, AlertCircle, Pause, Clock, Copy,
+  Trash2, X, Check, AlertCircle, Pause, Clock, Copy, GitCompare, BarChart3,
 } from 'lucide-react'
 import api from '../services/api'
 import { APP_ROUTES, STAGE_LABELS, RECENT_RUNS } from '../i18n/zh'
 import { formatErrorMessage } from '../lib/formatError'
+import { flags } from '../lib/featureFlags'
 
 interface Run {
   run_id: string
@@ -38,6 +40,8 @@ const STATUS_STYLES: Record<string, { dot: string; label: string; icon: any; col
   cancelled: { dot: 'bg-ink-400', label: '已取消', icon: X, color: 'text-ink-500' },
 }
 
+const MAX_COMPARE = 3
+
 export default function RecentRuns() {
   const navigate = useNavigate()
   const [runs, setRuns] = useState<Run[]>([])
@@ -45,10 +49,29 @@ export default function RecentRuns() {
   const [error, setError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(true)  // 默认折叠
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  // PR-3 P2-1：多选 + 对比入口
+  const [selected, setSelected] = useState<string[]>([])
+
+  const compareEnabled = flags.compareRuns
 
   // P1-15: 复制此 run 的配置到 Dashboard（仅复用 hours/style；doc_ids 留空）
   const cloneConfig = (runId: string) => {
     navigate(`/?cloneConfig=${encodeURIComponent(runId)}`)
+  }
+
+  // PR-3 P2-1：切换 checkbox 选中（最多 3 个）
+  const toggleSelect = (runId: string) => {
+    setSelected((prev) => {
+      if (prev.includes(runId)) return prev.filter((x) => x !== runId)
+      if (prev.length >= MAX_COMPARE) return prev  // 满了忽略
+      return [...prev, runId]
+    })
+  }
+
+  // PR-3 P2-1：跳到对比页（带 run id 列表）
+  const goCompare = () => {
+    if (selected.length < 2) return
+    navigate(APP_ROUTES.compareWithRuns(selected))
   }
 
   const load = useCallback(async () => {
@@ -59,6 +82,8 @@ export default function RecentRuns() {
       const sortFn = (a: Run, b: Run) => b.run_id.localeCompare(a.run_id)
       const list: Run[] = ((r.data.runs || []) as Run[]).slice().sort(sortFn)
       setRuns(list)
+      // 清理已不存在的选中项
+      setSelected((prev) => prev.filter((id) => list.some((x) => x.run_id === id)))
     } catch (e: any) {
       setError(formatErrorMessage(e))
     } finally {
@@ -75,6 +100,7 @@ export default function RecentRuns() {
   // 删除单个 run（本地状态 + 后端）
   const deleteRun = async (runId: string) => {
     setRuns((prev) => prev.filter((r) => r.run_id !== runId))
+    setSelected((prev) => prev.filter((id) => id !== runId))
     setDeleteConfirm(null)
     try {
       await api.delete(`/pipeline/${runId}`)
@@ -88,6 +114,7 @@ export default function RecentRuns() {
   const clearCompleted = async () => {
     const completed = runs.filter((r) => r.status === 'completed')
     setRuns((prev) => prev.filter((r) => r.status !== 'completed'))
+    setSelected((prev) => prev.filter((id) => !completed.some((r) => r.run_id === id)))
     for (const r of completed) {
       try {
         await api.delete(`/pipeline/${r.run_id}`)
@@ -98,6 +125,7 @@ export default function RecentRuns() {
   // 统计
   const completedCount = runs.filter((r) => r.status === 'completed').length
   const runningCount = runs.filter((r) => r.status === 'running').length
+  const canCompare = compareEnabled && selected.length >= 2 && selected.length <= MAX_COMPARE
 
   return (
     <div className="card overflow-hidden">
@@ -124,8 +152,42 @@ export default function RecentRuns() {
               {runningCount} 运行中
             </span>
           )}
+          {/* PR-3 P2-1：对比选中计数 badge */}
+          {compareEnabled && selected.length > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-semibold flex items-center gap-0.5">
+              <BarChart3 size={8} />
+              {RECENT_RUNS.compareSelected(selected.length)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {/* PR-3 P2-1：对比入口按钮（featureFlag 关闭时 disabled） */}
+          {compareEnabled && (
+            <button
+              onClick={goCompare}
+              disabled={!canCompare}
+              className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5 transition-colors
+                ${canCompare
+                  ? 'text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 hover:bg-brand-100 dark:hover:bg-brand-900/50 cursor-pointer'
+                  : 'text-ink-400 bg-ink-50 dark:bg-ink-900/30 cursor-not-allowed'}`}
+              title={canCompare
+                ? RECENT_RUNS.compareTitle
+                : selected.length < 2 ? RECENT_RUNS.compareSelectHint : ''}
+            >
+              <GitCompare size={10} />
+              {RECENT_RUNS.compare}
+              {selected.length > 0 && ` (${selected.length})`}
+            </button>
+          )}
+          {!compareEnabled && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded text-ink-400 cursor-not-allowed flex items-center gap-0.5"
+              title={RECENT_RUNS.compareDisabledTitle}
+            >
+              <GitCompare size={10} />
+              {RECENT_RUNS.compare}
+            </span>
+          )}
           {completedCount > 0 && !collapsed && (
             <button
               onClick={clearCompleted}
@@ -177,6 +239,9 @@ export default function RecentRuns() {
                       const done = r.status === 'completed'
                       const running = r.status === 'running'
                       const isConfirming = deleteConfirm === r.run_id
+                      const isSelected = selected.includes(r.run_id)
+                      const selectable = compareEnabled && done  // 只让已完成 run 可对比
+                      const checkboxDisabled = !selectable || (!isSelected && selected.length >= MAX_COMPARE)
 
                       return (
                         <motion.li
@@ -185,9 +250,26 @@ export default function RecentRuns() {
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0, x: -20, height: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="group px-3 py-2 hover:bg-ink-50/60 dark:hover:bg-ink-900/30 transition-colors"
+                          className={`group px-3 py-2 hover:bg-ink-50/60 dark:hover:bg-ink-900/30 transition-colors
+                                      ${isSelected ? 'bg-brand-50/50 dark:bg-brand-950/20' : ''}`}
                         >
                           <div className="flex items-center gap-2">
+                            {/* PR-3 P2-1：多选 checkbox（仅 compareEnabled 时显示） */}
+                            {compareEnabled && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={checkboxDisabled}
+                                onChange={() => toggleSelect(r.run_id)}
+                                title={selectable
+                                  ? (isSelected ? '取消选中' : '加入对比')
+                                  : (selected.length >= MAX_COMPARE ? `最多 ${MAX_COMPARE} 个` : '仅已完成 run 可对比')}
+                                className="w-3.5 h-3.5 shrink-0 cursor-pointer
+                                           disabled:cursor-not-allowed disabled:opacity-40
+                                           accent-brand-500"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            )}
                             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
                             <Icon size={11} className={s.color} />
                             <div className="text-[11px] font-mono text-ink-700 dark:text-ink-200 truncate flex-1">

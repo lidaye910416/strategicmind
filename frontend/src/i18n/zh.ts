@@ -285,6 +285,8 @@ export const APP_ROUTES = {
   workbenchWithRun: (id: string) => `/workbench/${id}`,
   simulation: (id: string) => `/simulation/${id}`,
   report: (id: string) => `/report/${id}`,
+  compare: '/compare',
+  compareWithRuns: (ids: string[]) => `/compare?runs=${ids.map(encodeURIComponent).join(',')}`,
   notFound: '404 - 页面不存在',
 }
 
@@ -360,6 +362,12 @@ export const AGENT_INTERVIEW = {
 export const RECENT_RUNS = {
   copyConfig: '复制配置',
   copyConfigTitle: (id: string) => `复制此 run 的配置（时长 / 风格），run id: ${id}`,
+  compare: '对比',
+  compareTitle: '对比选中 N 个 run',
+  compareSelectTitle: '勾选 2-3 个 run 进行对比',
+  compareSelectHint: '已选 0 个 — 至少勾 2 个，最多 3 个',
+  compareSelected: (n: number) => `已选 ${n} 个`,
+  compareDisabledTitle: '对比功能当前已关闭（featureFlags.compareRuns = false）',
 }
 
 export const PROVIDER = {
@@ -385,3 +393,26 @@ export const PROVIDER = {
   badge: '切换模型',
   badgeSwitching: '切换中',
 }
+
+export const COMPARE = {
+  title: '多 Run 横向对比',
+  subtitle: '并排查看多个推演 run 的决议、立场、行动分布。',
+  selectFromHistory: '从历史选择',
+  pickHint: 'URL 形如 /compare?runs=run_xxx,run_yyy（最多 3 个）',
+  loading: '加载中…',
+  loadFailed: '加载失败',
+  noRuns: '请在 URL 中提供至少 2 个 run id，例如 ?runs=run_abc,run_def',
+  noRunsLink: '去历史选择',
+  resolutionTitle: '决议分布',
+  resolutionSub: '按 run 对比决议（每个 run 的最终决议关键词计数）',
+  stanceTitle: '阵营对比',
+  stanceSub: '按 run 对比各阵营（支持 / 反对 / 中立）的 Agent 占比',
+  actionTitle: '行动直方图',
+  actionSub: '按 run 对比每种行动类型的次数（MAKE_STATEMENT / PROPOSE_DEAL 等）',
+  legendRun: (id: string) => `Run ${id}`,
+  emptyData: '暂无数据',
+  chartEmpty: '该 run 无可用数据',
+  moreThan3: '最多对比 3 个 run（已取前 3 个）',
+  notCompleted: (n: number) => `${n} 个 run 未完成，仅显示已完成 run 的数据`,
+}
+
