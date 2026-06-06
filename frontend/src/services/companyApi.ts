@@ -6,10 +6,10 @@
  * - 查询部门列表 / 立场
  * - 解决战略议题（部门博弈推演）
  * - 推进季度 / 添加竞品 / 添加客户
+ *
+ * 来源：C3 P0 #13 - 复用 services/http.ts 单例，不重复 axios.create
  */
-import axios from 'axios'
-
-const api = axios.create({ baseURL: '/api' })
+import http from './http'
 
 // ---- 类型定义 ----
 export type BusinessModelType =
@@ -128,37 +128,37 @@ export const companyApi = {
     business_model?: BusinessModelType
     competitors?: Array<{ name: string; market_share: number; strategy: string; aggressiveness: number }>
     customer_segments?: string[]
-  }) => api.post<{ company_id: string; company: CompanyContext }>('/company/setup', data),
+  }) => http.post<{ company_id: string; company: CompanyContext }>('/company/setup', data),
 
   get: (companyId: string) =>
-    api.get<CompanyContext>(`/company/${companyId}`),
+    http.get<CompanyContext>(`/company/${companyId}`),
 
   listDepartments: (companyId: string) =>
-    api.get<{ departments: DepartmentAgent[]; by_power: DepartmentAgent[] }>(
+    http.get<{ departments: DepartmentAgent[]; by_power: DepartmentAgent[] }>(
       `/company/${companyId}/departments`,
     ),
 
   resolve: (companyId: string, data: { topic: string; external_pressure?: number }) =>
-    api.post<TopicResolution>(`/company/${companyId}/resolve`, data),
+    http.post<TopicResolution>(`/company/${companyId}/resolve`, data),
 
   departmentStance: (companyId: string, data: { topic: string }) =>
-    api.post<{
+    http.post<{
       topic: string
       positions: Array<{ dept_type: string; dept_name: string; stance: number; stance_label: string }>
     }>(`/company/${companyId}/department-stance`, data),
 
   advanceQuarter: (companyId: string) =>
-    api.post<{ market_env: MarketEnvironment; changes: Record<string, any> }>(
+    http.post<{ market_env: MarketEnvironment; changes: Record<string, any> }>(
       `/company/${companyId}/advance-quarter`,
     ),
 
   addCompetitor: (
     companyId: string,
     data: { name: string; market_share?: number; strategy?: string; aggressiveness?: number },
-  ) => api.post(`/company/${companyId}/add-competitor`, data),
+  ) => http.post(`/company/${companyId}/add-competitor`, data),
 
   addCustomers: (companyId: string, data: { segment: string; count?: number }) =>
-    api.post(`/company/${companyId}/add-customers`, data),
+    http.post(`/company/${companyId}/add-customers`, data),
 }
 
 export default companyApi

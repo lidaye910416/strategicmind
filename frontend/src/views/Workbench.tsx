@@ -68,8 +68,10 @@ export default function Workbench() {
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
 
   // ---- 初始化：搭建默认公司 + 加载演示图谱 ----
+  // 来源：C3 P0 #7：用 AbortController 防止组件卸载后的 setState warning
   useEffect(() => {
-    (async () => {
+    const controller = new AbortController()
+    ;(async () => {
       try {
         const r = await companyApi.setup({
           company_name: '示例公司',
@@ -77,16 +79,19 @@ export default function Workbench() {
         })
         setCompany(r.data.company)
         setCompanyId(r.data.company_id)
-      } catch (e) {
+      } catch (e: any) {
+        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
         console.error('公司初始化失败', e)
       }
       try {
-        const r = await api.get('/graph/demo-graph')
+        const r = await api.get('/graph/demo-graph', { signal: controller.signal })
         setGraphData({ nodes: r.data.nodes || [], edges: r.data.edges || [] })
-      } catch (e) {
+      } catch (e: any) {
+        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
         console.error('图谱加载失败', e)
       }
     })()
+    return () => controller.abort()
   }, [])
 
   // ---- 启动推演 ----
@@ -106,19 +111,27 @@ export default function Workbench() {
   }, [])
 
   // ---- 轮询推演状态 ----
+  // 来源：C3 P0 #7 + C1 C-25：用 AbortController 包住每次 fetch
+  //       路由切换 / 组件卸载 → 取消 in-flight 请求，避免 setState on unmounted
   useEffect(() => {
     if (!simState || simState.status === 'completed' || simState.status === 'failed' || simState.status === 'cancelled') return
+    const controller = new AbortController()
     const t = setInterval(async () => {
       try {
-        const r = await api.get(`/pipeline/${simState.run_id}`)
+        const r = await api.get(`/pipeline/${simState.run_id}`, { signal: controller.signal })
         setSimState((s) => s ? { ...s, ...r.data } : s)
         setStage(r.data.current_stage || 'SEED_PARSING')
         setProgress(r.data.progress || 0)
-      } catch (e) {
+      } catch (e: any) {
+        // AbortError 是用户主动取消/组件卸载，不算错误
+        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
         console.error('轮询失败', e)
       }
     }, 2000)
-    return () => clearInterval(t)
+    return () => {
+      clearInterval(t)
+      controller.abort()
+    }
   }, [simState])
 
   // ---- 解决议题 ----

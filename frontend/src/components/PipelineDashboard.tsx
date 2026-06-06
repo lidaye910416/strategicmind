@@ -1,9 +1,13 @@
 /**
  * PipelineDashboard - real-time pipeline stage tracker (horizontal stepper).
  *
+ * 来源：C3 P0 #4 + C1 C-40
+ *   - 删除内部 new EventSource（统一由 store 管 SSE）
+ *   - 删除 useState 镜像 props
+ *   - STAGE_LABELS 截断从 slice(0,6) 改 truncate + title（避免中文字符截断混乱）
+ *
  * Implements: US-061
  */
-import { useEffect, useState } from 'react'
 import { PipelineStage, type PipelineStatus } from '../types'
 import { Check, Loader2 } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -27,50 +31,22 @@ const STAGES: PipelineStage[] = [
 ]
 
 export default function PipelineDashboard({
-  runId, currentStage: currentStageProp, progress: progressProp, status: statusProp,
+  runId, currentStage = PipelineStage.SEED_PARSING, progress = 0, status: statusProp,
 }: Props) {
-  const [currentStage, setCurrentStage] = useState<string>(currentStageProp || PipelineStage.SEED_PARSING)
-  const [progress, setProgress] = useState<number>(progressProp || 0)
-
-  useEffect(() => { if (currentStageProp) setCurrentStage(currentStageProp) }, [currentStageProp])
-  useEffect(() => { if (progressProp !== undefined) setProgress(progressProp) }, [progressProp])
-
-  useEffect(() => {
-    if (statusProp || currentStageProp !== undefined) return
-    const es = new EventSource(`/api/pipeline/${runId}/events`)
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data)
-        // Backend sends `current_stage` (not `stage`).
-        const stage = data.current_stage ?? data.stage
-        if (stage) setCurrentStage(stage)
-        if (data.progress !== undefined) setProgress(data.progress)
-        if (data.status && ['completed', 'failed', 'cancelled'].includes(data.status)) {
-          es.close()
-        }
-      } catch { /* ignore */ }
-    }
-    es.onerror = () => {
-      // Let the EventSource auto-retry unless the run is already terminal.
-      if (statusProp && ['completed', 'failed', 'cancelled'].includes(statusProp)) {
-        es.close()
-      }
-    }
-    return () => es.close()
-  }, [runId, statusProp, currentStageProp])
-
+  // 所有 SSE 事件由 store 派发，组件只读 props（保证单一数据源）
   const currentIndex = STAGES.indexOf(currentStage as PipelineStage)
   const pct = Math.round(progress * 100)
   const completed = currentStage === PipelineStage.COMPLETED
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-run-id={runId}>
       {/* Horizontal stepper */}
       <div className="relative">
         <div className="grid grid-cols-7 gap-1.5">
           {STAGES.map((stage, i) => {
             const isDone = i < currentIndex || completed
             const isActive = i === currentIndex && !completed
+            const label = STAGE_LABELS[stage] || stage
             return (
               <div key={stage} className="relative">
                 <div className={`relative h-1.5 rounded-full overflow-hidden
@@ -94,9 +70,12 @@ export default function PipelineDashboard({
                                       : 'bg-ink-100 dark:bg-ink-800 text-ink-400 dark:text-ink-500'}`}>
                     {isDone ? <Check size={12} /> : isActive ? <Loader2 size={11} className="animate-spin" /> : i + 1}
                   </div>
-                  <div className={`text-[11px] leading-tight
-                                  ${isActive ? 'font-semibold text-brand-700 dark:text-brand-300' : isDone ? 'text-ink-700 dark:text-ink-200' : 'text-ink-400 dark:text-ink-500'}`}>
-                    {STAGE_LABELS[stage]?.split('').slice(0, 6).join('') || stage}
+                  <div
+                    className={`text-[11px] leading-tight truncate max-w-full
+                                  ${isActive ? 'font-semibold text-brand-700 dark:text-brand-300' : isDone ? 'text-ink-700 dark:text-ink-200' : 'text-ink-400 dark:text-ink-500'}`}
+                    title={label}
+                  >
+                    {label}
                   </div>
                 </div>
               </div>

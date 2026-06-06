@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play, Settings, CheckCircle2, AlertCircle, FileText, Sparkles, ArrowUpRight, Upload,
-  Cpu, Server, Cloud, FlaskConical, ChevronDown, Network,
+  Cpu, Server, Cloud, FlaskConical, ChevronDown, Network, Loader2,
 } from 'lucide-react'
 import DocumentUploader from '../components/DocumentUploader'
 import SeedLoader from '../components/SeedLoader'
@@ -61,6 +61,7 @@ export default function Dashboard() {
 
   const {
     runId, status, currentStage, progress, error,
+    isStarting,
     startPipeline, pause, resume, cancel, reset,
     setProgress, setStatus,
   } = usePipelineStore()
@@ -357,8 +358,12 @@ export default function Dashboard() {
                 whileTap={{ scale: 0.98 }}
                 className="btn-primary h-11 px-6 text-sm"
                 onClick={handleStart}
+                disabled={isStarting}
               >
-                <Play size={16} /> 启动推演
+                {isStarting
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : <Play size={16} />}
+                {isStarting ? '正在构建推演任务…' : '启动推演'}
               </motion.button>
             ) : (
               <div className="w-full">

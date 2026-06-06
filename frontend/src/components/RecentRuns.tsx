@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import api from '../services/api'
 import { APP_ROUTES, STAGE_LABELS } from '../i18n/zh'
+import { formatErrorMessage } from '../lib/formatError'
 
 interface Run {
   run_id: string
@@ -53,7 +54,7 @@ export default function RecentRuns() {
       const list: Run[] = ((r.data.runs || []) as Run[]).slice().sort(sortFn)
       setRuns(list)
     } catch (e: any) {
-      setError(e?.message || '加载失败')
+      setError(formatErrorMessage(e))
     } finally {
       setLoading(false)
     }
