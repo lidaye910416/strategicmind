@@ -1,9 +1,11 @@
 /**
  * RealtimeKnowledgeGraph - MiroFish 风格的实时增长知识图谱。
  *
- * 数据源：
- *   1. SSE: /api/pipeline/<run_id>/events 中的 live_event { type: graph_progress }
- *   2. REST: /api/pipeline/<run_id>/graph-snapshot（启动时一次性拉全量）
+ * 数据源（FE3 P3-C：统一 EventSource 入口）：
+ *   1. Store selector: useGraphNodes() / useGraphEdges() / useGraphPhase()
+ *      （由 store 内的唯一 EventSource 解析 graph_progress 后写入，组件不再自建 SSE）
+ *   2. REST: /api/pipeline/<run_id>/graph-snapshot（启动时一次性拉全量，seedGraph 写入 store）
+ *   3. Store 派生 status / currentStage（决定 building 状态）
  *
  * 动效：
  *   - 新节点：opacity 0→1 + scale 0.3→1（"破壳"）
@@ -12,13 +14,23 @@
  *
  * 配色：12 种实体类型固定调色板（参考 MiroFish GraphPanel.vue）
  */
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Network, ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Loader2,
   Maximize2, Minimize2, X, Hash,
 } from 'lucide-react'
 import api from '../services/api'
+import {
+  useGraphNodes,
+  useGraphEdges,
+  useGraphPhase,
+  useStage,
+  useStatus,
+  usePipelineStore,
+  type GraphNodeLive,
+  type GraphEdgeLive,
+} from '../store/pipeline'
 
 // 12 色调色板（与 MiroFish GraphPanel 保持一致）
 const NODE_COLORS: Record<string, string> = {
@@ -36,20 +48,8 @@ const NODE_COLORS: Record<string, string> = {
   DEFAULT: '#94A3B8',
 }
 
-interface GraphNode {
-  id: string
-  label: string
-  type: string
-  index: number
-}
-
-interface GraphEdge {
-  id: string
-  source: string
-  target: string
-  type: string
-  index: number
-}
+interface GraphNode extends GraphNodeLive {}
+interface GraphEdge extends GraphEdgeLive {}
 
 interface SimNode extends GraphNode {
   x: number
@@ -87,39 +87,44 @@ export default function RealtimeKnowledgeGraph({
   const [showLabels, setShowLabels] = useState(true)
   const [tick, setTick] = useState(0)
   const [maximized, setMaximized] = useState(false)
-  const [building, setBuilding] = useState(false)
   const [stageLabel, setStageLabel] = useState<string>('等待图谱数据…')
   const [selectedNode, setSelectedNode] = useState<SimNode | null>(null)
-  const [stats, setStats] = useState<{ nodeCount: number; edgeCount: number }>({
-    nodeCount: 0, edgeCount: 0,
-  })
+
+  // ---- FE3 P3-C：store selector 替代自建 SSE ----
+  const storeGraphNodes = useGraphNodes()
+  const storeGraphEdges = useGraphEdges()
+  const graphPhase = useGraphPhase()
+  const currentStage = useStage()
+  const status = useStatus()
+  const seedGraphAction = usePipelineStore((s) => s.seedGraph)
+
+  // building flag 派生自 store phase + currentStage
+  const building = graphPhase === 'building' || currentStage === 'GRAPH_BUILDING'
+  const stats = { nodeCount: storeGraphNodes.length, edgeCount: storeGraphEdges.length }
 
   const W = 900
   const H = height
 
-  // 启动 SSE
+  // 把 store 实时数据同步进本地 SimNode/SimEdge 状态（保留动画）
   useEffect(() => {
-    if (!runId || !live) return
-    const url = `/api/pipeline/${runId}/events`
-    const es = new EventSource(url)
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.type === 'live_event' && data.event) {
-          handleLiveEvent(data.event)
-        } else if (data.current_stage === 'GRAPH_BUILDING') {
-          setBuilding(true)
-          setStageLabel('图谱构建中 · 节点持续涌现')
-        } else if (data.current_stage && data.current_stage !== 'GRAPH_BUILDING') {
-          setBuilding(false)
-        }
-      } catch {/* ignore */}
+    if (!live) return
+    setNodes((prev) => syncNodesToStore(prev, storeGraphNodes))
+    setEdges((prev) => syncEdgesToStore(prev, storeGraphEdges))
+    if (graphPhase === 'completed') {
+      setStageLabel('图谱构建完成')
+    } else if (storeGraphNodes.length > 0 || storeGraphEdges.length > 0) {
+      setStageLabel(`图谱构建中 · 节点 ${storeGraphNodes.length} · 关系 ${storeGraphEdges.length}`)
     }
-    es.onerror = () => {/* EventSource auto-retry */}
-    return () => es.close()
-  }, [runId, live])
+  }, [storeGraphNodes, storeGraphEdges, graphPhase, live])
 
-  // 启动时拉一次全量
+  // 终态/未运行时不显示"构建中"
+  useEffect(() => {
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+      setStageLabel(storeGraphNodes.length > 0 ? '图谱就绪' : '暂无图谱数据')
+    }
+  }, [status, storeGraphNodes.length])
+
+  // 启动时拉一次全量（seed 进 store + 本地）
   useEffect(() => {
     if (!runId) {
       if (fallback) hydrateFromFallback(fallback)
@@ -130,42 +135,25 @@ export default function RealtimeKnowledgeGraph({
       try {
         const r = await api.get(`/pipeline/${runId}/graph-snapshot`)
         if (cancelled) return
-        hydrateFromSnapshot(r.data)
+        const data = r.data
+        const rawNodes: GraphNode[] = data.nodes || []
+        const rawEdges: GraphEdge[] = data.edges || []
+        // seed 进 store（供其他组件订阅）
+        seedGraphAction(rawNodes, rawEdges)
+        hydrateFromSnapshot(data)
       } catch {/* ignore */}
     })()
     return () => { cancelled = true }
-  }, [runId])
-
-  const handleLiveEvent = useCallback((evt: any) => {
-    const t = evt?.type
-    if (t === 'graph_progress') {
-      setBuilding(evt.data?.phase !== 'completed')
-      if (evt.data?.phase === 'completed') {
-        setStageLabel('图谱构建完成')
-      } else {
-        setStageLabel(`图谱构建中 · 节点 ${evt.data?.nodes ?? 0} · 关系 ${evt.data?.edges ?? 0}`)
-      }
-      setNodes((prev) => growNodes(prev, evt.data?.nodes ?? prev.length))
-      setEdges((prev) => growEdges(prev, evt.data?.edges ?? prev.length))
-      setStats((s) => ({
-        ...s,
-        nodeCount: evt.data?.nodes ?? s.nodeCount,
-        edgeCount: evt.data?.edges ?? s.edgeCount,
-      }))
-    }
-  }, [])
+  }, [runId, seedGraphAction])
 
   const hydrateFromSnapshot = (data: any) => {
     const rawNodes: GraphNode[] = data.nodes || []
     const rawEdges: GraphEdge[] = data.edges || []
     setNodes(seedNodes(rawNodes))
     setEdges(seedEdges(rawEdges))
-    setStats({ nodeCount: rawNodes.length, edgeCount: rawEdges.length })
     if (data.stage === 'GRAPH_BUILDING') {
-      setBuilding(true)
       setStageLabel('图谱构建中')
     } else {
-      setBuilding(false)
       setStageLabel(rawNodes.length > 0 ? '图谱就绪' : '等待图谱数据…')
     }
   }
@@ -181,9 +169,7 @@ export default function RealtimeKnowledgeGraph({
     }))
     setNodes(seedNodes(mappedNodes))
     setEdges(seedEdges(mappedEdges))
-    setStats({ nodeCount: mappedNodes.length, edgeCount: mappedEdges.length })
     setStageLabel('演示数据 · 启动推演后开始增长')
-    setBuilding(false)
   }
 
   // 力模拟
@@ -518,43 +504,62 @@ function seedEdges(raw: GraphEdge[]): SimEdge[] {
   return raw.map((e) => ({ ...e, drawProgress: 0, isNew: true }))
 }
 
-function growNodes(prev: SimNode[], target: number): SimNode[] {
-  if (target <= prev.length) {
-    return prev.map((n) => ({ ...n, isNew: false }))
+/** 把 store 节点同步进本地 SimNode（已有节点保留位置/动画；新增节点随机散开） */
+function syncNodesToStore(prev: SimNode[], next: GraphNodeLive[]): SimNode[] {
+  if (next.length === 0) return prev.length > 0 ? [] : prev
+  if (next.length < prev.length) {
+    // 收缩：截断
+    return prev.slice(0, next.length)
   }
-  const out = prev.map((n) => ({ ...n, isNew: false }))
+  if (next.length === prev.length) {
+    // 数量未变：仅更新 type/label（保位置）
+    return prev.map((n, i) => {
+      const sn = next[i]
+      if (!sn) return n
+      if (n.id === sn.id && n.type === sn.type && n.label === sn.label) return n
+      return { ...n, type: sn.type, label: sn.label }
+    })
+  }
+  // 增长：保留旧的，追加新的（随机散布，等力模拟拉回）
   const cx = 450, cy = 240
-  for (let i = prev.length; i < target; i++) {
-    const angle = (i / target) * Math.PI * 2
+  const out = prev.map((n) => ({ ...n, isNew: false }))
+  for (let i = prev.length; i < next.length; i++) {
+    const sn = next[i]
+    const angle = (i / Math.max(1, next.length)) * Math.PI * 2
     const radius = 60 + (i % 6) * 35
     out.push({
-      id: `n${i}`,
-      label: `Entity ${i + 1}`,
-      type: ['COMPANY', 'PERSON', 'PRODUCT', 'BUSINESS', 'GOVERNMENT', 'REGULATION'][i % 6],
-      index: i,
+      id: sn.id,
+      label: sn.label,
+      type: sn.type,
+      index: sn.index,
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius,
       vx: 0, vy: 0,
-      color: NODE_COLORS.DEFAULT,
-      size: 12,
+      color: NODE_COLORS[sn.type] || NODE_COLORS.DEFAULT,
+      size: sn.type === 'PERSON' ? 16 : 12,
       birth: 0, isNew: true,
     })
   }
   return out
 }
 
-function growEdges(prev: SimEdge[], target: number): SimEdge[] {
-  if (target <= prev.length) {
-    return prev.map((e) => ({ ...e, isNew: false }))
+function syncEdgesToStore(prev: SimEdge[], next: GraphEdgeLive[]): SimEdge[] {
+  if (next.length === 0) return prev.length > 0 ? [] : prev
+  if (next.length < prev.length) return prev.slice(0, next.length)
+  if (next.length === prev.length) {
+    return prev.map((e, i) => {
+      const se = next[i]
+      if (!se) return e
+      if (e.id === se.id && e.source === se.source && e.target === se.target) return e
+      return { ...e, source: se.source, target: se.target, type: se.type }
+    })
   }
   const out = prev.map((e) => ({ ...e, isNew: false }))
-  for (let i = prev.length; i < target; i++) {
+  for (let i = prev.length; i < next.length; i++) {
+    const se = next[i]
     out.push({
-      id: `e${i}`,
-      source: `n${i % Math.max(1, prev.length || 1)}`,
-      target: `n${(i * 7 + 1) % Math.max(1, prev.length || 1)}`,
-      type: ['OWNS', 'MANAGES', 'INFLUENCES', 'DEPENDS_ON', 'REGULATED_BY'][i % 5],
-      index: i,
+      id: se.id, source: se.source, target: se.target,
+      type: se.type, index: se.index,
       drawProgress: 0, isNew: true,
     })
   }

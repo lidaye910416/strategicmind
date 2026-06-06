@@ -10,9 +10,10 @@
  * 底部时间轴：点击 round 切换聚焦（其他 round 边淡化）
  * 右侧统计：本 round 新增边数 / 累计边数
  *
- * 数据源：
- *   1. SSE: /api/pipeline/<run_id>/events 中 live_event { type: round_progress }
- *   2. REST: /api/pipeline/<run_id>/network-frames
+ * 数据源（FE3 P3-C：统一 EventSource 入口）：
+ *   1. Store selector: useNetworkFrames()（由 store 内的唯一 EventSource
+ *      解析 round_progress 后写入，组件不再自建 SSE）
+ *   2. REST: /api/pipeline/<run_id>/network-frames（启动一次性拉全量）
  */
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
@@ -21,6 +22,11 @@ import {
   ChevronLeft, ChevronRight, Zap,
 } from 'lucide-react'
 import api from '../services/api'
+import {
+  useNetworkFrames,
+  useLastEventAt,
+  type NetworkFrameLive,
+} from '../store/pipeline'
 
 const AGENT_COLORS: Record<string, string> = {
   CORPORATE_EXEC: '#FF6B35',
@@ -89,48 +95,27 @@ export default function SimulationNetworkGraph({
   const [hovered, setHovered] = useState<string | null>(null)
   const loading = false
 
+  // ---- FE3 P3-C：store selector 替代自建 SSE ----
+  const storeFrames = useNetworkFrames()
+  const lastEventAt = useLastEventAt()
+
   const W = 900
   const H = height
 
-  // SSE 订阅
+  // 把 store frames 同步进本地 frames 状态（保持兼容）
   useEffect(() => {
-    if (!runId) return
-    const url = `/api/pipeline/${runId}/events`
-    const es = new EventSource(url)
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.type === 'live_event' && data.event?.type === 'round_progress') {
-          const d = data.event.data
-          setAgents((prev) => {
-            const map = new Map(prev.map((a) => [a.id, a]))
-            for (const a of (d.agents || [])) map.set(a.id, a)
-            return Array.from(map.values())
-          })
-          setFrames((prev) => {
-            const filtered = prev.filter((f) => f.round !== d.round)
-            const newFrame: Frame = {
-              round: d.round,
-              actions_count: d.actions_count || 0,
-              active_agents: d.active_agents || 0,
-              edges: d.propagation_edges || [],
-              cumulative_edge_count: 0,
-            }
-            const next = [...filtered, newFrame].sort((a, b) => a.round - b.round)
-            // Update cumulative
-            let acc = 0
-            for (const f of next) {
-              acc += f.edges.length
-              f.cumulative_edge_count = acc
-            }
-            return next
-          })
-          if (autoFollow) setFocusRound(d.round)
-        }
-      } catch {/* ignore */}
-    }
-    return () => es.close()
-  }, [runId, autoFollow])
+    if (storeFrames.length === 0) return
+    setFrames(storeFrames.map(toLocalFrame))
+  }, [storeFrames])
+
+  // autoFollow 时跟随最新 round
+  useEffect(() => {
+    if (!autoFollow || storeFrames.length === 0) return
+    const last = storeFrames[storeFrames.length - 1]
+    setFocusRound(last.round)
+    // 仅依赖 lastEventAt 防止 loop（storeFrames 也会变化）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastEventAt])
 
   // 启动拉全量
   useEffect(() => {
@@ -455,4 +440,15 @@ export default function SimulationNetworkGraph({
       </div>
     </div>
   )
+}
+
+// 把 store 内的 NetworkFrameLive 转成本地 Frame 形态（保持兼容）
+function toLocalFrame(f: NetworkFrameLive): Frame {
+  return {
+    round: f.round,
+    actions_count: f.actions_count,
+    active_agents: f.active_agents,
+    edges: f.edges.map((e) => ({ source: e.source, target: e.target, channel: e.channel, round: e.round })),
+    cumulative_edge_count: f.cumulative_edge_count,
+  }
 }

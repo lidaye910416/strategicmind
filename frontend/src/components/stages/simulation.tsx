@@ -4,12 +4,12 @@
  * 展示：已推演回合 / 行动数 / 信念更新数 + 各回合状态。
  *
  * 来源：原 components/StageCards.tsx 内嵌组件，P2-4 拆出。
- * 注意：组件内部仍使用 EventSource 直连 API（与 P0-2 unifiedSSE 目标有冲突，
- *       但本 P2-4 任务只做"拆文件"不改行为，保留 EventSource 后续单 PR 收敛）。
+ * FE3 P3-C：EventSource 统一在 store，本组件用 useNetworkFrames() 订阅。
  */
 import { useEffect, useState } from 'react'
 import { Loader2, Network as NetworkIcon } from 'lucide-react'
 import Stat from './Stat'
+import { useNetworkFrames } from '../../store/pipeline'
 
 interface Props {
   artifact: any
@@ -21,21 +21,16 @@ export default function SimulationRunningContent({ artifact, runId, isActive }: 
   const totalRounds = artifact?.total_rounds || 0
   const currentRound = artifact?.current_round || 0
   const roundResults = artifact?.round_results || []
-  const [liveRound, setLiveRound] = useState(currentRound)
-
-  useEffect(() => {
-    if (!runId || !isActive) return
-    const es = new EventSource(`/api/pipeline/${runId}/events`)
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data)
-        if (d.type === 'live_event' && d.event?.type === 'round_progress') {
-          setLiveRound(d.event.data?.round || 0)
-        }
-      } catch {/* ignore */}
-    }
-    return () => es.close()
-  }, [runId, isActive])
+  // ---- FE3 P3-C：store selector 替代自建 SSE ----
+  const networkFrames = useNetworkFrames()
+  const liveRound = networkFrames.length > 0
+    ? networkFrames[networkFrames.length - 1].round
+    : currentRound
+  // 保留 useState 触发以兼容上层 hook 顺序（无副作用）
+  const [, setTick] = useState(0)
+  useEffect(() => { setTick((t) => t + 1) }, [liveRound])
+  // 保留 runId 形参以兼容调用方
+  void runId
 
   return (
     <div className="space-y-2">
