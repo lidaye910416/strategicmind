@@ -282,6 +282,7 @@ export const CONFIG = {
 export const APP_ROUTES = {
   home: '/',
   workbench: '/workbench',
+  workbenchWithRun: (id: string) => `/workbench/${id}`,
   simulation: (id: string) => `/simulation/${id}`,
   report: (id: string) => `/report/${id}`,
   notFound: '404 - 页面不存在',

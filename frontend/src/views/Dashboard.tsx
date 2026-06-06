@@ -4,6 +4,7 @@
  * Implements: US-059, US-060, US-062
  */
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -13,7 +14,7 @@ import {
 import DocumentUploader from '../components/DocumentUploader'
 import SeedLoader from '../components/SeedLoader'
 import PipelineDashboard from '../components/PipelineDashboard'
-import SimulationExplainer from '../components/SimulationExplainer'
+import LiveRunPanel from '../components/LiveRunPanel'
 import ProviderPicker from '../components/ProviderPicker'
 import Hero from '../components/layout/Hero'
 import { usePipelineStore, type PipelineStatus } from '../store/pipeline'
@@ -39,6 +40,7 @@ const ICON_FOR_PROVIDER: Record<string, any> = {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [showConfig, setShowConfig] = useState(false)
   const [hours, setHours] = useState(72)
   const [style, setStyle] = useState<'executive' | 'technical' | 'narrative'>('executive')
@@ -66,7 +68,7 @@ export default function Dashboard() {
     setProgress, setStatus,
   } = usePipelineStore()
 
-  // Poll pipeline status (fallback to hydrate store from REST snapshot)
+  // Poll pipeline status (SSE 在 store 内已接管；这里是 5s 兜底拉快照，确保数据最新)
   useEffect(() => {
     if (!runId) return
     const tick = () => {
@@ -82,14 +84,16 @@ export default function Dashboard() {
     tick()
     const t = setInterval(tick, 5000)
     return () => clearInterval(t)
-  }, [runId])
+  }, [runId])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStart = async () => {
-    await startPipeline({
+    const runId = await startPipeline({
       simulation_hours: hours,
       report_style: style,
       doc_ids: uploads.map((u) => u.docId).filter(Boolean),
     })
+    // 启动成功后：跳到完整工作台（同时 Dashboard 上也会自动出现 LiveRunPanel 紧凑版）
+    if (runId) navigate(`/workbench/${runId}`)
   }
 
   return (
@@ -404,13 +408,14 @@ export default function Dashboard() {
           </div>
         </motion.section>
 
-        {/* 推演运行状态 - 显示全过程（运行中/已完成后都要看） */}
+        {/* 推演运行状态 - 实时可视化（与 Workbench 同源） */}
         {runId && status !== 'idle' && (
           <motion.section variants={fadeUp}>
-            <SimulationExplainer
-              currentStage={currentStage}
-              progress={progress}
-              status={status}
+            <LiveRunPanel
+              runId={runId}
+              compact
+              title="推演实时可视化"
+              subtitle="这是 Workbench 的核心可视化紧凑版 · 点击右上角进入完整工作台"
             />
           </motion.section>
         )}
