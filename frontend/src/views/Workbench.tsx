@@ -23,6 +23,7 @@ import DepartmentGraph from '../components/DepartmentGraph'
 import SimulationExplainer from '../components/SimulationExplainer'
 import KnowledgeGraph from '../components/KnowledgeGraph'
 import AgentInterview from '../components/AgentInterview'
+import WorkbenchSubnav from '../components/WorkbenchSubnav'
 
 import Hero from '../components/layout/Hero'
 import {
@@ -251,6 +252,11 @@ export default function Workbench() {
           />
         </motion.div>
 
+        {/* ===== sticky 子导航（4 锚点 + scroll-spy + 心跳） PR-2 P1-1/2 ===== */}
+        <motion.div variants={fadeUp}>
+          <WorkbenchSubnav />
+        </motion.div>
+
         {/* ===== 主体：左右分栏 ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* ---------- 左栏：公司态势 + 议题推演 ---------- */}
@@ -300,8 +306,8 @@ export default function Workbench() {
               )}
             </div>
 
-            {/* 议题推演（部门博弈） */}
-            <div className="card p-5">
+            {/* 议题推演（部门博弈） — PR-2 P1-2 锚点 #dept */}
+            <section id="dept" className="card p-5 scroll-mt-28">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-500/20 to-brand-500/20 inline-flex items-center justify-center text-accent-600">
                   <Zap size={16} />
@@ -417,30 +423,43 @@ export default function Workbench() {
                       </span>
                     </div>
 
-                    {/* 部门立场条形图 */}
+                    {/* 部门立场条形图 — PR-2 P1-5：transform:scaleX 锚定 0 点 + 3 条参考线 */}
                     <div className="space-y-1.5">
                       {resolution.positions
                         .sort((a, b) => b.position - a.position)
-                        .map((p) => (
-                          <div key={p.dept_type} className="flex items-center gap-2 text-[11px]">
-                            <div className="w-16 text-ink-600 dark:text-ink-300 truncate">{p.dept_name}</div>
-                            <div className="flex-1 h-2 rounded-full bg-ink-200/60 dark:bg-ink-800/60 relative overflow-hidden">
-                              <div
-                                className={`absolute top-0 h-full rounded-full ${
-                                  p.position > 0 ? 'bg-emerald-500 left-1/2' : 'bg-rose-500 right-1/2'
-                                }`}
-                                style={{ width: `${Math.abs(p.position) * 50}%` }}
-                              />
-                              <div className="absolute top-0 left-1/2 w-px h-full bg-ink-400/50" />
+                        .map((p) => {
+                          // 把 position 限到 [-1, 1] 避免溢出（实际数据通常在此范围内）
+                          const pos = Math.max(-1, Math.min(1, p.position))
+                          return (
+                            <div key={p.dept_type} className="flex items-center gap-2 text-[11px]">
+                              <div className="w-16 text-ink-600 dark:text-ink-300 truncate">{p.dept_name}</div>
+                              <div className="flex-1 h-2 rounded-full bg-ink-200/60 dark:bg-ink-800/60 relative overflow-hidden">
+                                {/* 参考线：-0.5 / 0 / +0.5（25% / 50% / 75%） */}
+                                <div className="absolute top-0 h-full w-px bg-ink-300/50 dark:bg-ink-700/60" style={{ left: '25%' }} aria-hidden="true" />
+                                <div className="absolute top-0 h-full w-px bg-ink-400/70 dark:bg-ink-500/70" style={{ left: '50%' }} aria-hidden="true" />
+                                <div className="absolute top-0 h-full w-px bg-ink-300/50 dark:bg-ink-700/60" style={{ left: '75%' }} aria-hidden="true" />
+                                {/* 条形：从 0 点（left:50%）开始向左/右延伸；scaleX(pos) 自动取方向 */}
+                                <div
+                                  className={`absolute top-0 h-full rounded-full transition-transform ${
+                                    pos >= 0 ? 'bg-emerald-500' : 'bg-rose-500'
+                                  }`}
+                                  style={{
+                                    left: '50%',
+                                    width: '50%',
+                                    transformOrigin: 'left center',
+                                    transform: `scaleX(${pos})`,
+                                  }}
+                                />
+                              </div>
+                              <div className={`w-12 text-right font-mono font-semibold ${
+                                p.position > 0.2 ? 'text-emerald-600' :
+                                p.position < -0.2 ? 'text-rose-600' : 'text-ink-500'
+                              }`}>
+                                {p.position >= 0 ? '+' : ''}{p.position.toFixed(2)}
+                              </div>
                             </div>
-                            <div className={`w-12 text-right font-mono font-semibold ${
-                              p.position > 0.2 ? 'text-emerald-600' :
-                              p.position < -0.2 ? 'text-rose-600' : 'text-ink-500'
-                            }`}>
-                              {p.position >= 0 ? '+' : ''}{p.position.toFixed(2)}
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                     </div>
 
                     <div className="mt-3 text-[11px] text-ink-600 dark:text-ink-400 italic">
@@ -449,21 +468,31 @@ export default function Workbench() {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </section>
           </motion.div>
 
           {/* ---------- 右栏：7 步详情 + 实时事件流 ---------- */}
           <motion.div variants={fadeUp} className="lg:col-span-7 space-y-4">
-            {/* 部门关系图（力导向） */}
-            {company && <DepartmentGraph company={company} height={400} />}
-
-            {/* 知识图谱（参考 MiroFish GraphPanel） */}
-            {graphData.nodes.length > 0 && (
-              <KnowledgeGraph nodes={graphData.nodes} edges={graphData.edges} height={400} />
+            {/* 部门关系图（力导向） — PR-2 P1-2 锚点 #rel */}
+            {company && (
+              <section id="rel" className="scroll-mt-28">
+                <DepartmentGraph company={company} height={400} />
+              </section>
             )}
 
-            {/* 智能体采访（参考 MiroFish Step5Interaction） */}
-            {companyId && <AgentInterview companyId={companyId} />}
+            {/* 知识图谱（参考 MiroFish GraphPanel） — PR-2 P1-2 锚点 #graph */}
+            {graphData.nodes.length > 0 && (
+              <section id="graph" className="scroll-mt-28">
+                <KnowledgeGraph nodes={graphData.nodes} edges={graphData.edges} height={400} />
+              </section>
+            )}
+
+            {/* 智能体采访 — PR-2 P1-2 锚点 #interview */}
+            {companyId && (
+              <section id="interview" className="scroll-mt-28">
+                <AgentInterview companyId={companyId} />
+              </section>
+            )}
 
             {/* 7 步流水线（详细卡） */}
             <div className="card p-5">
