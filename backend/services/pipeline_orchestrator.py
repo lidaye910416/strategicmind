@@ -44,6 +44,7 @@ from backend.interfaces.knowledge_store import IKnowledgeStore
 from backend.models.seed_document import SeedDocument, DocumentType
 from backend.models.strategic_agent import StrategicAgent, AgentType
 from backend.services.entity_extractor import EntityExtractor
+from backend.services.event_bus import EventBus
 from backend.services.graph_builder_service import GraphBuilderService
 from backend.services.local_graph_store import LocalGraphStore
 from backend.services.local_knowledge_store import LocalKnowledgeStore
@@ -109,6 +110,7 @@ class PipelineOrchestrator:
         llm_provider: Optional[ILLMProvider] = None,
         upload_folder: Optional[str] = None,
         checkpoint_dir: str = "./data/pipelines",
+        event_bus: Optional[EventBus] = None,
     ):
         self.llm_provider = llm_provider
         if self.llm_provider is None:
@@ -117,6 +119,9 @@ class PipelineOrchestrator:
         # Stash defaults; resolve via property so env changes are picked up
         self._upload_folder_default = upload_folder
         self._checkpoint_dir_default = checkpoint_dir
+        # Per-instance event bus (defaults to module singleton).
+        # Injectable for unit tests / multi-orchestrator scenarios.
+        self.event_bus: EventBus = event_bus or EventBus()
         # Ensure dirs exist (use current env)
         self._ensure_dirs()
         self._init_state()
@@ -361,7 +366,30 @@ class PipelineOrchestrator:
         )
         extractor = EntityExtractor(self.llm_provider)
         builder = GraphBuilderService(entity_extractor=extractor, knowledge_store=knowledge_store)
+        # Emit graph_progress: started (per arch-spec §1.2)
+        self.event_bus.emit(
+            run.run_id,
+            "graph_progress",
+            {
+                "phase": "started",
+                "nodes": 0,
+                "edges": 0,
+                "documents": len(documents),
+            },
+            stage=Stage.GRAPH_BUILDING.value,
+        )
         result = await builder.build(documents)
+        # Emit graph_progress: completed
+        self.event_bus.emit(
+            run.run_id,
+            "graph_progress",
+            {
+                "phase": "completed",
+                "nodes": result.get("entities_created", 0),
+                "edges": result.get("relations_created", 0),
+            },
+            stage=Stage.GRAPH_BUILDING.value,
+        )
         # Stash the knowledge store on the run for downstream stages
         run.artifacts["_knowledge_store"] = knowledge_store
         return result
@@ -474,10 +502,20 @@ class PipelineOrchestrator:
             propagation_layer=propagation,
             llm_provider=self.llm_provider,
         )
+        # Bridge: sim_loop's progress_callback → event_bus.emit (per
+        # arch-spec §2.2). Lambda captures run_id + stage at call time.
+        run_id = run.run_id
+        progress_callback = (
+            lambda evt: self.event_bus.emit(
+                run_id, "round_progress", evt,
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+        )
         try:
             results = await sim_loop.run(
                 agents=agents,
                 max_rounds=int(sim_config.get("max_rounds", 3)),
+                progress_callback=progress_callback,
             )
         except Exception as e:
             return {"error": str(e), "current_round": 0, "round_results": []}
