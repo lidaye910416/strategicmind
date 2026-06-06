@@ -124,3 +124,80 @@ AggregateError [ECONNREFUSED]:
       at TypeScriptParserMixin.parseFunctionBodyAndFinish (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9189:18)
       at /Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:13462:12
 10:53:56 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+10:58:47 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+10:58:47 [vite] Internal server error: /Users/jasonlee/mirofish-refactor/frontend/src/views/Dashboard.tsx: Expected corresponding JSX closing tag for <motion.div>. (444:16)
+
+  442 |           </motion.section>
+  443 |         )}
+> 444 |                 </div>
+      |                 ^
+  445 |                 <button
+  446 |                   onClick={() => setShowConfig(false)}
+  447 |                   className="ml-auto text-xs text-ink-400 hover:text-ink-700 dark:hover:text-ink-200"
+  Plugin: vite:react-babel
+  File: /Users/jasonlee/mirofish-refactor/frontend/src/views/Dashboard.tsx:444:16
+  442|            </motion.section>
+  443|          )}
+  444|                  </div>
+     |                  ^
+  445|                  <button
+  446|                    onClick={() => setShowConfig(false)}
+      at constructor (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:6616:19)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:4739:16)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:4710:32)
+      at TypeScriptParserMixin.jsxParseElement (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:4761:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:4771:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11098:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11083:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11063:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9854:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10916:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10921:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10898:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10848:21)
+      at /Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9792:39
+      at TypeScriptParserMixin.tryParse (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:6924:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9792:18)
+      at /Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10817:39
+      at TypeScriptParserMixin.allowInAnd (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12443:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10817:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12510:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11692:28)
+      at TypeScriptParserMixin.parseExprAtom (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11348:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:4776:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11098:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11083:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:11063:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9854:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10916:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10921:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10898:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10848:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9803:20)
+      at TypeScriptParserMixin.parseExpressionBase (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10801:23)
+      at /Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10797:39
+      at TypeScriptParserMixin.allowInAnd (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12438:16)
+      at TypeScriptParserMixin.parseExpression (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:10797:17)
+      at TypeScriptParserMixin.parseReturnStatement (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:13159:28)
+      at TypeScriptParserMixin.parseStatementContent (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12815:21)
+      at TypeScriptParserMixin.parseStatementContent (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9525:18)
+      at TypeScriptParserMixin.parseStatementLike (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12784:17)
+      at TypeScriptParserMixin.parseStatementListItem (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12764:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:13333:61)
+      at TypeScriptParserMixin.parseBlockBody (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:13326:10)
+      at TypeScriptParserMixin.parseBlock (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:13314:10)
+      at TypeScriptParserMixin.parseFunctionBody (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12117:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12103:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:9189:18)
+      at /Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:13462:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/Users/jasonlee/mirofish-refactor/frontend/node_modules/@babel/parser/lib/index.js:12420:14)
+10:59:32 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+10:59:46 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:00:09 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:00:22 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:00:41 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:01:08 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:01:23 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:01:56 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:02:10 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
