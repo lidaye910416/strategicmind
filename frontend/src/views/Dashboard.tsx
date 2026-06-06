@@ -399,9 +399,9 @@ export default function Dashboard() {
           </div>
         </motion.section>
 
-        {/* 推演运行状态（仅在有运行时显示） */}
-        {(status === 'running' || status === 'paused') && (
-          <motion.section variants={fadeUp} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        {/* 推演运行状态 - 显示全过程（运行中/已完成后都要看） */}
+        {runId && status !== 'idle' && (
+          <motion.section variants={fadeUp}>
             <SimulationExplainer
               currentStage={currentStage}
               progress={progress}

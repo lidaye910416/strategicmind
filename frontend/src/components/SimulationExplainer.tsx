@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sparkles, Check, Loader2, ChevronDown, ChevronUp,
   Cpu, Network, GitBranch, Brain, Users,
-  Database, Activity, FileText,
+  Database, Activity, FileText, History,
 } from 'lucide-react'
 
 interface PipelineStep {
@@ -124,20 +124,34 @@ export default function SimulationExplainer({ currentStage, progress, status }: 
                    hover:bg-ink-50/60 dark:hover:bg-ink-900/40 transition-colors"
       >
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-pink-500/20 inline-flex items-center justify-center text-violet-600">
-            <Sparkles size={14} />
+          <div className={`w-8 h-8 rounded-lg inline-flex items-center justify-center shrink-0
+                          ${
+                            status === 'completed'
+                              ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600'
+                              : status === 'failed'
+                                ? 'bg-gradient-to-br from-rose-500/20 to-pink-500/20 text-rose-600'
+                                : 'bg-gradient-to-br from-violet-500/20 to-pink-500/20 text-violet-600'
+                          }`}>
+            {status === 'completed' ? <History size={14} /> : status === 'failed' ? <Activity size={14} /> : <Sparkles size={14} />}
           </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-ink-500 dark:text-ink-400 font-bold">
-              推演运行状态
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <div className="text-[10px] uppercase tracking-wider text-ink-500 dark:text-ink-400 font-bold">
+                推演运行状态
+              </div>
+              {(status === 'completed' || status === 'failed' || status === 'cancelled') && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-ink-200/60 dark:bg-ink-800 text-ink-500 dark:text-ink-400 font-bold">
+                  历史回顾
+                </span>
+              )}
             </div>
-            <div className="text-sm font-semibold text-ink-900 dark:text-white">
+            <div className="text-sm font-semibold text-ink-900 dark:text-white truncate">
               {currentStep
                 ? `正在执行：${currentStep.title}`
                 : status === 'completed'
-                  ? '✅ 推演完成'
+                  ? '✅ 推演完成 · 7 步全部执行'
                   : status === 'failed'
-                    ? '❌ 推演失败'
+                    ? '❌ 推演失败 · 可查看失败位置'
                     : status === 'paused'
                       ? '⏸ 推演已暂停'
                       : status === 'cancelled'

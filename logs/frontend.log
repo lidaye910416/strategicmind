@@ -201,3 +201,6 @@ AggregateError [ECONNREFUSED]:
 11:01:23 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
 11:01:56 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
 11:02:10 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:14:25 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+11:15:42 [vite] hmr update /src/components/SimulationExplainer.tsx, /src/index.css
+11:15:58 [vite] hmr update /src/components/SimulationExplainer.tsx, /src/index.css
