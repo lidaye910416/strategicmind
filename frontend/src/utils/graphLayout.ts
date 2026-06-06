@@ -87,8 +87,8 @@ export function buildGraphPositions(
     const baseY = reused?.y ?? cy + Math.sin(angle) * radius + ((i * 17) % 11) - 5
     return {
       id: n.id,
-      label: n.label,
-      type: n.type,
+      label: n.label ?? n.name ?? n.id,
+      type: n.type ?? n.entity_type ?? 'UNKNOWN',
       influence: typeof n.influence === 'number' ? n.influence : 0.5,
       index: i,
       x: clamp(baseX, 30, width - 30),
@@ -106,10 +106,10 @@ export function buildGraphPositions(
   const positionedEdges: PositionedEdge[] = edgeArr
     .filter((e) => posMap.has(e.source) && posMap.has(e.target))
     .map((e, i) => ({
-      id: e.id,
+      id: e.id ?? `${e.source}->${e.target}`,
       source: e.source,
       target: e.target,
-      type: e.type,
+      type: e.type ?? 'RELATED_TO',
       index: i,
       drawProgress: 0,
       isNew: true,

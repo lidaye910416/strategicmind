@@ -44,7 +44,7 @@ export function useGraphStream(runId: string | null | undefined, opts: UseGraphS
     lastRunId.current = runId
 
     // 已有数据（SSE 已经在推）就跳过 REST 补底
-    if (storeNodes.size > 0) return
+    if (storeNodes.length > 0) return
 
     let cancelled = false
     ;(async () => {
@@ -68,20 +68,20 @@ export function useGraphStream(runId: string | null | undefined, opts: UseGraphS
   }, [runId])
 
   const source: UseGraphStreamResult['source'] = useMemo(() => {
-    if (storeNodes.size > 0 || storeEdges.size > 0) return 'store'
+    if (storeNodes.length > 0 || storeEdges.length > 0) return 'store'
     if (opts.fallback) return 'fallback'
     return 'empty'
-  }, [storeNodes.size, storeEdges.size, opts.fallback])
+  }, [storeNodes.length, storeEdges.length, opts.fallback])
 
   const result: UseGraphStreamResult = useMemo(() => {
     if (source === 'store') {
       return {
-        nodes: Array.from(storeNodes.values()),
-        edges: Array.from(storeEdges.values()),
+        nodes: [...storeNodes],
+        edges: [...storeEdges],
         progress,
         source,
-        totalNodes: storeNodes.size,
-        totalEdges: storeEdges.size,
+        totalNodes: storeNodes.length,
+        totalEdges: storeEdges.length,
       }
     }
     if (source === 'fallback' && opts.fallback) {

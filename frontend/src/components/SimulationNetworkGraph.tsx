@@ -446,9 +446,9 @@ export default function SimulationNetworkGraph({
 function toLocalFrame(f: NetworkFrameLive): Frame {
   return {
     round: f.round,
-    actions_count: f.actions_count,
-    active_agents: f.active_agents,
-    edges: f.edges.map((e) => ({ source: e.source, target: e.target, channel: e.channel, round: e.round })),
-    cumulative_edge_count: f.cumulative_edge_count,
+    actions_count: f.actions_count ?? 0,
+    active_agents: (f.active_agents as any) ?? 0,
+    edges: (f.edges as any[]).map((e: any) => ({ source: e.source, target: e.target, channel: e.channel, round: e.round })),
+    cumulative_edge_count: 0,
   }
 }

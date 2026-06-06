@@ -50,13 +50,12 @@ export function useRoundStream(runId: string | null | undefined, opts: UseRoundS
             round: f.round,
             total_rounds: f.total_rounds || list.length,
             actions_count: f.actions_count ?? 0,
-            active_agents: f.active_agents ?? [],
+            active_agents: (f.active_agents ?? []) as any,
             belief_shift_count: 0,
-            propagation_event_count: (f.edges || f.propagation_edges || []).length,
-            new_entities_count: 0,
-            new_relationships_count: 0,
+            propagation_events_count: (f.edges || f.propagation_edges || []).length,
+            new_entities: f.new_entities ?? [],
+            new_relations: f.new_relations ?? [],
             propagation_edges: f.edges || f.propagation_edges || [],
-            completedAt: 0,
           })
         }
       } catch {
@@ -84,7 +83,8 @@ export function useRoundStream(runId: string | null | undefined, opts: UseRoundS
     // 派生 agent 列表（去重，按最后出现轮次保留）
     const agentMap = new Map<string, { id: string; type: string; influence: number; round: number }>()
     for (const f of activeRounds) {
-      for (const aid of f.active_agents || []) {
+      const aids: any[] = Array.isArray(f.active_agents) ? f.active_agents : []
+      for (const aid of aids) {
         const prev = agentMap.get(aid)
         agentMap.set(aid, {
           id: aid,

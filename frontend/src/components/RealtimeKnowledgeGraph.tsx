@@ -60,11 +60,15 @@ interface SimNode extends GraphNode {
   size: number
   birth: number  // 0-1, 0=未出现, 1=已稳态
   isNew: boolean
+  // 覆盖 optional 字段为必填（buildGraphPositions / seedNodes 一定设置）
+  label: string
+  type: string
 }
 
 interface SimEdge extends GraphEdge {
   drawProgress: number
   isNew: boolean
+  type: string
 }
 
 interface Props {
@@ -488,20 +492,23 @@ function seedNodes(raw: GraphNode[]): SimNode[] {
   return raw.map((node, i) => {
     const angle = (i / Math.max(1, n)) * Math.PI * 2 - Math.PI / 2
     const radius = 180 * (0.6 + ((i * 7) % 5) * 0.1)
+    const nodeType = node.type ?? 'UNKNOWN'
     return {
       ...node,
+      label: node.label ?? node.name ?? node.id,
+      type: nodeType,
       x: cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 30,
       y: cy + Math.sin(angle) * radius + (Math.random() - 0.5) * 30,
       vx: 0, vy: 0,
-      color: NODE_COLORS[node.type] || NODE_COLORS.DEFAULT,
-      size: node.type === 'PERSON' ? 16 : 12,
+      color: NODE_COLORS[nodeType] || NODE_COLORS.DEFAULT,
+      size: nodeType === 'PERSON' ? 16 : 12,
       birth: 0, isNew: true,
     }
   })
 }
 
 function seedEdges(raw: GraphEdge[]): SimEdge[] {
-  return raw.map((e) => ({ ...e, drawProgress: 0, isNew: true }))
+  return raw.map((e) => ({ ...e, type: e.type ?? 'RELATED_TO', drawProgress: 0, isNew: true }))
 }
 
 /** 把 store 节点同步进本地 SimNode（已有节点保留位置/动画；新增节点随机散开） */
@@ -517,7 +524,7 @@ function syncNodesToStore(prev: SimNode[], next: GraphNodeLive[]): SimNode[] {
       const sn = next[i]
       if (!sn) return n
       if (n.id === sn.id && n.type === sn.type && n.label === sn.label) return n
-      return { ...n, type: sn.type, label: sn.label }
+      return { ...n, type: sn.type ?? 'UNKNOWN', label: sn.label ?? sn.id }
     })
   }
   // 增长：保留旧的，追加新的（随机散布，等力模拟拉回）
@@ -525,18 +532,20 @@ function syncNodesToStore(prev: SimNode[], next: GraphNodeLive[]): SimNode[] {
   const out = prev.map((n) => ({ ...n, isNew: false }))
   for (let i = prev.length; i < next.length; i++) {
     const sn = next[i]
+    const nodeType = sn.type ?? 'UNKNOWN'
+    const nodeLabel = sn.label ?? sn.id
     const angle = (i / Math.max(1, next.length)) * Math.PI * 2
     const radius = 60 + (i % 6) * 35
     out.push({
       id: sn.id,
-      label: sn.label,
-      type: sn.type,
+      label: nodeLabel,
+      type: nodeType,
       index: sn.index,
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius,
       vx: 0, vy: 0,
-      color: NODE_COLORS[sn.type] || NODE_COLORS.DEFAULT,
-      size: sn.type === 'PERSON' ? 16 : 12,
+      color: NODE_COLORS[nodeType] || NODE_COLORS.DEFAULT,
+      size: nodeType === 'PERSON' ? 16 : 12,
       birth: 0, isNew: true,
     })
   }
@@ -551,7 +560,7 @@ function syncEdgesToStore(prev: SimEdge[], next: GraphEdgeLive[]): SimEdge[] {
       const se = next[i]
       if (!se) return e
       if (e.id === se.id && e.source === se.source && e.target === se.target) return e
-      return { ...e, source: se.source, target: se.target, type: se.type }
+      return { ...e, source: se.source, target: se.target, type: se.type ?? 'RELATED_TO' }
     })
   }
   const out = prev.map((e) => ({ ...e, isNew: false }))
@@ -559,7 +568,7 @@ function syncEdgesToStore(prev: SimEdge[], next: GraphEdgeLive[]): SimEdge[] {
     const se = next[i]
     out.push({
       id: se.id, source: se.source, target: se.target,
-      type: se.type, index: se.index,
+      type: se.type ?? 'RELATED_TO', index: se.index,
       drawProgress: 0, isNew: true,
     })
   }
