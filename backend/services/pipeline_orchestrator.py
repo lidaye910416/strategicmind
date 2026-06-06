@@ -169,6 +169,28 @@ class PipelineOrchestrator:
             return self._snapshot(r)
         return self._load_checkpoint(run_id)
 
+    def get_run_object(self, run_id: str) -> Optional["PipelineRun"]:
+        """Return the in-memory PipelineRun (not the JSON-safe snapshot).
+
+        Used by the API layer to access non-serializable artifacts such as
+        the live ``_knowledge_store`` for ``/graph-snapshot``. Returns
+        ``None`` if the run is not currently in memory (e.g. only a
+        checkpoint exists on disk).
+        """
+        return self._runs.get(run_id)
+
+    def get_run_artifacts(self, run_id: str) -> Dict[str, Any]:
+        """Return the raw artifacts dict for an in-memory run.
+
+        Unlike :meth:`get_run`, this includes non-JSON-safe values like
+        ``_knowledge_store``. Falls back to an empty dict for runs that
+        are only present as a checkpoint.
+        """
+        r = self._runs.get(run_id)
+        if r is None:
+            return {}
+        return dict(r.artifacts or {})
+
     def start(self, run_id: str, pipeline_config: Dict[str, Any]) -> PipelineRun:
         run = PipelineRun(
             run_id=run_id,
