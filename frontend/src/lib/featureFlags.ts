@@ -1,81 +1,124 @@
 /**
- * Feature flags — 单点回滚开关。
+ * featureFlags - 单点回滚开关集合。
  *
- * 来源：C4 §6.3 — 任一 flag 翻 false 即降级回旧行为，无需重新部署。
+ * 用法：
+ *   import { flags } from '@/lib/featureFlags'
+ *   if (flags.stageCardsSplit) { <新行为> } else { <旧行为> }
  *
- * 约定：
- *   - 任何默认值带"风险/未完成验证"的新功能，必须以 flag 包裹并默认关闭。
- *   - flag 读取应走 `flags.xxx`（树摇友好，避免业务代码 import 整个对象后误改）。
- *   - 注释里写明 PR 来源 + 验收口径，便于回滚时定位。
+ * 设计原则：
+ *   - 任何 PR 引入的可灰度改动都必须挂一个 flag
+ *   - 翻 false = 立即降级到旧行为，无需重新部署
+ *   - 默认值：P0 = true, P1 = true, P2 = false（灰度推荐）
+ *   - 真值来源：localStorage 覆盖（key=`mirofish:flag:${name}`，value=`'1'/'0'`）
  *
- * 历史：
- *   - PR-1 (E1-P0) 创建：13 个 flag (P0+P1)
- *   - PR-3 P2-1 (Compare) 合并：新增 compareRuns / roundTimelineTrend / roundTimelineScrubber / stageCardsSplit / reportChatStream
- *   - PR-3 P2-2/3 (RoundTimeline) 合并：timelineTrendline / timelineScrubber
- *   - PR-3 P2-4/6/8 (Split+Icon) 合并：新增 dashboardSplit
- *   - D5 集成最终版：合并 P2 全部 flag（19 项），统一命名 `timelineTrendline` / `timelineScrubber`
+ * 来源：C4 评审书 §6.3 单点回滚开关
+ * D5 集成最终版（合并 3 个 P2 分支）：
+ *   - P2-1 (Compare)  引入 compareRuns
+ *   - P2-2/3 (RT)     引入 timelineTrendline / timelineScrubber
+ *   - P2-4/6/8 (Split) 引入 stageCardsSplit / dashboardSplit
+ *   - 占位: reportChatStream (P2-5)
  */
 
-export const flags = {
-  // ---------- PR-1 P0（默认全开） ----------
-  /** P0-1 formatError 统一错误文案。 */
+/** 全部 flag 名称的类型安全联合 */
+export type FlagName =
+  // ---- P0 全集（PR-1，默认 ON）----
+  | 'formatError'           // P0-1
+  | 'unifiedSSE'            // P0-2/3
+  | 'uploadsInStore'        // P0-2
+  | 'isStartingFeedback'    // P0-9
+  | 'errorPanel'            // P0-10
+  | 'concurrentUpload'      // P0-11
+  | 'staticTailwind'        // P0-14
+  // ---- P1 全集（PR-2，默认 ON）----
+  | 'workbenchSubnav'       // P1-1
+  | 'simulationExpanded'    // P1-3
+  | 'reportToc'             // P1-6
+  | 'resumeRunCard'         // P1-12/13
+  | 'deriveTopicCTA'        // P1-13
+  | 'cloneRunConfig'        // P1-15
+  // ---- P2 锦上添花（PR-3，默认 OFF）----
+  | 'compareRuns'           // P2-1
+  | 'timelineTrendline'     // P2-2
+  | 'timelineScrubber'      // P2-3
+  | 'stageCardsSplit'       // P2-4
+  | 'dashboardSplit'        // P2-8
+  | 'reportChatStream'      // P2-5（占位，未实现）
+
+/** 单一来源的 flag 默认值 */
+const DEFAULTS: Record<FlagName, boolean> = {
+  // P0 默认全开
   formatError: true,
-  /** P0-2/3 统一 SSE 入口（store 内部字段化 _sseRef）。 */
   unifiedSSE: true,
-  /** P0-2 uploads 状态入 store。 */
   uploadsInStore: true,
-  /** P0-9 启动反馈（Loader2 100ms 内出现）。 */
   isStartingFeedback: true,
-  /** P0-10 统一 ErrorPanel。 */
   errorPanel: true,
-  /** P0-11 并发上传（Promise.allSettled + 取消按钮）。 */
   concurrentUpload: true,
-  /** P0-14 ProviderPicker 静态 Tailwind 映射。 */
   staticTailwind: true,
-
-  // ---------- PR-2 P1（默认全开） ----------
-  /** P1-1 Workbench sticky 子导航 + scroll-spy。 */
+  // P1 默认全开
   workbenchSubnav: true,
-  /** P1-3 Simulation 高级视图默认展开。 */
   simulationExpanded: true,
-  /** P1-6 ReportTOC 章节导航。 */
   reportToc: true,
-  /** P1-12/13 决议卡 + 报告派生 CTA。 */
   resumeRunCard: true,
-  /** P1-13 报告 → 派生新议题按钮。 */
   deriveTopicCTA: true,
-  /** P1-15 RecentRuns 复制配置。 */
   cloneRunConfig: true,
-
-  // ---------- PR-3 P2（默认全关，灰度验证） ----------
-  /** P2-1 Compare 多 run 横向对比视图（/compare?runs=id1,id2,id3）。 */
+  // P2 默认全关（opt-in）
   compareRuns: false,
-  /**
-   * P2-2 RoundTimeline 顶部 recharts LineChart 趋势线。
-   *   - X 轴：回合号
-   *   - Y 轴：行动数 + 信念更新数
-   * 验收口径：顶部新增趋势线（默认关闭，避免 bundle 体积上升 + 视觉拥挤）
-   */
   timelineTrendline: false,
-  /**
-   * P2-3 RoundTimeline 底部 scrubber 重放控件。
-   *   - input type=range min=0 max=currentRound
-   *   - 拖到 R3 即显示 R1-R3 累计事件
-   *   - 拖动期间禁用 SSE 轮询更新（避免抖动）
-   * 验收口径：可重放 0..currentRound 区间内的事件
-   */
   timelineScrubber: false,
-  /** P2-4 StageCards 拆 7 个子文件（featureFlag 拆/不拆 switch 等价，flag 留作后续 PR 挂载点）。 */
   stageCardsSplit: false,
-  /** P2-8 Dashboard 拆 5 个 sub-component（featureFlag 拆/不拆等价，flag 留作后续 PR 挂载点）。 */
   dashboardSplit: false,
-  /** P2-5 /report/:id/chat SSE 流式（占位，未实现）。 */
   reportChatStream: false,
-} as const
+}
 
-export type FeatureFlag = keyof typeof flags
+/** 内部缓存（避免每次访问都读 localStorage） */
+const cache = new Map<FlagName, boolean>()
 
-/** 安全读取：未知 key 一律返回 false（防止 typo 默默开启） */
-export function isFeatureOn(key: string): boolean {
-  return key in flags ? !!(flags as Record<string, unknown>)[key] : false
+/** 从 localStorage 读覆盖值（无 = 沿用 default） */
+function readOverride(name: FlagName): boolean | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const v = window.localStorage.getItem(`mirofish:flag:${name}`)
+    if (v === '1') return true
+    if (v === '0') return false
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 读一个 flag（合并 localStorage 覆盖）。
+ * 建议用法：在组件外一次性解构到 const flags = { ... } 即可。
+ */
+export function getFlag(name: FlagName): boolean {
+  if (cache.has(name)) return cache.get(name)!
+  const v = readOverride(name)
+  const final = v ?? DEFAULTS[name]
+  cache.set(name, final)
+  return final
+}
+
+/** 写覆盖值（用于调试：window.mirofishFlag.set(...)） */
+export function setFlag(name: FlagName, value: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(`mirofish:flag:${name}`, value ? '1' : '0')
+  } catch { /* ignore */ }
+  cache.set(name, value)
+  // 触发一个自定义事件，方便 UI 即时响应（如果它想监听）
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mirofish:flag-changed', { detail: { name, value } }))
+  }
+}
+
+/** 便捷对象式访问（推荐用法） */
+export const flags: Readonly<Record<FlagName, boolean>> = new Proxy({} as Record<FlagName, boolean>, {
+  get(_t, prop: string) {
+    return getFlag(prop as FlagName)
+  },
+})
+
+/** 调试入口：浏览器 console 用 `mirofishFlag.set('stageCardsSplit', true)` */
+if (typeof window !== 'undefined') {
+  ;(window as any).mirofishFlag = { get: getFlag, set: setFlag }
 }
