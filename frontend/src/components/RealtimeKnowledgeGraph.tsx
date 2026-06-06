@@ -1,12 +1,13 @@
 /**
- * RealtimeKnowledgeGraph - MiroFish 风格的实时增长知识图谱。
+ * RealtimeKnowledgeGraph - 实时增长知识图谱。
  *
- * 数据源：
- *   1. SSE: /api/pipeline/<run_id>/events 中的 live_event { type: graph_progress }
- *   2. REST: /api/pipeline/<run_id>/graph-snapshot（启动时一次性拉全量）
+ * 数据源（P3-B 修复后）：
+ *   1. store 内 graphNodes / graphEdges（来自 SSE live_event 增量 + graph-snapshot 补底）
+ *      - 通过 useGraphStream(runId) 统一获取
+ *   2. 不再自开 EventSource；事件分发统一由 store 的 _openSSE 完成
  *
  * 动效：
- *   - 新节点：opacity 0→1 + scale 0.3→1（"破壳"）
+ *   - 新节点：opacity 0→1 + scale 0→1（"破壳"）
  *   - 新边：stroke-dasharray 由 0→长度（"绘制"）
  *   - 已有节点/边保留位置（基于 ID 复用）
  *
@@ -18,223 +19,97 @@ import {
   Network, ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Loader2,
   Maximize2, Minimize2, X, Hash,
 } from 'lucide-react'
-import api from '../services/api'
-
-// 12 色调色板（与 MiroFish GraphPanel 保持一致）
-const NODE_COLORS: Record<string, string> = {
-  COMPANY: '#FF6B35',
-  PERSON: '#E91E63',
-  PRODUCT: '#7B2D8E',
-  BUSINESS: '#004E89',
-  GOVERNMENT: '#C5283D',
-  REGULATION: '#64748B',
-  TECH: '#06B6D4',
-  CAPITAL: '#1A936F',
-  COMPETITOR: '#E9724C',
-  CUSTOMER: '#6C5CE7',
-  MARKET: '#2D3436',
-  DEFAULT: '#94A3B8',
-}
-
-interface GraphNode {
-  id: string
-  label: string
-  type: string
-  index: number
-}
-
-interface GraphEdge {
-  id: string
-  source: string
-  target: string
-  type: string
-  index: number
-}
-
-interface SimNode extends GraphNode {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  color: string
-  size: number
-  birth: number  // 0-1, 0=未出现, 1=已稳态
-  isNew: boolean
-}
-
-interface SimEdge extends GraphEdge {
-  drawProgress: number
-  isNew: boolean
-}
+import { useGraphStream } from '../store/hooks/useGraphStream'
+import {
+  buildGraphPositions,
+  stepForceLayout,
+  stepAppearance,
+  nodeColor,
+  nodeSize,
+  type PositionedNode,
+  type PositionedEdge,
+} from '../utils/graphLayout'
+import type { GraphNodeData, GraphEdgeData } from '../store/pipeline'
 
 interface Props {
   runId?: string | null
   live?: boolean
   height?: number
   title?: string
-  fallback?: { nodes: any[]; edges: any[] } | null
+  fallback?: { nodes: GraphNodeData[]; edges: GraphEdgeData[] } | null
 }
 
+const W = 900
+
 export default function RealtimeKnowledgeGraph({
-  runId, live = true, height = 480, title = '实时知识图谱', fallback = null,
+  runId, live: _live = true, height = 480, title = '实时知识图谱', fallback = null,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [nodes, setNodes] = useState<SimNode[]>([])
-  const [edges, setEdges] = useState<SimEdge[]>([])
+  const { nodes: rawNodes, edges: rawEdges, progress, source, totalNodes, totalEdges } = useGraphStream(
+    runId,
+    { fallback: fallback as { nodes: GraphNodeData[]; edges: GraphEdgeData[] } | null },
+  )
+  const [renderedNodes, setRenderedNodes] = useState<PositionedNode[]>([])
+  const [renderedEdges, setRenderedEdges] = useState<PositionedEdge[]>([])
+  const posCacheRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const [hovered, setHovered] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [showLabels, setShowLabels] = useState(true)
-  const [tick, setTick] = useState(0)
   const [maximized, setMaximized] = useState(false)
-  const [building, setBuilding] = useState(false)
   const [stageLabel, setStageLabel] = useState<string>('等待图谱数据…')
-  const [selectedNode, setSelectedNode] = useState<SimNode | null>(null)
-  const [stats, setStats] = useState<{ nodeCount: number; edgeCount: number }>({
-    nodeCount: 0, edgeCount: 0,
-  })
+  const [selectedNode, setSelectedNode] = useState<PositionedNode | null>(null)
+  const [tick, setTick] = useState(0)
 
-  const W = 900
-  const H = height
-
-  // 启动 SSE
+  // 每次 rawNodes/edges 变化 → 重建位置（保留已有节点的 x/y）
   useEffect(() => {
-    if (!runId || !live) return
-    const url = `/api/pipeline/${runId}/events`
-    const es = new EventSource(url)
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.type === 'live_event' && data.event) {
-          handleLiveEvent(data.event)
-        } else if (data.current_stage === 'GRAPH_BUILDING') {
-          setBuilding(true)
-          setStageLabel('图谱构建中 · 节点持续涌现')
-        } else if (data.current_stage && data.current_stage !== 'GRAPH_BUILDING') {
-          setBuilding(false)
-        }
-      } catch {/* ignore */}
-    }
-    es.onerror = () => {/* EventSource auto-retry */}
-    return () => es.close()
-  }, [runId, live])
-
-  // 启动时拉一次全量
-  useEffect(() => {
-    if (!runId) {
-      if (fallback) hydrateFromFallback(fallback)
+    if (source === 'empty') {
+      setRenderedNodes([])
+      setRenderedEdges([])
       return
     }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await api.get(`/pipeline/${runId}/graph-snapshot`)
-        if (cancelled) return
-        hydrateFromSnapshot(r.data)
-      } catch {/* ignore */}
-    })()
-    return () => { cancelled = true }
-  }, [runId])
+    const { nodes, edges } = buildGraphPositions(
+      rawNodes,
+      rawEdges,
+      posCacheRef.current,
+      W,
+      height,
+    )
+    setRenderedNodes(nodes)
+    setRenderedEdges(edges)
+    // 同步 posCache
+    const next = new Map<string, { x: number; y: number }>()
+    for (const n of nodes) next.set(n.id, { x: n.x, y: n.y })
+    posCacheRef.current = next
+  }, [rawNodes, rawEdges, source, height])
 
-  const handleLiveEvent = useCallback((evt: any) => {
-    const t = evt?.type
-    if (t === 'graph_progress') {
-      setBuilding(evt.data?.phase !== 'completed')
-      if (evt.data?.phase === 'completed') {
-        setStageLabel('图谱构建完成')
-      } else {
-        setStageLabel(`图谱构建中 · 节点 ${evt.data?.nodes ?? 0} · 关系 ${evt.data?.edges ?? 0}`)
-      }
-      setNodes((prev) => growNodes(prev, evt.data?.nodes ?? prev.length))
-      setEdges((prev) => growEdges(prev, evt.data?.edges ?? prev.length))
-      setStats((s) => ({
-        ...s,
-        nodeCount: evt.data?.nodes ?? s.nodeCount,
-        edgeCount: evt.data?.edges ?? s.edgeCount,
-      }))
-    }
-  }, [])
-
-  const hydrateFromSnapshot = (data: any) => {
-    const rawNodes: GraphNode[] = data.nodes || []
-    const rawEdges: GraphEdge[] = data.edges || []
-    setNodes(seedNodes(rawNodes))
-    setEdges(seedEdges(rawEdges))
-    setStats({ nodeCount: rawNodes.length, edgeCount: rawEdges.length })
-    if (data.stage === 'GRAPH_BUILDING') {
-      setBuilding(true)
-      setStageLabel('图谱构建中')
-    } else {
-      setBuilding(false)
-      setStageLabel(rawNodes.length > 0 ? '图谱就绪' : '等待图谱数据…')
-    }
-  }
-
-  const hydrateFromFallback = (data: { nodes: any[]; edges: any[] }) => {
-    const mappedNodes: GraphNode[] = (data.nodes || []).map((n: any, i: number) => ({
-      id: n.id, label: n.label || n.name || '未命名',
-      type: n.type || n.entity_type || 'DEFAULT', index: i,
-    }))
-    const mappedEdges: GraphEdge[] = (data.edges || []).map((e: any, i: number) => ({
-      id: `e${i}`, source: e.source, target: e.target,
-      type: e.type || 'RELATED_TO', index: i,
-    }))
-    setNodes(seedNodes(mappedNodes))
-    setEdges(seedEdges(mappedEdges))
-    setStats({ nodeCount: mappedNodes.length, edgeCount: mappedEdges.length })
-    setStageLabel('演示数据 · 启动推演后开始增长')
-    setBuilding(false)
-  }
-
-  // 力模拟
+  // 更新 stageLabel
   useEffect(() => {
-    if (nodes.length === 0) return
+    if (source === 'empty') {
+      setStageLabel('等待图谱数据…')
+      return
+    }
+    if (progress?.phase === 'completed') {
+      setStageLabel('图谱构建完成 · 持续接收新增实体')
+    } else if (progress?.phase === 'growing' || progress?.phase === 'started') {
+      setStageLabel(`图谱构建中 · 节点 ${progress.nodes} · 关系 ${progress.edges}`)
+    } else {
+      setStageLabel(totalNodes > 0 ? `图谱就绪 · ${totalNodes} 节点 / ${totalEdges} 关系` : '图谱构建中…')
+    }
+  }, [progress, source, totalNodes, totalEdges])
+
+  // 力模拟（仅节点数变化时跑一次稳定布局）
+  useEffect(() => {
+    if (renderedNodes.length === 0) return
     let raf: number
     let iter = 0
-    const maxIter = 300
+    const maxIter = 200
     const step = () => {
-      setNodes((prev) => {
-        const next = prev.map((n) => ({ ...n }))
-        const cx = W / 2, cy = H / 2
-        for (let i = 0; i < next.length; i++) {
-          for (let j = i + 1; j < next.length; j++) {
-            const dx = next[j].x - next[i].x
-            const dy = next[j].y - next[i].y
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1
-            const force = 8000 / (dist * dist)
-            const fx = (dx / dist) * force
-            const fy = (dy / dist) * force
-            if (next[i].id !== dragging) { next[i].vx -= fx; next[i].vy -= fy }
-            if (next[j].id !== dragging) { next[j].vx += fx; next[j].vy += fy }
-          }
-        }
-        for (const edge of edges) {
-          const a = next.find((n) => n.id === edge.source)
-          const b = next.find((n) => n.id === edge.target)
-          if (!a || !b) continue
-          const dx = b.x - a.x
-          const dy = b.y - a.y
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          const target = 140
-          const diff = (dist - target) * 0.018
-          const fx = (dx / dist) * diff
-          const fy = (dy / dist) * diff
-          if (a.id !== dragging) { a.vx += fx; a.vy += fy }
-          if (b.id !== dragging) { b.vx -= fx; b.vy -= fy }
-        }
-        for (const n of next) {
-          n.vx += (cx - n.x) * 0.004
-          n.vy += (cy - n.y) * 0.004
-        }
-        for (const n of next) {
-          if (n.id === dragging) continue
-          n.vx *= 0.78
-          n.vy *= 0.78
-          n.x += n.vx
-          n.y += n.vy
-          n.x = Math.max(35, Math.min(W - 35, n.x))
-          n.y = Math.max(35, Math.min(H - 35, n.y))
-        }
+      setRenderedNodes((prev) => {
+        if (prev.length === 0) return prev
+        const next = stepForceLayout(prev, renderedEdges, dragging, W, height, 1)
+        // 同步 posCache
+        for (const n of next) posCacheRef.current.set(n.id, { x: n.x, y: n.y })
         return next
       })
       iter++
@@ -242,53 +117,56 @@ export default function RealtimeKnowledgeGraph({
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-  }, [edges.length, dragging, height, tick, nodes.length > 0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedNodes.length, renderedEdges.length, dragging, tick])
 
-  // "破壳" 动效
+  // 破壳动效
   useEffect(() => {
-    if (nodes.length === 0) return
+    if (renderedNodes.length === 0) return
     let raf: number
     const step = () => {
-      setNodes((prev) => prev.map((n) => {
-        if (n.birth < 1) return { ...n, birth: Math.min(1, n.birth + 0.06) }
-        return n
-      }))
-      setEdges((prev) => prev.map((e) => {
-        if (e.drawProgress < 1) return { ...e, drawProgress: Math.min(1, e.drawProgress + 0.05) }
-        return e
-      }))
-      if (nodes.some((n) => n.birth < 1) || edges.some((e) => e.drawProgress < 1)) {
-        raf = requestAnimationFrame(step)
-      }
+      let done = true
+      setRenderedNodes((ns) => {
+        setRenderedEdges((es) => {
+          const r = stepAppearance(ns, es)
+          done = r.done
+          return r.edges
+        })
+        return ns
+      })
+      if (!done) raf = requestAnimationFrame(step)
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-  }, [nodes.length, edges.length])
+  }, [renderedNodes.length, renderedEdges.length])
 
-  const onPointerDown = (id: string, e: React.PointerEvent) => {
+  const onPointerDown = useCallback((id: string, e: React.PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragging(id)
     ;(e.target as Element).setPointerCapture(e.pointerId)
-  }
-  const onPointerMove = (e: React.PointerEvent) => {
+  }, [])
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragging || !svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * W
-    const y = ((e.clientY - rect.top) / rect.height) * H
-    setNodes((prev) => prev.map((n) => (n.id === dragging ? { ...n, x, y, vx: 0, vy: 0 } : n)))
-  }
-  const onPointerUp = () => setDragging(null)
+    const y = ((e.clientY - rect.top) / rect.height) * height
+    setRenderedNodes((prev) => prev.map((n) => (n.id === dragging ? { ...n, x, y, vx: 0, vy: 0 } : n)))
+    posCacheRef.current.set(dragging, { x, y })
+  }, [dragging, height])
+  const onPointerUp = useCallback(() => setDragging(null), [])
 
   const typeCount = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const n of nodes) m[n.type] = (m[n.type] || 0) + 1
+    for (const n of renderedNodes) m[n.type] = (m[n.type] || 0) + 1
     return m
-  }, [nodes])
+  }, [renderedNodes])
 
   const containerCls = maximized
     ? 'fixed inset-4 z-50 card p-4 flex flex-col bg-white dark:bg-ink-900 shadow-2xl'
     : 'card p-4 flex flex-col'
+
+  const building = progress?.phase === 'started' || progress?.phase === 'growing'
 
   return (
     <div className={containerCls} style={maximized ? {} : { minHeight: height + 80 }}>
@@ -310,7 +188,7 @@ export default function RealtimeKnowledgeGraph({
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-[10px] font-mono text-ink-500 hidden sm:flex items-center gap-1">
             <Hash size={10} />
-            {stats.nodeCount} 节点 / {stats.edgeCount} 边
+            {totalNodes} 节点 / {totalEdges} 边
           </span>
           <div className="flex gap-1">
             <button className="btn-ghost h-7 w-7 p-0" onClick={() => setShowLabels((v) => !v)} title="标签">
@@ -338,24 +216,27 @@ export default function RealtimeKnowledgeGraph({
       >
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${W} ${H}`}
+          viewBox={`0 0 ${W} ${height}`}
           className="w-full h-full"
           style={{ cursor: dragging ? 'grabbing' : 'default' }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
         >
           <defs>
-            {Object.entries(NODE_COLORS).map(([type, color]) => (
-              <radialGradient key={type} id={`grad-${type}`} cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor={color} stopOpacity="1" />
-                <stop offset="100%" stopColor={color} stopOpacity="0.6" />
-              </radialGradient>
-            ))}
+            {Array.from(new Set(['DEFAULT', ...renderedNodes.map((n) => n.type)])).map((type) => {
+              const color = nodeColor(type)
+              return (
+                <radialGradient key={type} id={`grad-${type}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor={color} stopOpacity="1" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0.6" />
+                </radialGradient>
+              )
+            })}
           </defs>
-          <g transform={`translate(${W/2} ${H/2}) scale(${zoom}) translate(${-W/2} ${-H/2})`}>
-            {edges.map((edge) => {
-              const a = nodes.find((n) => n.id === edge.source)
-              const b = nodes.find((n) => n.id === edge.target)
+          <g transform={`translate(${W/2} ${height/2}) scale(${zoom}) translate(${-W/2} ${-height/2})`}>
+            {renderedEdges.map((edge) => {
+              const a = renderedNodes.find((n) => n.id === edge.source)
+              const b = renderedNodes.find((n) => n.id === edge.target)
               if (!a || !b) return null
               const isHighlighted = hovered === edge.source || hovered === edge.target
               const dx = b.x - a.x, dy = b.y - a.y
@@ -384,10 +265,10 @@ export default function RealtimeKnowledgeGraph({
               )
             })}
 
-            {nodes.map((node) => {
+            {renderedNodes.map((node) => {
               const isHighlighted = hovered === node.id
-              const color = NODE_COLORS[node.type] || NODE_COLORS.DEFAULT
-              const r = node.size * node.birth
+              const color = nodeColor(node.type)
+              const r = nodeSize(node.type, node.influence) * node.birth
               return (
                 <g
                   key={node.id}
@@ -403,7 +284,7 @@ export default function RealtimeKnowledgeGraph({
                   )}
                   <circle
                     r={r}
-                    fill={`url(#grad-${node.type in NODE_COLORS ? node.type : 'DEFAULT'})`}
+                    fill={`url(#grad-${node.type})`}
                     stroke={isHighlighted ? '#E91E63' : '#fff'}
                     strokeWidth={isHighlighted ? 3 : 2}
                   />
@@ -425,7 +306,7 @@ export default function RealtimeKnowledgeGraph({
           </g>
         </svg>
 
-        {nodes.length === 0 && (
+        {renderedNodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-ink-400">
             <Network size={36} className="mb-2 opacity-30" />
             <div className="text-xs">{building ? '等待节点涌现…' : '暂无图谱数据'}</div>
@@ -449,14 +330,14 @@ export default function RealtimeKnowledgeGraph({
           )}
         </AnimatePresence>
 
-        {nodes.length > 0 && (
+        {renderedNodes.length > 0 && (
           <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1.5 pointer-events-none">
             {Object.entries(typeCount).slice(0, 8).map(([type, count]) => (
               <span
                 key={type}
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-white/80 dark:bg-ink-900/80 backdrop-blur-sm"
               >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: NODE_COLORS[type] || NODE_COLORS.DEFAULT }} />
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: nodeColor(type) }} />
                 <span className="text-ink-700 dark:text-ink-200">{type}</span>
                 <span className="text-ink-500 font-mono">{count}</span>
               </span>
@@ -476,7 +357,7 @@ export default function RealtimeKnowledgeGraph({
             <div className="flex items-center justify-between mb-2">
               <span
                 className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded text-white"
-                style={{ background: NODE_COLORS[selectedNode.type] || NODE_COLORS.DEFAULT }}
+                style={{ background: nodeColor(selectedNode.type) }}
               >
                 {selectedNode.type}
               </span>
@@ -487,76 +368,15 @@ export default function RealtimeKnowledgeGraph({
             <div className="text-sm font-semibold text-ink-900 dark:text-white">{selectedNode.label}</div>
             <div className="text-[10px] text-ink-500 font-mono mt-1 break-all">ID: {selectedNode.id}</div>
             <div className="text-[10px] text-ink-500 mt-1">
-              Index #{selectedNode.index} · 影响权重 {selectedNode.size.toFixed(0)}
+              {selectedNode.source && (
+                <span>来源 · {selectedNode.source} · </span>
+              )}
+              {selectedNode.round != null && <span>R{selectedNode.round} · </span>}
+              影响权重 {selectedNode.influence.toFixed(2)}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   )
-}
-
-function seedNodes(raw: GraphNode[]): SimNode[] {
-  const cx = 450, cy = 240
-  const n = raw.length
-  return raw.map((node, i) => {
-    const angle = (i / Math.max(1, n)) * Math.PI * 2 - Math.PI / 2
-    const radius = 180 * (0.6 + ((i * 7) % 5) * 0.1)
-    return {
-      ...node,
-      x: cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 30,
-      y: cy + Math.sin(angle) * radius + (Math.random() - 0.5) * 30,
-      vx: 0, vy: 0,
-      color: NODE_COLORS[node.type] || NODE_COLORS.DEFAULT,
-      size: node.type === 'PERSON' ? 16 : 12,
-      birth: 0, isNew: true,
-    }
-  })
-}
-
-function seedEdges(raw: GraphEdge[]): SimEdge[] {
-  return raw.map((e) => ({ ...e, drawProgress: 0, isNew: true }))
-}
-
-function growNodes(prev: SimNode[], target: number): SimNode[] {
-  if (target <= prev.length) {
-    return prev.map((n) => ({ ...n, isNew: false }))
-  }
-  const out = prev.map((n) => ({ ...n, isNew: false }))
-  const cx = 450, cy = 240
-  for (let i = prev.length; i < target; i++) {
-    const angle = (i / target) * Math.PI * 2
-    const radius = 60 + (i % 6) * 35
-    out.push({
-      id: `n${i}`,
-      label: `Entity ${i + 1}`,
-      type: ['COMPANY', 'PERSON', 'PRODUCT', 'BUSINESS', 'GOVERNMENT', 'REGULATION'][i % 6],
-      index: i,
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
-      vx: 0, vy: 0,
-      color: NODE_COLORS.DEFAULT,
-      size: 12,
-      birth: 0, isNew: true,
-    })
-  }
-  return out
-}
-
-function growEdges(prev: SimEdge[], target: number): SimEdge[] {
-  if (target <= prev.length) {
-    return prev.map((e) => ({ ...e, isNew: false }))
-  }
-  const out = prev.map((e) => ({ ...e, isNew: false }))
-  for (let i = prev.length; i < target; i++) {
-    out.push({
-      id: `e${i}`,
-      source: `n${i % Math.max(1, prev.length || 1)}`,
-      target: `n${(i * 7 + 1) % Math.max(1, prev.length || 1)}`,
-      type: ['OWNS', 'MANAGES', 'INFLUENCES', 'DEPENDS_ON', 'REGULATED_BY'][i % 5],
-      index: i,
-      drawProgress: 0, isNew: true,
-    })
-  }
-  return out
 }
