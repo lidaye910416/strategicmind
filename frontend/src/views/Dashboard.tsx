@@ -5,6 +5,8 @@
  * P2-8: 拆分为 components/dashboard/{Hero,Upload,Config,RunControl,LiveSnapshot}.tsx
  *       本文件只保留状态管理 + 副作用 + 5 块组合，<= 180 行。
  *
+ * P3-A: 透传新参数到 startPipeline（user_params 子对象 + 兼容旧字段）
+ *
  * Feature Flag: flags.dashboardSplit（默认 false）— 后续可挂更多行为开关
  */
 import { useEffect, useState } from 'react'
@@ -22,6 +24,10 @@ import ConfigCard, { type ReportStyle } from '../components/dashboard/ConfigCard
 import RunControlBar from '../components/dashboard/RunControlBar'
 import LiveSnapshotSection from '../components/dashboard/LiveSnapshotSection'
 import ProviderPicker from '../components/ProviderPicker'
+import {
+  DEFAULT_USER_PARAMS, type SimulationUserParams,
+  parseExternalFactors, formatExternalFactors,
+} from '../types/simulationConfig'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -29,6 +35,7 @@ export default function Dashboard() {
   const [showConfig, setShowConfig] = useState(false)
   const [hours, setHours] = useState(72)
   const [style, setStyle] = useState<ReportStyle>('executive')
+  const [params, setParams] = useState<SimulationUserParams>(DEFAULT_USER_PARAMS)
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [showPicker, setShowPicker] = useState(false)
   const [currentProvider, setCurrentProvider] = useState<CurrentProvider | null>(null)
@@ -39,6 +46,7 @@ export default function Dashboard() {
   useEffect(() => { loadProvider() }, [])
 
   // P1-16: URL ?cloneConfig=<runId> → fetch 该 run config 填 hours/style
+  // P3-A: 同步尝试从 user_params 还原新参数
   useEffect(() => {
     const cloneId = searchParams.get('cloneConfig')
     if (!cloneId) { setClonedFrom(null); return }
@@ -56,6 +64,20 @@ export default function Dashboard() {
         if (Number.isFinite(nh) && nh >= 24 && nh <= 168) setHours(nh)
         const ns = cfg.report_style
         if (ns === 'executive' || ns === 'technical' || ns === 'narrative') setStyle(ns)
+        // 尝试从 user_params 还原
+        const up = cfg.user_params
+        if (up && typeof up === 'object') {
+          setParams((prev) => ({
+            ...prev,
+            ...up,
+            // 容错：external_factors 可能是数组也可能是 string
+            external_factors: Array.isArray(up.external_factors)
+              ? up.external_factors
+              : (typeof up.external_factors === 'string'
+                  ? parseExternalFactors(up.external_factors)
+                  : prev.external_factors),
+          }))
+        }
         setClonedFrom(cloneId); setShowConfig(true); clearParam()
       })
       .catch((e) => {
@@ -89,13 +111,23 @@ export default function Dashboard() {
 
   const handleStart = async () => {
     const newRunId = await startPipeline({
-      simulation_hours: hours, report_style: style,
+      // 旧字段（兼容）
+      simulation_hours: hours,
+      report_style: style,
+      // 新字段（P3-A）
+      user_params: {
+        ...params,
+        // 后端接受 string[] 形式的 external_factors；保持不变
+      },
       doc_ids: uploads.map((u) => u.docId).filter(Boolean),
     })
     if (newRunId) navigate(`/workbench/${newRunId}`)
   }
   const addUpload = (doc: UploadItem) =>
     setUploads((prev) => (prev.find((u) => u.docId === doc.docId) ? prev : [...prev, doc]))
+
+  // 兜底：externalText 解析后不要破坏已选值（仅显示用）
+  void formatExternalFactors
 
   return (
     <div className="min-h-screen" data-dashboard-split={flags.dashboardSplit}>
@@ -120,6 +152,7 @@ export default function Dashboard() {
           <ConfigCard
             uploadsCount={uploads.length} showConfig={showConfig} onShowConfig={setShowConfig}
             hours={hours} style={style} onChangeHours={setHours} onChangeStyle={setStyle}
+            params={params} onChangeParams={setParams}
             clonedFrom={clonedFrom} onDismissClone={() => setClonedFrom(null)}
           />
         </motion.div>

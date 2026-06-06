@@ -60,6 +60,8 @@ interface PipelineState {
   uploads: Map<string, UploadItem>
   // SSE 静默检测：上次收到事件的时间戳（ms）
   lastEventAt: number
+  // P3-A: 最近一次启动推演时的 config（含 user_params），Workbench 用以读取真实配置
+  lastRunConfig: Record<string, unknown> | null
 
   // ---- SSE 内部句柄（不暴露在公共 state，但放到 store 里便于 dispose 协同） ----
   _sseRef: EventSource | null
@@ -163,12 +165,13 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   isStarting: false,
   uploads: new Map(),
   lastEventAt: 0,
+  lastRunConfig: null,
   _sseRef: null,
   _sseCloseTimer: null,
 
   startPipeline: async (config) => {
     // 首行立刻设置 isStarting（消费方立即看到按钮变 loading）
-    set({ status: 'running', currentStage: 'SEED_PARSING', progress: 0, error: null, isStarting: true })
+    set({ status: 'running', currentStage: 'SEED_PARSING', progress: 0, error: null, isStarting: true, lastRunConfig: config })
     try {
       const r = await http.post('/pipeline/start', { config })
       const runId: string = r.data.run_id
@@ -215,6 +218,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       snapshot: null,
       isStarting: false,
       lastEventAt: 0,
+      lastRunConfig: null,
     })
   },
 
@@ -295,3 +299,5 @@ export const useError = () => usePipelineStore((s) => s.error)
 export const useIsStarting = () => usePipelineStore((s) => s.isStarting)
 export const useUploads = () => usePipelineStore((s) => s.uploads)
 export const useLastEventAt = () => usePipelineStore((s) => s.lastEventAt)
+// P3-A: 读取最近一次启动时的完整 config（含 user_params）；Workbench 用以知道"用户在 Dashboard 选了啥"
+export const useLastRunConfig = () => usePipelineStore((s) => s.lastRunConfig)
