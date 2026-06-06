@@ -17,6 +17,8 @@ const Demo = lazy(() => import('../views/Demo'))
 const Simulation = lazy(() => import('../views/Simulation'))
 const Report = lazy(() => import('../views/Report'))
 const Workbench = lazy(() => import('../views/Workbench'))
+// PR-3 P2-1：多 run 横向对比页（featureFlags.compareRuns = false 时也加载但渲染提示）
+const CompareRuns = lazy(() => import('../views/CompareRuns'))
 
 /** 路由级 loading 占位（避免切换白屏） */
 function RouteSkeleton() {
@@ -47,6 +49,8 @@ export default function AppRoutes() {
         <Route path="/workbench" element={<Workbench />} />
         {/* Workbench 强制 remount：切 run 时丢弃旧 store 订阅、SSE、轮询等 */}
         <Route path="/workbench/:runId" element={<WorkbenchRouteWithKey />} />
+        {/* PR-3 P2-1：多 run 横向对比页（?runs=id1,id2,id3 最多 3 个） */}
+        <Route path={APP_ROUTES.compare} element={<CompareRuns />} />
         <Route
           path="*"
           element={
