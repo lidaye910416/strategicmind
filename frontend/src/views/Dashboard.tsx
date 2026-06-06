@@ -4,12 +4,12 @@
  * Implements: US-059, US-060, US-062
  */
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play, Settings, CheckCircle2, AlertCircle, FileText, Sparkles, ArrowUpRight, Upload,
-  Cpu, Server, Cloud, FlaskConical, ChevronDown, Network, Loader2,
+  Cpu, Server, Cloud, FlaskConical, ChevronDown, Network, Loader2, Copy, Info,
 } from 'lucide-react'
 import DocumentUploader from '../components/DocumentUploader'
 import SeedLoader from '../components/SeedLoader'
@@ -41,12 +41,15 @@ const ICON_FOR_PROVIDER: Record<string, any> = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [showConfig, setShowConfig] = useState(false)
   const [hours, setHours] = useState(72)
   const [style, setStyle] = useState<'executive' | 'technical' | 'narrative'>('executive')
   const [uploads, setUploads] = useState<{ id: string; docId: string; filename: string }[]>([])
   const [showPicker, setShowPicker] = useState(false)
   const [currentProvider, setCurrentProvider] = useState<CurrentProvider | null>(null)
+  // P1-16: 复制配置来源提示
+  const [clonedFrom, setClonedFrom] = useState<string | null>(null)
 
   const loadCurrent = async () => {
     try {
@@ -60,6 +63,49 @@ export default function Dashboard() {
   useEffect(() => {
     loadCurrent()
   }, [])
+
+  // P1-16: URL ?cloneConfig=<runId> → fetch 该 run config 填 hours/style
+  //        doc_ids 留空（因旧文档可能已过期，强制用户重传）+ 顶部提示
+  useEffect(() => {
+    const cloneId = searchParams.get('cloneConfig')
+    if (!cloneId) {
+      setClonedFrom(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api.get(`/pipeline/${cloneId}`)
+        if (cancelled) return
+        const cfg = r.data?.config || r.data || {}
+        // hours / report_style 容错
+        const newHours = Number(cfg.simulation_hours)
+        if (Number.isFinite(newHours) && newHours >= 24 && newHours <= 168) {
+          setHours(newHours)
+        }
+        const newStyle = cfg.report_style
+        if (newStyle === 'executive' || newStyle === 'technical' || newStyle === 'narrative') {
+          setStyle(newStyle)
+        }
+        setClonedFrom(cloneId)
+        setShowConfig(true)  // 自动展开配置面板，让用户看到已填字段
+        // 清掉 URL 参数（避免刷新再次触发）
+        const next = new URLSearchParams(searchParams)
+        next.delete('cloneConfig')
+        setSearchParams(next, { replace: true })
+      } catch (e) {
+        if (cancelled) return
+        // fetch 失败 — 给用户提示，仍清掉 URL 参数
+        console.warn('复制配置失败', e)
+        setClonedFrom(`__error__:${cloneId}`)
+        const next = new URLSearchParams(searchParams)
+        next.delete('cloneConfig')
+        setSearchParams(next, { replace: true })
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])  // 仅在 mount 时执行一次
 
   const {
     runId, status, currentStage, progress, error,
@@ -276,6 +322,41 @@ export default function Dashboard() {
             )}
           </AnimatePresence>
         </motion.section>
+
+        {/* P1-16: 复制配置提示 banner */}
+        {clonedFrom && (
+          <motion.div
+            variants={fadeUp}
+            initial="initial"
+            animate="animate"
+            className={`card p-3 flex items-center gap-2 text-xs ${
+              clonedFrom.startsWith('__error__')
+                ? 'border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900/60 text-amber-800 dark:text-amber-200'
+                : 'border-brand-300/60 bg-brand-50/70 dark:bg-brand-950/30 dark:border-brand-800/60 text-brand-800 dark:text-brand-200'
+            }`}
+          >
+            {clonedFrom.startsWith('__error__')
+              ? <AlertCircle size={14} className="shrink-0" />
+              : <Copy size={14} className="shrink-0" />}
+            <div className="flex-1">
+              {clonedFrom.startsWith('__error__')
+                ? <>复制配置失败（run: {clonedFrom.replace('__error__:', '')}），请手动配置参数</>
+                : <>已从历史 run <code className="px-1 rounded bg-white/60 dark:bg-ink-900/60 font-mono">{clonedFrom}</code> 复制配置：时长 / 报告风格 已自动填入</>
+              }
+            </div>
+            <div className="flex items-center gap-1 text-ink-500">
+              <Info size={11} />
+              <span>文档需重新上传（旧文档已过期）</span>
+            </div>
+            <button
+              onClick={() => setClonedFrom(null)}
+              className="ml-1 text-ink-400 hover:text-ink-700 text-[10px] px-1.5"
+              title="关闭提示"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
 
         {/* ========== 配置 + 启动（合并为一个统一的"下一步"卡片） ========== */}
         <motion.section variants={fadeUp} className="card p-6">

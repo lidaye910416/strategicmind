@@ -9,11 +9,11 @@
  * - 点击展开运行详情
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, Activity, Loader2, RefreshCcw, Inbox, ChevronRight,
-  Trash2, X, Check, AlertCircle, Pause, Clock,
+  Trash2, X, Check, AlertCircle, Pause, Clock, Copy,
 } from 'lucide-react'
 import api from '../services/api'
 import { APP_ROUTES, STAGE_LABELS } from '../i18n/zh'
@@ -39,11 +39,17 @@ const STATUS_STYLES: Record<string, { dot: string; label: string; icon: any; col
 }
 
 export default function RecentRuns() {
+  const navigate = useNavigate()
   const [runs, setRuns] = useState<Run[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(true)  // 默认折叠
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+
+  // P1-15: 复制此 run 的配置到 Dashboard（仅复用 hours/style；doc_ids 留空）
+  const cloneConfig = (runId: string) => {
+    navigate(`/?cloneConfig=${encodeURIComponent(runId)}`)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -205,6 +211,14 @@ export default function RecentRuns() {
                               >
                                 <Activity size={11} />
                               </Link>
+                              {/* P1-15: 复制此 run 的配置（hours/style）到 Dashboard */}
+                              <button
+                                onClick={() => cloneConfig(r.run_id)}
+                                className="p-1 rounded text-ink-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30"
+                                title="复制此 run 的配置到 Dashboard 启动区"
+                              >
+                                <Copy size={11} />
+                              </button>
                               {isConfirming ? (
                                 <>
                                   <button
