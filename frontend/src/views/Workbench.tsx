@@ -8,12 +8,12 @@
  * Implements: US-208 推演工作台
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
   GitBranch, Users, Database, BookOpen,
-  Activity, Zap, Home, Settings2, Network, FileDown,
+  Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
 } from 'lucide-react'
 import api, { pipelineApi } from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
@@ -55,6 +55,8 @@ interface SimState {
 export default function Workbench() {
 
   // ---- 状态 ----
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [company, setCompany] = useState<CompanyContext | null>(null)
   const [simState, setSimState] = useState<SimState | null>(null)
   const [stage, setStage] = useState<string>('SEED_PARSING')
@@ -66,6 +68,31 @@ export default function Workbench() {
   const [simulating, setSimulating] = useState(false)
   const [simResult, setSimResult] = useState<any>(null)
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
+
+  // ---- P1-14: URL ?prefill= 预填议题（由 Report 派生或 AgentInterview 跳转而来） ----
+  useEffect(() => {
+    const prefill = searchParams.get('prefill')
+    if (prefill && prefill.trim()) {
+      try {
+        setTopicInput(decodeURIComponent(prefill))
+      } catch {
+        setTopicInput(prefill)
+      }
+    }
+  }, [searchParams])
+
+  // ---- P1-17: 从 sessionStorage 读取 AgentInterview 设置的议题（用 try/catch 容错） ----
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem('pendingTopic')
+      if (pending && pending.trim()) {
+        setTopicInput(pending)
+        sessionStorage.removeItem('pendingTopic')
+      }
+    } catch {
+      // sessionStorage 不可用（隐私模式/SSR）— 静默忽略
+    }
+  }, [])
 
   // ---- 初始化：搭建默认公司 + 加载演示图谱 ----
   // 来源：C3 P0 #7：用 AbortController 防止组件卸载后的 setState warning
@@ -446,6 +473,34 @@ export default function Workbench() {
                     <div className="mt-3 text-[11px] text-ink-600 dark:text-ink-400 italic">
                       {resolution.summary}
                     </div>
+
+                    {/* P1-12: 决议卡末尾 — 用此立场开新一轮推演 CTA */}
+                    {simState?.run_id && (
+                      <button
+                        onClick={() => {
+                          // 决议作为新推演上下文传入；navigate + state 让 Simulation 端读 fromResolution
+                          navigate(APP_ROUTES.simulation(simState.run_id), {
+                            state: {
+                              fromResolution: {
+                                topic: topicInput,
+                                outcome: resolution.outcome,
+                                companyPosition: resolution.company_position,
+                                summary: resolution.summary,
+                              },
+                            },
+                          })
+                        }}
+                        className="mt-3 w-full inline-flex items-center justify-center gap-1.5
+                                   h-9 px-3 rounded-lg
+                                   bg-gradient-to-r from-brand-500 to-accent-500
+                                   text-white text-xs font-semibold
+                                   hover:from-brand-600 hover:to-accent-600
+                                   shadow-soft transition-all"
+                        title="基于当前决议的立场，作为下一轮推演的初始上下文"
+                      >
+                        <Lightbulb size={13} /> 用此立场开新一轮推演
+                      </button>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

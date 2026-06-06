@@ -7,10 +7,11 @@
  * Implements: US-230 前端集成
  */
 import { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageCircle, Send, Loader2, Users, Building2, UserCircle, Sparkles,
-  ChevronDown,
+  ChevronDown, ArrowRight,
 } from 'lucide-react'
 import api from '../services/api'
 
@@ -42,6 +43,7 @@ const AGENT_KIND_ICON = {
 }
 
 export default function AgentInterview({ companyId }: Props) {
+  const navigate = useNavigate()
   const [agents, setAgents] = useState<InterviewableAgent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<InterviewableAgent | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -133,6 +135,20 @@ export default function AgentInterview({ companyId }: Props) {
       e.preventDefault()
       sendQuestion()
     }
+  }
+
+  // P1-17: 把单条回答提炼成议题，写入 sessionStorage + 跳到 Workbench
+  // sessionStorage 用于跨页传 topic，Workbench 端会读取后清空
+  const setAsTopic = (text: string) => {
+    // 截取首句或前 80 字作为议题
+    const topic = (text.split(/[。\n!?]/)[0] || text).slice(0, 80).trim()
+    if (!topic) return
+    try {
+      sessionStorage.setItem('pendingTopic', topic)
+    } catch {
+      // 隐私模式/SSR — 用 URL ?prefill= 兜底
+    }
+    navigate(`/workbench?prefill=${encodeURIComponent(topic)}`)
   }
 
   if (loadingAgents) {
@@ -242,7 +258,7 @@ export default function AgentInterview({ companyId }: Props) {
             key={i}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group`}
           >
             {msg.role === 'agent' && selectedAgent && (
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 text-white inline-flex items-center justify-center text-[10px] font-bold mr-2 shrink-0">
@@ -259,8 +275,24 @@ export default function AgentInterview({ companyId }: Props) {
               <div className="text-sm whitespace-pre-wrap leading-relaxed">
                 {msg.content}
               </div>
-              <div className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-white/70' : 'text-ink-400'}`}>
-                {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className={`text-[10px] ${msg.role === 'user' ? 'text-white/70' : 'text-ink-400'}`}>
+                  {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                {/* P1-17: 把 Agent 回答提炼为议题，跳工作台预填 */}
+                {msg.role === 'agent' && !msg.content.startsWith('采访失败') && (
+                  <button
+                    onClick={() => setAsTopic(msg.content)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity
+                               inline-flex items-center gap-1 text-[10px]
+                               text-brand-600 dark:text-brand-300
+                               hover:text-brand-700 px-1.5 py-0.5
+                               rounded hover:bg-brand-50 dark:hover:bg-brand-950/30"
+                    title="把这条回答提炼为议题，跳到工作台预填"
+                  >
+                    <ArrowRight size={10} /> 设为议题
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>
