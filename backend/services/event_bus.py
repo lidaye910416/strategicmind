@@ -21,6 +21,7 @@ Frame structure (per arch-spec §1.1):
 Implements: arch-spec §2.1 (event_bus.py)
 """
 import asyncio
+import queue
 import threading
 import time
 from collections import deque
@@ -82,7 +83,7 @@ class EventBus:
         for q in subs:
             try:
                 q.put_nowait(frame)
-            except asyncio.QueueFull:
+            except queue.Full:
                 # Slow subscriber - drop this frame for that queue only.
                 # Other subscribers and history are unaffected.
                 pass
@@ -92,20 +93,20 @@ class EventBus:
 
     # ---------- Subscribe ----------
 
-    def subscribe(self, run_id: str) -> asyncio.Queue:
+    def subscribe(self, run_id: str) -> "queue.Queue":
         """Create a new subscriber queue for `run_id`.
 
-        The caller is responsible for:
-            - calling `unsubscribe(run_id, queue)` when done
-            - reading from the queue with `await queue.get()` from an
-              asyncio event loop.
+        Returns a thread-safe `queue.Queue` so both sync (Flask SSE
+        generator) and async consumers can drain it with `get_nowait()`
+        / `await q.get()` respectively. The asyncio.Queue used in the
+        previous version was incompatible with Flask's sync generator.
         """
-        q: asyncio.Queue = asyncio.Queue(maxsize=self.SUBSCRIBER_QUEUE_MAX)
+        q: "queue.Queue" = queue.Queue(maxsize=self.SUBSCRIBER_QUEUE_MAX)
         with self._lock:
             self._subs.setdefault(run_id, []).append(q)
         return q
 
-    def unsubscribe(self, run_id: str, queue: asyncio.Queue) -> None:
+    def unsubscribe(self, run_id: str, queue: "queue.Queue") -> None:
         """Remove a subscriber queue (idempotent)."""
         with self._lock:
             subs = self._subs.get(run_id, [])
