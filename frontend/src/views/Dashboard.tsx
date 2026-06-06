@@ -20,7 +20,7 @@ import Hero from '../components/layout/Hero'
 import { usePipelineStore, type PipelineStatus } from '../store/pipeline'
 import api from '../services/api'
 import {
-  COMMON, DASHBOARD, REPORT_STYLE_LABELS, APP_ROUTES, PROVIDER,
+  COMMON, DASHBOARD, DASHBOARD_ACTIONS, REPORT_STYLE_LABELS, APP_ROUTES, PROVIDER,
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 
@@ -96,7 +96,7 @@ export default function Dashboard() {
       } catch (e) {
         if (cancelled) return
         // fetch 失败 — 给用户提示，仍清掉 URL 参数
-        console.warn('复制配置失败', e)
+        console.warn(DASHBOARD_ACTIONS.cloneFailedConsole, e)
         setClonedFrom(`__error__:${cloneId}`)
         const next = new URLSearchParams(searchParams)
         next.delete('cloneConfig')
@@ -340,8 +340,8 @@ export default function Dashboard() {
               : <Copy size={14} className="shrink-0" />}
             <div className="flex-1">
               {clonedFrom.startsWith('__error__')
-                ? <>复制配置失败（run: {clonedFrom.replace('__error__:', '')}），请手动配置参数</>
-                : <>已从历史 run <code className="px-1 rounded bg-white/60 dark:bg-ink-900/60 font-mono">{clonedFrom}</code> 复制配置：时长 / 报告风格 已自动填入</>
+                ? <>{DASHBOARD_ACTIONS.cloneFailed(clonedFrom.replace('__error__:', ''))}</>
+                : <>{DASHBOARD_ACTIONS.cloneSuccessPrefix}<code className="px-1 rounded bg-white/60 dark:bg-ink-900/60 font-mono">{clonedFrom}</code>{DASHBOARD_ACTIONS.cloneSuccessTail}</>
               }
             </div>
             <div className="flex items-center gap-1 text-ink-500">

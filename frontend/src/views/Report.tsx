@@ -14,7 +14,7 @@ import ReactMarkdown from 'react-markdown'
 import ReportViewer from '../components/ReportViewer'
 import api from '../services/api'
 import Hero from '../components/layout/Hero'
-import { REPORT, COMMON, APP_ROUTES } from '../i18n/zh'
+import { REPORT, REPORT_ACTIONS, COMMON, APP_ROUTES } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 
 interface ReportData {
@@ -146,7 +146,7 @@ export default function Report() {
                 ? `基于本报告建议: ${deriveTopic}`
                 : '基于本报告生成新议题'}
             >
-              <Lightbulb size={14} /> 派生新议题
+              <Lightbulb size={14} /> {REPORT_ACTIONS.deriveNewTopic}
             </button>
             <a
               href={`/api/report/${reportId}/save`}
@@ -186,14 +186,17 @@ export default function Report() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={16} className="text-brand-600" />
                 <h3 className="text-base font-semibold text-ink-900 dark:text-white">
-                  行动清单
+                  {REPORT_ACTIONS.actionListTitle}
                 </h3>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-semibold">
-                  {actionItems.filter((i) => checked[i.key]).length}/{actionItems.length}
+                  {REPORT_ACTIONS.actionListProgress(
+                    actionItems.filter((i) => checked[i.key]).length,
+                    actionItems.length,
+                  )}
                 </span>
               </div>
               <div className="text-[10px] text-ink-400">
-                勾选 = 本地记录 · 点击箭头 = 跳工作台复用为议题
+                勾选 = 本地记录 · 点击箭头 = 跳工作台{REPORT_ACTIONS.reuseAsTopic}
               </div>
             </div>
             <ul className="space-y-1.5">
@@ -233,7 +236,7 @@ export default function Report() {
                                  transition-all"
                       title="跳工作台预填为议题"
                     >
-                      <ArrowRight size={11} /> 复用为议题
+                      <ArrowRight size={11} /> {REPORT_ACTIONS.reuseAsTopic}
                     </button>
                   </li>
                 )

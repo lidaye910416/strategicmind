@@ -306,11 +306,54 @@ export const WORKBENCH = {
   startDesc: '点击下方按钮启动 7 步全自动推演。推演过程中可暂停 / 继续 / 取消，结束后可查看完整战略报告。',
   start: '启动推演',
   timelineTitle: '实时博弈',
+  timelineSubtitle: '实时博弈事件流',
   statMargin: '基准毛利率',
   statShock: '抗冲击韧性',
   statCycle: '市场周期',
   runMultiRound: '▶ 多回合连续推演',
+  runMultiRoundTitle: '用 4 个典型战略议题连续推演 4 回合',
   multiRoundResults: '多回合推演结果',
+  multiRoundProgress: (cur: number, total: number) => `第 ${cur}/${total} 回合`,
+  downloadReportTitle: '下载公司级报告（Markdown 格式）',
+  ctaStartNewRound: '用此立场开新一轮推演',
+  ctaStartNewRoundTitle: '基于当前决议的立场，作为下一轮推演的初始上下文',
+  etaApprox: (mins: number) => `预计还需 ~${mins} 分钟`,
+}
+
+export const WORKBENCH_SUBNAV = {
+  realTimeGraph: '实时图谱',
+  departmentDebate: '部门博弈',
+  iterationNetwork: '迭代关系网',
+  agentInterview: '智能体采访',
+  heartbeat: '实时',
+  heartbeatSecondsAgo: (s: number) => `${s} 秒前`,
+  heartbeatStale: '连接已断开',
+}
+
+export const DASHBOARD_ACTIONS = {
+  cloneSuccessPrefix: '已从历史 run ',
+  cloneSuccessTail: ' 复制配置：时长 / 报告风格 已自动填入',
+  cloneFailed: (id: string) => `复制配置失败（run: ${id}），请手动配置参数`,
+  cloneFailedConsole: '复制配置失败',
+}
+
+export const REPORT_ACTIONS = {
+  deriveNewTopic: '派生新议题',
+  actionListTitle: '行动清单',
+  actionListProgress: (n: number, m: number) => `已完成 ${n} / ${m}`,
+  actionListEmpty: '报告中暂无行动项',
+  reuseAsTopic: '复用为议题',
+}
+
+export const AGENT_INTERVIEW = {
+  setAsTopic: '设为议题',
+  interviewFailedPrefix: '采访失败',
+  interviewFailed: (msg: string) => `采访失败：${msg}`,
+}
+
+export const RECENT_RUNS = {
+  copyConfig: '复制配置',
+  copyConfigTitle: (id: string) => `复制此 run 的配置（时长 / 风格），run id: ${id}`,
 }
 
 export const PROVIDER = {

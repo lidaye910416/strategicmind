@@ -15,7 +15,7 @@ import {
   GitBranch, Users, Database, BookOpen,
   Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
 } from 'lucide-react'
-import api, { pipelineApi } from '../services/api'
+import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
 import PipelineDashboard from '../components/PipelineDashboard'
 import RoundTimeline from '../components/RoundTimeline'
@@ -23,13 +23,17 @@ import DepartmentGraph from '../components/DepartmentGraph'
 import SimulationExplainer from '../components/SimulationExplainer'
 import KnowledgeGraph from '../components/KnowledgeGraph'
 import AgentInterview from '../components/AgentInterview'
+import Stat from '../components/Workbench/Stat'
+import DeptMini from '../components/Workbench/DeptMini'
 
 import Hero from '../components/layout/Hero'
 import {
   WORKBENCH, STAGE_LABELS, STATUS_LABELS,  COMMON, APP_ROUTES,
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
-import type { PipelineStatus } from '../types'
+import {
+  usePipelineStore, useRunId, useStatus, useStage, useProgress,
+} from '../store/pipeline'
 
 // ---- 7 步流水线定义 ----
 const STAGES = [
@@ -42,25 +46,21 @@ const STAGES = [
   { key: 'REPORT_GENERATING', icon: FileText, desc: '生成战略报告' },
 ]
 
-interface SimState {
-  run_id: string
-  status: PipelineStatus
-  current_stage: string
-  progress: number
-  current_round?: number
-  total_rounds?: number
-  active_agents?: number
-}
-
 export default function Workbench() {
 
   // ---- 状态 ----
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [company, setCompany] = useState<CompanyContext | null>(null)
-  const [simState, setSimState] = useState<SimState | null>(null)
-  const [stage, setStage] = useState<string>('SEED_PARSING')
-  const [progress, setProgress] = useState(0)
+  // P1-19: 阶段/进度/状态全部由 store 派生（SSE 自动推），不再用 local state + 2s 轮询
+  const runId = useRunId()
+  const status = useStatus()
+  const stage = useStage()
+  const progress = useProgress()
+  const startPipeline = usePipelineStore((s) => s.startPipeline)
+  const pausePipeline = usePipelineStore((s) => s.pause)
+  const resumePipeline = usePipelineStore((s) => s.resume)
+  const cancelPipeline = usePipelineStore((s) => s.cancel)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [topicInput, setTopicInput] = useState<string>('是否加大 AI 研发投入')
   const [resolution, setResolution] = useState<TopicResolution | null>(null)
@@ -121,45 +121,14 @@ export default function Workbench() {
     return () => controller.abort()
   }, [])
 
-  // ---- 启动推演 ----
-  const startPipeline = useCallback(async () => {
+  // ---- 启动推演（store 派生 + SSE 推流；不再需要本地 simState / 2s 轮询） ----
+  const handleStartPipeline = useCallback(async () => {
     try {
-      const r = await pipelineApi.start({ simulation_hours: 72, report_style: 'executive' })
-      const runId = r.data.run_id
-      setSimState({
-        run_id: runId,
-        status: 'running',
-        current_stage: 'SEED_PARSING',
-        progress: 0,
-      })
+      await startPipeline({ simulation_hours: 72, report_style: 'executive' })
     } catch (e) {
       console.error('启动失败', e)
     }
-  }, [])
-
-  // ---- 轮询推演状态 ----
-  // 来源：C3 P0 #7 + C1 C-25：用 AbortController 包住每次 fetch
-  //       路由切换 / 组件卸载 → 取消 in-flight 请求，避免 setState on unmounted
-  useEffect(() => {
-    if (!simState || simState.status === 'completed' || simState.status === 'failed' || simState.status === 'cancelled') return
-    const controller = new AbortController()
-    const t = setInterval(async () => {
-      try {
-        const r = await api.get(`/pipeline/${simState.run_id}`, { signal: controller.signal })
-        setSimState((s) => s ? { ...s, ...r.data } : s)
-        setStage(r.data.current_stage || 'SEED_PARSING')
-        setProgress(r.data.progress || 0)
-      } catch (e: any) {
-        // AbortError 是用户主动取消/组件卸载，不算错误
-        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
-        console.error('轮询失败', e)
-      }
-    }, 2000)
-    return () => {
-      clearInterval(t)
-      controller.abort()
-    }
-  }, [simState])
+  }, [startPipeline])
 
   // ---- 解决议题 ----
   const resolveTopic = useCallback(async () => {
@@ -206,13 +175,14 @@ export default function Workbench() {
     }
   }, [companyId, topicInput])
 
-  // ---- 控制推演 ----
+  // ---- 控制推演（store 动作，原子粒度） ----
   const control = useCallback(async (action: 'pause' | 'resume' | 'cancel') => {
-    if (!simState) return
     try {
-      await api.post(`/pipeline/${simState.run_id}/${action}`)
+      if (action === 'pause') await pausePipeline()
+      else if (action === 'resume') await resumePipeline()
+      else await cancelPipeline()
     } catch (e) { console.error(e) }
-  }, [simState])
+  }, [pausePipeline, resumePipeline, cancelPipeline])
 
   const currentStageIdx = STAGES.findIndex((s) => s.key === stage)
   const isCompleted = stage === 'COMPLETED'
@@ -228,23 +198,23 @@ export default function Workbench() {
             <Link to={APP_ROUTES.home} className="btn-ghost h-9">
               <Home size={14} /> {COMMON.backToDashboard}
             </Link>
-            {simState && (
-              <span className={`badge-${simState.status}`}>
-                {STATUS_LABELS[simState.status] || simState.status}
+            {runId && (
+              <span className={`badge-${status}`}>
+                {STATUS_LABELS[status] || status}
               </span>
             )}
-            {simState?.status === 'running' && (
+            {status === 'running' && (
               <button onClick={() => control('pause')} className="btn-ghost h-9">
                 <Pause size={14} /> 暂停
               </button>
             )}
-            {simState?.status === 'paused' && (
+            {status === 'paused' && (
               <button onClick={() => control('resume')} className="btn-primary h-9">
                 <Play size={14} /> 继续
               </button>
             )}
-            {simState?.status === 'completed' && (
-              <Link to={APP_ROUTES.report(simState.run_id)} className="btn-primary h-9">
+            {status === 'completed' && runId && (
+              <Link to={APP_ROUTES.report(runId)} className="btn-primary h-9">
                 <FileText size={14} /> 查看报告
                 <ArrowUpRight size={12} />
               </Link>
@@ -264,17 +234,17 @@ export default function Workbench() {
           <SimulationExplainer
             currentStage={stage}
             progress={progress}
-            status={simState?.status}
+            status={status}
           />
         </motion.div>
 
         {/* ===== 顶部 7 步流水线 Dashboard ===== */}
         <motion.div variants={fadeUp}>
           <PipelineDashboard
-            runId={simState?.run_id || 'preview'}
+            runId={runId || 'preview'}
             currentStage={stage}
             progress={progress}
-            status={simState?.status}
+            status={status}
           />
         </motion.div>
 
@@ -368,7 +338,7 @@ export default function Workbench() {
                   onClick={runCompanySimulation}
                   disabled={!companyId || simulating}
                   className="btn-ghost h-8 text-[11px] flex-1"
-                  title="用 4 个典型战略议题连续推演 4 回合"
+                  title={WORKBENCH.runMultiRoundTitle}
                 >
                   {simulating ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />}
                   {WORKBENCH.runMultiRound}
@@ -377,7 +347,7 @@ export default function Workbench() {
                   onClick={downloadCompanyReport}
                   disabled={!companyId}
                   className="btn-ghost h-8 text-[11px] px-2"
-                  title="下载公司级报告（Markdown 格式）"
+                  title={WORKBENCH.downloadReportTitle}
                 >
                   <FileDown size={11} />
                 </button>
@@ -475,11 +445,11 @@ export default function Workbench() {
                     </div>
 
                     {/* P1-12: 决议卡末尾 — 用此立场开新一轮推演 CTA */}
-                    {simState?.run_id && (
+                    {runId && (
                       <button
                         onClick={() => {
                           // 决议作为新推演上下文传入；navigate + state 让 Simulation 端读 fromResolution
-                          navigate(APP_ROUTES.simulation(simState.run_id), {
+                          navigate(APP_ROUTES.simulation(runId), {
                             state: {
                               fromResolution: {
                                 topic: topicInput,
@@ -496,9 +466,9 @@ export default function Workbench() {
                                    text-white text-xs font-semibold
                                    hover:from-brand-600 hover:to-accent-600
                                    shadow-soft transition-all"
-                        title="基于当前决议的立场，作为下一轮推演的初始上下文"
+                        title={WORKBENCH.ctaStartNewRoundTitle}
                       >
-                        <Lightbulb size={13} /> 用此立场开新一轮推演
+                        <Lightbulb size={13} /> {WORKBENCH.ctaStartNewRound}
                       </button>
                     )}
                   </motion.div>
@@ -588,7 +558,7 @@ export default function Workbench() {
             </div>
 
             {/* 实时事件流（仅在推演时显示） */}
-            {(stage === 'SIMULATION_RUNNING' || simState?.status === 'running') && simState?.run_id && (
+            {(stage === 'SIMULATION_RUNNING' || status === 'running') && runId && (
               <div className="card p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/20 to-brand-500/20 inline-flex items-center justify-center text-emerald-600">
@@ -599,16 +569,16 @@ export default function Workbench() {
                       {WORKBENCH.timelineTitle}
                     </div>
                     <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                      实时博弈事件流
+                      {WORKBENCH.timelineSubtitle}
                     </div>
                   </div>
                 </div>
-                <RoundTimeline simulationId={simState.run_id} />
+                <RoundTimeline simulationId={runId} />
               </div>
             )}
 
             {/* 操作面板（启动/重启） */}
-            {!simState && (
+            {!runId && (
               <div className="card p-8 text-center bg-gradient-to-br from-brand-50/50 to-accent-50/30 dark:from-brand-950/20 dark:to-accent-950/10">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 mx-auto inline-flex items-center justify-center text-white shadow-glow mb-3">
                   <Sparkles size={24} />
@@ -619,7 +589,7 @@ export default function Workbench() {
                 <p className="text-xs text-ink-500 dark:text-ink-400 mb-4 max-w-md mx-auto">
                   {WORKBENCH.startDesc}
                 </p>
-                <button onClick={startPipeline} className="btn-primary">
+                <button onClick={handleStartPipeline} className="btn-primary">
                   <Play size={16} /> {WORKBENCH.start}
                 </button>
               </div>
@@ -627,31 +597,6 @@ export default function Workbench() {
           </motion.div>
         </div>
       </motion.div>
-    </div>
-  )
-}
-
-// ---- 子组件 ----
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="p-2 rounded-lg bg-ink-50/70 dark:bg-ink-900/50">
-      <div className="text-[10px] text-ink-500 font-semibold uppercase tracking-wider">{label}</div>
-      <div className="text-base font-bold text-ink-900 dark:text-white font-mono mt-0.5">{value}</div>
-    </div>
-  )
-}
-
-function DeptMini({ dept }: { dept: any }) {
-  const support = dept.decision_power != null ? Math.round(dept.decision_power * 100) : 50
-  return (
-    <div className="p-2 rounded-lg bg-ink-50/70 dark:bg-ink-900/50 border border-ink-200/50 dark:border-ink-800/50">
-      <div className="flex items-center gap-1.5 mb-1">
-        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: `hsl(${support * 3.6}, 70%, 55%)` }} />
-        <div className="text-[11px] font-semibold text-ink-900 dark:text-white truncate flex-1">
-          {dept.name}
-        </div>
-      </div>
-      <div className="text-[10px] text-ink-500">话语权 {support}%</div>
     </div>
   )
 }
