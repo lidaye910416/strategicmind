@@ -16,7 +16,7 @@ import {
   Trash2, X, Check, AlertCircle, Pause, Clock, Copy,
 } from 'lucide-react'
 import api from '../services/api'
-import { APP_ROUTES, STAGE_LABELS } from '../i18n/zh'
+import { APP_ROUTES, STAGE_LABELS, RECENT_RUNS } from '../i18n/zh'
 import { formatErrorMessage } from '../lib/formatError'
 
 interface Run {
@@ -215,7 +215,7 @@ export default function RecentRuns() {
                               <button
                                 onClick={() => cloneConfig(r.run_id)}
                                 className="p-1 rounded text-ink-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30"
-                                title="复制此 run 的配置到 Dashboard 启动区"
+                                title={RECENT_RUNS.copyConfigTitle(r.run_id)}
                               >
                                 <Copy size={11} />
                               </button>

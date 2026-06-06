@@ -14,6 +14,7 @@ import {
   ChevronDown, ArrowRight,
 } from 'lucide-react'
 import api from '../services/api'
+import { AGENT_INTERVIEW } from '../i18n/zh'
 
 
 interface InterviewableAgent {
@@ -120,7 +121,7 @@ export default function AgentInterview({ companyId }: Props) {
     } catch (e: any) {
       const errMsg: Message = {
         role: 'agent',
-        content: `采访失败：${e.message || e}`,
+        content: AGENT_INTERVIEW.interviewFailed(e.message || String(e)),
         timestamp: new Date().toISOString(),
       }
       setMessages((m) => [...m, errMsg])
@@ -280,7 +281,7 @@ export default function AgentInterview({ companyId }: Props) {
                   {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                 </div>
                 {/* P1-17: 把 Agent 回答提炼为议题，跳工作台预填 */}
-                {msg.role === 'agent' && !msg.content.startsWith('采访失败') && (
+                {msg.role === 'agent' && !msg.content.startsWith(AGENT_INTERVIEW.interviewFailedPrefix) && (
                   <button
                     onClick={() => setAsTopic(msg.content)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity
@@ -290,7 +291,7 @@ export default function AgentInterview({ companyId }: Props) {
                                rounded hover:bg-brand-50 dark:hover:bg-brand-950/30"
                     title="把这条回答提炼为议题，跳到工作台预填"
                   >
-                    <ArrowRight size={10} /> 设为议题
+                    <ArrowRight size={10} /> {AGENT_INTERVIEW.setAsTopic}
                   </button>
                 )}
               </div>
