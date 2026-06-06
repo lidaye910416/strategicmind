@@ -191,7 +191,7 @@ export const DASHBOARD = {
   cancel: '✕ 取消',
   liveView: '实时视图',
   newRun: '新建推演',
-  hours: '模拟时长',
+  hours: '模拟时长（小时）',
   hoursSuffix: '小时',
   hoursHint: '默认 72 小时（约 3 个月），对应一个季度节奏的战略推演。',
   reportStyle: '报告风格',
@@ -205,6 +205,26 @@ export const DASHBOARD = {
   errorBox: (msg: string) => `出错了：${msg}`,
   stageTitle: '7 步推演流水线',
   progress: '进度',
+  // P3-A: 多维度参数化
+  years: '模拟年限',
+  yearsUnit: (n: number) => `${n} 年`,
+  yearsHint: '推演覆盖的未来时间范围（1–5 年）',
+  timeStep: '时间步长',
+  timeStepHint: '每回合代表的真实时长',
+  departments: '公司部门',
+  departmentsCount: (n: number, total: number) => `已选 ${n} / ${total}`,
+  departmentsHint: '至少 1 个；只生成所选部门的 Agent',
+  nStakeholders: '模拟对象数',
+  nStakeholdersHint: '6–24，影响推演广度',
+  externalFactors: '外部因素',
+  externalFactorsHint: '每行一条，最多 10 条；将作为环境信号注入 LLM',
+  externalFactorsPlaceholder: '例：竞品下月降价 20%；新政策补贴；技术突破',
+  emergencePolicy: '涌现策略',
+  emergencePolicyHint: '控制 LLM 周期性涌现新实体的强度',
+  convergencePolicy: '收敛策略',
+  convergencePolicyHint: '推演达到共识后是否自动续推',
+  summary: (years: number, deptCount: number, factorCount: number) =>
+    `预计覆盖 ${years} 年 · 涉及 ${deptCount} 个部门${factorCount > 0 ? ` · 注入 ${factorCount} 条外部因素` : ''}`,
 }
 
 export const UPLOADER = {

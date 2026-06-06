@@ -34,7 +34,7 @@ import {
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 import {
-  usePipelineStore, useRunId, useStatus, useStage, useProgress, useSnapshot,
+  usePipelineStore, useRunId, useStatus, useStage, useProgress, useSnapshot, useLastRunConfig,
 } from '../store/pipeline'
 
 // ---- 7 步流水线定义 ----
@@ -65,6 +65,8 @@ export default function Workbench() {
   const cancelPipeline = usePipelineStore((s) => s.cancel)
   // P1-8 / P1-11: 快照供 PlatformStatusCards 取 current_round / total_rounds / active_agents
   const snapshot = useSnapshot()
+  // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
+  const lastRunConfig = useLastRunConfig()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [topicInput, setTopicInput] = useState<string>('是否加大 AI 研发投入')
   const [resolution, setResolution] = useState<TopicResolution | null>(null)
@@ -128,15 +130,19 @@ export default function Workbench() {
   }, [])
 
   // ---- 启动推演（store 派生 + SSE 推流；不再需要本地 simState / 2s 轮询） ----
+  // P3-A: 读 store 中 lastRunConfig（即用户在 Dashboard 选的真实配置）—— 不再硬编码 72h
   const handleStartPipeline = useCallback(async () => {
     try {
-      await startPipeline({ simulation_hours: 72, report_style: 'executive' })
+      const cfg = (lastRunConfig && Object.keys(lastRunConfig).length > 0)
+        ? lastRunConfig
+        : { simulation_hours: 72, report_style: 'executive' as const }
+      await startPipeline(cfg)
       // P1-8: 记录开始时间用于 ETA（store 的 started_at 由后端推流，前端先用本地兜底）
       setRunStartedAt(Math.floor(Date.now() / 1000))
     } catch (e) {
       console.error('启动失败', e)
     }
-  }, [startPipeline])
+  }, [startPipeline, lastRunConfig])
 
   // ---- 解决议题 ----
   const resolveTopic = useCallback(async () => {
