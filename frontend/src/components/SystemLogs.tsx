@@ -7,14 +7,16 @@
  *   - 自动滚动到最新
  *   - 来源标签：Pipeline / Plaza / Community / Engine / Event
  *
- * 数据源：
- *   1. SSE: /api/pipeline/<run_id>/events 中 live_event { type: log_line }
+ * 数据源（FE3 P3-C：统一 EventSource 入口）：
+ *   1. usePipelineEvent 订阅 store 派发的 live_event（log_line / stage_change /
+ *      graph_progress / round_progress 全部由 store 内的唯一 EventSource 接收后派发）
  *   2. 客户端自发事件：阶段切换、轮次变化等
  *   3. 命令历史（用户操作）
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Terminal, Trash2, Pause, Play, ChevronDown } from 'lucide-react'
+import { usePipelineEvent } from '../store/pipeline'
 
 const SOURCE_STYLES: Record<string, { color: string; prefix: string }> = {
   Pipeline:  { color: 'text-cyan-400',   prefix: '[Pipeline]' },
@@ -64,51 +66,6 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
     })
   }, [externalLogs])
 
-  // SSE 订阅（log_line 事件）
-  useEffect(() => {
-    if (!runId) return
-    const es = new EventSource(`/api/pipeline/${runId}/events`)
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.type === 'live_event' && data.event) {
-          const ev = data.event
-          // 自动把 graph_progress / round_progress 转日志行
-          if (ev.type === 'graph_progress') {
-            const d = ev.data
-            push({
-              source: 'Graph',
-              msg: `节点 ${d.nodes} · 关系 ${d.edges} ${d.phase === 'completed' ? '✓ 完成' : '· Δ+' + (d.delta_nodes || 0) + '/' + (d.delta_edges || 0)}`,
-              level: d.phase === 'completed' ? 'success' : 'info',
-            })
-          } else if (ev.type === 'round_progress') {
-            const d = ev.data
-            push({
-              source: 'Round',
-              msg: `R${d.round}/${d.total_rounds} · 行动 ${d.actions_count} · 传播 ${(d.propagation_edges || []).length} · 活跃 ${d.active_agents}`,
-              level: 'info',
-            })
-          } else if (ev.type === 'log_line') {
-            push({
-              source: ev.data?.source || 'Event',
-              msg: ev.data?.msg || '',
-              level: ev.data?.level || 'info',
-            })
-          } else if (ev.type === 'stage_change') {
-            push({
-              source: 'Pipeline',
-              msg: `阶段切换 → ${ev.data?.stage || '?'}`,
-              level: 'info',
-            })
-          }
-        } else if (data.current_stage && data.current_stage !== 'UNKNOWN') {
-          // 不重复打 stage 切换
-        }
-      } catch {/* ignore */}
-    }
-    return () => es.close()
-  }, [runId])
-
   // 客户端推送函数（暴露到 window 方便其它组件调用）
   const push = useCallback((opts: { source: string; msg: string; level?: LogLine['level'] }) => {
     if (paused) return
@@ -119,6 +76,46 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
       return out.length > MAX_LINES ? out.slice(-MAX_LINES) : out
     })
   }, [paused])
+
+  // FE3 P3-C：usePipelineEvent 订阅 store 派发的 live_event（无自建 EventSource）
+  usePipelineEvent(
+    (ev) => {
+      const e = ev.raw || ev
+      const t = e?.type
+      const d = e?.data
+      if (t === 'graph_progress') {
+        push({
+          source: 'Graph',
+          msg: `节点 ${d?.nodes} · 关系 ${d?.edges} ${d?.phase === 'completed' ? '✓ 完成' : '· Δ+' + (d?.delta_nodes || 0) + '/' + (d?.delta_edges || 0)}`,
+          level: d?.phase === 'completed' ? 'success' : 'info',
+        })
+      } else if (t === 'round_progress') {
+        push({
+          source: 'Round',
+          msg: `R${d?.round}/${d?.total_rounds} · 行动 ${d?.actions_count} · 传播 ${(d?.propagation_edges || []).length} · 活跃 ${d?.active_agents}`,
+          level: 'info',
+        })
+      } else if (t === 'log_line') {
+        push({
+          source: d?.source || 'Event',
+          msg: d?.msg || '',
+          level: d?.level || 'info',
+        })
+      } else if (t === 'stage_change') {
+        push({
+          source: 'Pipeline',
+          msg: `阶段切换 → ${d?.stage || '?'}`,
+          level: 'info',
+        })
+      }
+    },
+    (ev) => {
+      const t = ev.type
+      return t === 'log_line' || t === 'stage_change' || t === 'graph_progress' || t === 'round_progress'
+    },
+  )
+  // 保留 runId 形参以兼容调用方
+  void runId
 
   // 自动滚动
   useEffect(() => {

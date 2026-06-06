@@ -4,7 +4,7 @@
  * 设计目标：
  *   - Dashboard / Workbench / LiveRunPanel 共享同一份 run 状态
  *   - URL 变化（/workbench/:runId）能自动 hydrate 进 store
- *   - SSE 事件全应用分发
+ *   - SSE 事件全应用分发（**唯一 EventSource 入口** — FE3 P3-C）
  *
  * 来源：C3 P0 #2 + C1 C-01~08 融合
  *   - (a) 字段化 _sseRef + dispose action
@@ -13,11 +13,22 @@
  *   - (d) uploads: Map<id, UploadItem> + isStarting 首行设置
  *   - (e) lastEventAt 字段 + 5s 静默检测
  *
+ * FE3 P3-C（EventSource 统一）：
+ *   - _openSSE 解析 live_event 时写入模块级 _liveEventsBuffer（200 环形）
+ *   - 同步维护 graphNodes / graphEdges（graph_progress 驱动）
+ *   - 同步维护 networkFrames（round_progress 驱动）
+ *   - 暴露 useGraphNodes / useGraphEdges / useNetworkFrames 三个 selector
+ *   - 重新导出 usePipelineEvent（订阅 live_event 的通用 hook）
+ *
  * Implements: US-061, US-062
  */
 import { create } from 'zustand'
 import http from '../services/http'
 import { formatErrorMessage } from '../lib/formatError'
+import {
+  pushPipelineEvent,
+  clearPipelineEvents as _clearPipelineEvents,
+} from '../lib/hooks/usePipelineEvent'
 
 export type PipelineStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
 
@@ -44,63 +55,36 @@ export interface UploadItem {
   filename: string
 }
 
-// ---- 事件流数据契约（P3-B：实时图谱 / 推演深度修复） ----
-
-/** 实时涌现的实体（来自 entity_emerged 事件） */
-export interface GraphNodeData {
+// ---- 实时事件驱动派生数据（FE3 P3-C） ----
+export interface GraphNodeLive {
   id: string
   label: string
   type: string
-  influence?: number
-  source?: 'seed' | 'llm' | 'action'
-  round?: number
-  emergedAt: number
+  index: number
 }
-
-/** 实时涌现的关系（来自 relationship_formed 事件） */
-export interface GraphEdgeData {
+export interface GraphEdgeLive {
   id: string
   source: string
   target: string
   type: string
-  weight?: number
-  source_origin?: 'seed' | 'llm' | 'action'
-  round?: number
-  formedAt: number
+  index: number
 }
-
-/** 推演回合（来自 round_completed 事件） */
-export interface SimRound {
+export interface NetworkEdgeLive {
+  source: string
+  target: string
+  channel: string
   round: number
-  total_rounds: number
+}
+export interface NetworkFrameLive {
+  round: number
   actions_count: number
-  active_agents: string[]
-  belief_shift_count: number
-  propagation_event_count: number
-  new_entities_count: number
-  new_relationships_count: number
-  /** 当 round 内的传播边 */
-  propagation_edges: { source: string; target: string; channel: string; round: number }[]
-  completedAt: number
+  active_agents: number
+  edges: NetworkEdgeLive[]
+  cumulative_edge_count: number
 }
 
-/** 图谱构建阶段进度（来自 graph_progress 事件） */
-export interface GraphProgress {
-  phase: 'idle' | 'started' | 'growing' | 'completed'
-  nodes: number
-  edges: number
-}
-
-// ---- 上限常量（防内存爆炸，FIFO 淘汰） ----
-const GRAPH_NODES_LIMIT = 2000
-const GRAPH_EDGES_LIMIT = 3000
-const SIM_ROUNDS_LIMIT = 100
-
-/** 把任意来源字段归一为 union 类型（容忍 REST/LLM 偶发字符串不一致） */
-function _normalizeSource(v: unknown): 'seed' | 'llm' | 'action' | undefined {
-  if (v === 'seed' || v === 'llm' || v === 'action') return v
-  return undefined
-}
+const GRAPH_PHASE_TYPES = ['COMPANY', 'PERSON', 'PRODUCT', 'BUSINESS', 'GOVERNMENT', 'REGULATION']
+const GRAPH_EDGE_TYPES = ['OWNS', 'MANAGES', 'INFLUENCES', 'DEPENDS_ON', 'REGULATED_BY']
 
 interface PipelineState {
   // 核心 run 状态
@@ -119,15 +103,11 @@ interface PipelineState {
   // SSE 静默检测：上次收到事件的时间戳（ms）
   lastEventAt: number
 
-  // ---- 事件流切片（P3-B：实时图谱 / 推演深度修复） ----
-  /** 实时涌现的实体（来自 entity_emerged 事件 + graph-snapshot REST 补底） */
-  graphNodes: Map<string, GraphNodeData>
-  /** 实时涌现的关系（来自 relationship_formed 事件 + graph-snapshot REST 补底） */
-  graphEdges: Map<string, GraphEdgeData>
-  /** 图谱构建阶段进度（来自 graph_progress 事件） */
-  graphProgress: GraphProgress
-  /** 推演回合（来自 round_completed 事件） */
-  simRounds: SimRound[]
+  // ---- 实时事件派生数据（FE3 P3-C） ----
+  graphNodes: GraphNodeLive[]
+  graphEdges: GraphEdgeLive[]
+  graphPhase: 'building' | 'completed' | 'idle'
+  networkFrames: NetworkFrameLive[]
 
   // ---- SSE 内部句柄（不暴露在公共 state，但放到 store 里便于 dispose 协同） ----
   _sseRef: EventSource | null
@@ -148,13 +128,78 @@ interface PipelineState {
   addUpload: (item: UploadItem) => void
   removeUpload: (id: string) => void
   clearUploads: () => void
+  /** 全量替换图谱节点（来自 REST snapshot 初始化） */
+  seedGraph: (nodes: GraphNodeLive[], edges: GraphEdgeLive[]) => void
+  /** 重置全部实时派生数据（重置 pipeline 时清空） */
+  resetLiveData: () => void
   dispose: () => void
-  // 事件流切片 actions
-  setGraphSnapshot: (nodes: GraphNodeData[], edges: GraphEdgeData[], progress?: Partial<GraphProgress>) => void
-  appendGraphNodes: (nodes: GraphNodeData[]) => void
-  appendGraphEdges: (edges: GraphEdgeData[]) => void
-  setGraphProgress: (p: Partial<GraphProgress>) => void
-  appendSimRound: (round: SimRound) => void
+}
+
+// ---- 实时派生数据处理工具（FE3 P3-C） ----
+
+/** 从 cumulative count 派生节点数组（与原组件 growNodes 行为一致） */
+function _buildGraphNodes(target: number): GraphNodeLive[] {
+  const out: GraphNodeLive[] = []
+  for (let i = 0; i < target; i++) {
+    out.push({
+      id: `n${i}`,
+      label: `Entity ${i + 1}`,
+      type: GRAPH_PHASE_TYPES[i % GRAPH_PHASE_TYPES.length],
+      index: i,
+    })
+  }
+  return out
+}
+
+function _buildGraphEdges(target: number): GraphEdgeLive[] {
+  const out: GraphEdgeLive[] = []
+  for (let i = 0; i < target; i++) {
+    out.push({
+      id: `e${i}`,
+      source: `n${i % Math.max(1, target)}`,
+      target: `n${(i * 7 + 1) % Math.max(1, target)}`,
+      type: GRAPH_EDGE_TYPES[i % GRAPH_EDGE_TYPES.length],
+      index: i,
+    })
+  }
+  return out
+}
+
+function _processGraphProgress(state: PipelineState, evt: any): Partial<PipelineState> {
+  const nodes = typeof evt?.nodes === 'number' ? evt.nodes : state.graphNodes.length
+  const edges = typeof evt?.edges === 'number' ? evt.edges : state.graphEdges.length
+  const phase: 'building' | 'completed' =
+    evt?.phase === 'completed' ? 'completed' : 'building'
+  return {
+    graphNodes: nodes === state.graphNodes.length ? state.graphNodes : _buildGraphNodes(nodes),
+    graphEdges: edges === state.graphEdges.length ? state.graphEdges : _buildGraphEdges(edges),
+    graphPhase: phase,
+  }
+}
+
+function _processRoundProgress(_state: PipelineState, evt: any): Partial<PipelineState> {
+  const round = evt?.round ?? 0
+  if (!round) return {}
+  const newFrame: NetworkFrameLive = {
+    round,
+    actions_count: evt?.actions_count || 0,
+    active_agents: evt?.active_agents || 0,
+    edges: (evt?.propagation_edges || []).map((e: any) => ({
+      source: e.source,
+      target: e.target,
+      channel: e.channel,
+      round,
+    })),
+    cumulative_edge_count: 0,
+  }
+  const filtered = _state.networkFrames.filter((f) => f.round !== round)
+  const next = [...filtered, newFrame].sort((a, b) => a.round - b.round)
+  let acc = 0
+  for (const f of next) {
+    acc += f.edges.length
+    f.cumulative_edge_count = acc
+  }
+  return { networkFrames: next }
 }
 
 // ---- 内部 SSE 工具（仍在模块作用域，但只通过 store 字段访问） ----
@@ -166,12 +211,15 @@ function _openSSE(
 ) {
   // 关闭旧的
   _closeSSE(get, set)
+  // 切换 runId 时清空上一轮的 live event buffer 与派生数据
+  _clearPipelineEvents()
+  set({ graphNodes: [], graphEdges: [], graphPhase: 'idle', networkFrames: [] })
   const es = new EventSource(`/api/pipeline/${runId}/events`)
   set({ _sseRef: es, lastEventAt: Date.now() })
   es.onmessage = (ev) => {
     try {
       const data = JSON.parse(ev.data)
-      // ---- 完整快照（含 artifacts） ----
+      // 完整快照（含 artifacts）
       if (data.run_id && data.artifacts !== undefined) {
         set({
           snapshot: data,
@@ -182,7 +230,7 @@ function _openSSE(
           lastEventAt: Date.now(),
         })
       }
-      // ---- 增量事件 ----
+      // 增量事件
       if (data.current_stage) {
         set({ currentStage: data.current_stage })
       }
@@ -204,9 +252,15 @@ function _openSSE(
           set({ _sseCloseTimer: t })
         }
       }
-      // ---- live_event 增量（P3-B：实时图谱 / 推演深度修复） ----
+      // 实时事件（FE3 P3-C）：所有 live_event 都进 buffer + 派发到派生数据
       if (data.type === 'live_event' && data.event) {
-        _applyLiveEvent(data.event, get, set)
+        pushPipelineEvent({ type: data.event.type, data: data.event.data, raw: data.event })
+        const ev = data.event
+        if (ev.type === 'graph_progress') {
+          set(_processGraphProgress(get(), ev.data || {}))
+        } else if (ev.type === 'round_progress') {
+          set(_processRoundProgress(get(), ev.data || {}))
+        }
       }
     } catch { /* ignore malformed events */ }
   }
@@ -230,115 +284,6 @@ function _closeSSE(get: () => PipelineState, set: (partial: Partial<PipelineStat
   }
 }
 
-/**
- * 把 live_event 增量分派到对应的 store 切片。
- * - entity_emerged → graphNodes
- * - relationship_formed → graphEdges
- * - graph_progress → graphProgress
- * - round_completed → simRounds
- * 上限触发时 FIFO 淘汰，防止内存爆炸。
- */
-function _applyLiveEvent(
-  evt: any,
-  get: () => PipelineState,
-  set: (partial: Partial<PipelineState>) => void,
-) {
-  const t = evt?.type
-  const d = evt?.data || {}
-  const now = Date.now()
-
-  if (t === 'entity_emerged') {
-    const entity = d.entity
-    if (!entity?.id) return
-    const next = new Map(get().graphNodes)
-    next.set(entity.id, {
-      id: entity.id,
-      label: entity.label || entity.name || entity.id,
-      type: entity.type || entity.entity_type || 'DEFAULT',
-      influence: typeof entity.influence === 'number' ? entity.influence : undefined,
-      source: d.source,
-      round: d.round,
-      emergedAt: now,
-    })
-    if (next.size > GRAPH_NODES_LIMIT) {
-      // FIFO 淘汰最旧的
-      const firstKey = next.keys().next().value
-      if (firstKey) next.delete(firstKey)
-    }
-    set({ graphNodes: next, lastEventAt: now })
-    return
-  }
-
-  if (t === 'relationship_formed') {
-    const rel = d.relationship
-    if (!rel?.id || !rel?.source || !rel?.target) return
-    const next = new Map(get().graphEdges)
-    next.set(rel.id, {
-      id: rel.id,
-      source: rel.source,
-      target: rel.target,
-      type: rel.type || 'RELATED_TO',
-      weight: typeof rel.weight === 'number' ? rel.weight : undefined,
-      source_origin: d.source,
-      round: d.round,
-      formedAt: now,
-    })
-    if (next.size > GRAPH_EDGES_LIMIT) {
-      const firstKey = next.keys().next().value
-      if (firstKey) next.delete(firstKey)
-    }
-    set({ graphEdges: next, lastEventAt: now })
-    return
-  }
-
-  if (t === 'graph_progress') {
-    set({
-      graphProgress: {
-        phase: (d.phase as GraphProgress['phase']) || 'growing',
-        nodes: typeof d.nodes === 'number' ? d.nodes : get().graphProgress.nodes,
-        edges: typeof d.edges === 'number' ? d.edges : get().graphProgress.edges,
-      },
-      lastEventAt: now,
-    })
-    return
-  }
-
-  if (t === 'round_completed') {
-    const edges = Array.isArray(d.propagation_edges) ? d.propagation_edges : []
-    const round: SimRound = {
-      round: d.round_num ?? d.round ?? 0,
-      total_rounds: d.total_rounds ?? 0,
-      actions_count: d.actions_count ?? 0,
-      active_agents: Array.isArray(d.active_agents) ? d.active_agents : [],
-      belief_shift_count: d.belief_shift_count ?? 0,
-      propagation_event_count: d.propagation_event_count ?? edges.length,
-      new_entities_count: d.new_entities_count ?? 0,
-      new_relationships_count: d.new_relationships_count ?? 0,
-      propagation_edges: edges.map((e: any) => ({
-        source: e.source,
-        target: e.target,
-        channel: e.channel || 'unknown',
-        round: d.round_num ?? d.round ?? 0,
-      })),
-      completedAt: now,
-    }
-    const prev = get().simRounds.filter((r) => r.round !== round.round)
-    const next = [...prev, round].sort((a, b) => a.round - b.round)
-    // FIFO 上限
-    const trimmed = next.length > SIM_ROUNDS_LIMIT ? next.slice(next.length - SIM_ROUNDS_LIMIT) : next
-    set({ simRounds: trimmed, lastEventAt: now })
-    return
-  }
-
-  if (t === 'round_started') {
-    set({
-      graphProgress: { ...get().graphProgress, phase: 'growing' },
-      lastEventAt: now,
-    })
-    return
-  }
-}
-
 export const usePipelineStore = create<PipelineState>((set, get) => ({
   runId: null,
   status: 'idle',
@@ -350,11 +295,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   isStarting: false,
   uploads: new Map(),
   lastEventAt: 0,
-  // 事件流切片初始值
-  graphNodes: new Map(),
-  graphEdges: new Map(),
-  graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
-  simRounds: [],
+  graphNodes: [],
+  graphEdges: [],
+  graphPhase: 'idle',
+  networkFrames: [],
   _sseRef: null,
   _sseCloseTimer: null,
 
@@ -398,6 +342,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 
   reset: () => {
     _closeSSE(get, set)
+    _clearPipelineEvents()
     set({
       runId: null,
       status: 'idle',
@@ -407,10 +352,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       snapshot: null,
       isStarting: false,
       lastEventAt: 0,
-      graphNodes: new Map(),
-      graphEdges: new Map(),
-      graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
-      simRounds: [],
+      graphNodes: [],
+      graphEdges: [],
+      graphPhase: 'idle',
+      networkFrames: [],
     })
   },
 
@@ -471,114 +416,14 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 
   clearUploads: () => set({ uploads: new Map() }),
 
-  // ---- 事件流切片 actions（P3-B） ----
-  /**
-   * 用 REST 一次性拉到的 graph-snapshot 初始化（或覆盖）图谱切片。
-   * 只在 store 内 Map 为空 / 阶段变更时由组件调用。
-   * 入参采用宽松类型（REST payload 字段名可能是 snake_case 旧版）。
-   */
-  setGraphSnapshot: (nodes, edges, progress) => {
-    const nMap = new Map<string, GraphNodeData>()
-    const now = Date.now()
-    for (const raw of nodes as any[]) {
-      if (!raw?.id) continue
-      nMap.set(raw.id, {
-        id: raw.id,
-        label: raw.label || raw.name || raw.id,
-        type: raw.type || raw.entity_type || 'DEFAULT',
-        influence: typeof raw.influence === 'number' ? raw.influence : undefined,
-        source: _normalizeSource(raw.source ?? raw.source_origin),
-        round: raw.round,
-        emergedAt: typeof raw.mergedAt === 'number' ? raw.mergedAt : now,
-      })
-    }
-    const eMap = new Map<string, GraphEdgeData>()
-    for (const raw of edges as any[]) {
-      if (!raw?.id) continue
-      eMap.set(raw.id, {
-        id: raw.id,
-        source: raw.source,
-        target: raw.target,
-        type: raw.type || 'RELATED_TO',
-        weight: typeof raw.weight === 'number' ? raw.weight : undefined,
-        source_origin: _normalizeSource(raw.source_origin ?? raw.source),
-        round: raw.round,
-        formedAt: typeof raw.formedAt === 'number' ? raw.formedAt : now,
-      })
-    }
-    set((s) => ({
-      graphNodes: nMap,
-      graphEdges: eMap,
-      graphProgress: progress
-        ? { ...s.graphProgress, ...progress }
-        : s.graphProgress,
-    }))
-  },
-
-  appendGraphNodes: (nodes) => {
-    if (!nodes?.length) return
-    set((s) => {
-      const next = new Map(s.graphNodes)
-      const now = Date.now()
-      for (const raw of nodes as any[]) {
-        if (!raw?.id) continue
-        next.set(raw.id, {
-          id: raw.id,
-          label: raw.label || raw.name || raw.id,
-          type: raw.type || 'DEFAULT',
-          influence: raw.influence,
-          source: _normalizeSource(raw.source),
-          round: raw.round,
-          emergedAt: now,
-        })
-      }
-      // FIFO
-      while (next.size > GRAPH_NODES_LIMIT) {
-        const k = next.keys().next().value
-        if (!k) break
-        next.delete(k)
-      }
-      return { graphNodes: next }
-    })
-  },
-
-  appendGraphEdges: (edges) => {
-    if (!edges?.length) return
-    set((s) => {
-      const next = new Map(s.graphEdges)
-      const now = Date.now()
-      for (const raw of edges as any[]) {
-        if (!raw?.id) continue
-        next.set(raw.id, {
-          id: raw.id,
-          source: raw.source,
-          target: raw.target,
-          type: raw.type || 'RELATED_TO',
-          weight: raw.weight,
-          source_origin: _normalizeSource(raw.source_origin),
-          round: raw.round,
-          formedAt: now,
-        })
-      }
-      while (next.size > GRAPH_EDGES_LIMIT) {
-        const k = next.keys().next().value
-        if (!k) break
-        next.delete(k)
-      }
-      return { graphEdges: next }
-    })
-  },
-
-  setGraphProgress: (p) =>
-    set((s) => ({ graphProgress: { ...s.graphProgress, ...p } })),
-
-  appendSimRound: (round) =>
-    set((s) => {
-      const prev = s.simRounds.filter((r) => r.round !== round.round)
-      const next = [...prev, round].sort((a, b) => a.round - b.round)
-      const trimmed = next.length > SIM_ROUNDS_LIMIT ? next.slice(next.length - SIM_ROUNDS_LIMIT) : next
-      return { simRounds: trimmed }
+  seedGraph: (nodes, edges) =>
+    set({
+      graphNodes: nodes.length > 0 ? nodes : get().graphNodes,
+      graphEdges: edges.length > 0 ? edges : get().graphEdges,
     }),
+
+  resetLiveData: () =>
+    set({ graphNodes: [], graphEdges: [], graphPhase: 'idle', networkFrames: [] }),
 
   dispose: () => {
     _closeSSE(get, set)
@@ -600,8 +445,12 @@ export const useError = () => usePipelineStore((s) => s.error)
 export const useIsStarting = () => usePipelineStore((s) => s.isStarting)
 export const useUploads = () => usePipelineStore((s) => s.uploads)
 export const useLastEventAt = () => usePipelineStore((s) => s.lastEventAt)
-// ---- 事件流切片 selector（P3-B：实时图谱 / 推演深度） ----
-export const useGraphNodes = () => usePipelineStore((s) => s.graphNodes)
-export const useGraphEdges = () => usePipelineStore((s) => s.graphEdges)
-export const useGraphProgress = () => usePipelineStore((s) => s.graphProgress)
-export const useSimRounds = () => usePipelineStore((s) => s.simRounds)
+
+// ---- FE3 P3-C：实时事件驱动 selector（统一 EventSource 入口） ----
+export const useGraphNodes = (): GraphNodeLive[] => usePipelineStore((s) => s.graphNodes)
+export const useGraphEdges = (): GraphEdgeLive[] => usePipelineStore((s) => s.graphEdges)
+export const useGraphPhase = () => usePipelineStore((s) => s.graphPhase)
+export const useNetworkFrames = (): NetworkFrameLive[] => usePipelineStore((s) => s.networkFrames)
+
+// 重新导出通用 live_event 订阅 hook（保持旧 import 路径兼容）
+export { usePipelineEvent, pushPipelineEvent, clearPipelineEvents } from '../lib/hooks/usePipelineEvent'

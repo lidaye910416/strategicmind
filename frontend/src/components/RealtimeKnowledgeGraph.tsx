@@ -1,115 +1,226 @@
 /**
- * RealtimeKnowledgeGraph - 实时增长知识图谱。
+ * RealtimeKnowledgeGraph - MiroFish 风格的实时增长知识图谱。
  *
- * 数据源（P3-B 修复后）：
- *   1. store 内 graphNodes / graphEdges（来自 SSE live_event 增量 + graph-snapshot 补底）
- *      - 通过 useGraphStream(runId) 统一获取
- *   2. 不再自开 EventSource；事件分发统一由 store 的 _openSSE 完成
+ * 数据源（FE3 P3-C：统一 EventSource 入口）：
+ *   1. Store selector: useGraphNodes() / useGraphEdges() / useGraphPhase()
+ *      （由 store 内的唯一 EventSource 解析 graph_progress 后写入，组件不再自建 SSE）
+ *   2. REST: /api/pipeline/<run_id>/graph-snapshot（启动时一次性拉全量，seedGraph 写入 store）
+ *   3. Store 派生 status / currentStage（决定 building 状态）
  *
  * 动效：
- *   - 新节点：opacity 0→1 + scale 0→1（"破壳"）
+ *   - 新节点：opacity 0→1 + scale 0.3→1（"破壳"）
  *   - 新边：stroke-dasharray 由 0→长度（"绘制"）
  *   - 已有节点/边保留位置（基于 ID 复用）
  *
  * 配色：12 种实体类型固定调色板（参考 MiroFish GraphPanel.vue）
  */
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Network, ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Loader2,
   Maximize2, Minimize2, X, Hash,
 } from 'lucide-react'
-import { useGraphStream } from '../store/hooks/useGraphStream'
+import api from '../services/api'
 import {
-  buildGraphPositions,
-  stepForceLayout,
-  stepAppearance,
-  nodeColor,
-  nodeSize,
-  type PositionedNode,
-  type PositionedEdge,
-} from '../utils/graphLayout'
-import type { GraphNodeData, GraphEdgeData } from '../store/pipeline'
+  useGraphNodes,
+  useGraphEdges,
+  useGraphPhase,
+  useStage,
+  useStatus,
+  usePipelineStore,
+  type GraphNodeLive,
+  type GraphEdgeLive,
+} from '../store/pipeline'
+
+// 12 色调色板（与 MiroFish GraphPanel 保持一致）
+const NODE_COLORS: Record<string, string> = {
+  COMPANY: '#FF6B35',
+  PERSON: '#E91E63',
+  PRODUCT: '#7B2D8E',
+  BUSINESS: '#004E89',
+  GOVERNMENT: '#C5283D',
+  REGULATION: '#64748B',
+  TECH: '#06B6D4',
+  CAPITAL: '#1A936F',
+  COMPETITOR: '#E9724C',
+  CUSTOMER: '#6C5CE7',
+  MARKET: '#2D3436',
+  DEFAULT: '#94A3B8',
+}
+
+interface GraphNode extends GraphNodeLive {}
+interface GraphEdge extends GraphEdgeLive {}
+
+interface SimNode extends GraphNode {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  color: string
+  size: number
+  birth: number  // 0-1, 0=未出现, 1=已稳态
+  isNew: boolean
+}
+
+interface SimEdge extends GraphEdge {
+  drawProgress: number
+  isNew: boolean
+}
 
 interface Props {
   runId?: string | null
   live?: boolean
   height?: number
   title?: string
-  fallback?: { nodes: GraphNodeData[]; edges: GraphEdgeData[] } | null
+  fallback?: { nodes: any[]; edges: any[] } | null
 }
 
-const W = 900
-
 export default function RealtimeKnowledgeGraph({
-  runId, live: _live = true, height = 480, title = '实时知识图谱', fallback = null,
+  runId, live = true, height = 480, title = '实时知识图谱', fallback = null,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const { nodes: rawNodes, edges: rawEdges, progress, source, totalNodes, totalEdges } = useGraphStream(
-    runId,
-    { fallback: fallback as { nodes: GraphNodeData[]; edges: GraphEdgeData[] } | null },
-  )
-  const [renderedNodes, setRenderedNodes] = useState<PositionedNode[]>([])
-  const [renderedEdges, setRenderedEdges] = useState<PositionedEdge[]>([])
-  const posCacheRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const [nodes, setNodes] = useState<SimNode[]>([])
+  const [edges, setEdges] = useState<SimEdge[]>([])
   const [hovered, setHovered] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [showLabels, setShowLabels] = useState(true)
+  const [tick, setTick] = useState(0)
   const [maximized, setMaximized] = useState(false)
   const [stageLabel, setStageLabel] = useState<string>('等待图谱数据…')
-  const [selectedNode, setSelectedNode] = useState<PositionedNode | null>(null)
-  const [tick, setTick] = useState(0)
+  const [selectedNode, setSelectedNode] = useState<SimNode | null>(null)
 
-  // 每次 rawNodes/edges 变化 → 重建位置（保留已有节点的 x/y）
+  // ---- FE3 P3-C：store selector 替代自建 SSE ----
+  const storeGraphNodes = useGraphNodes()
+  const storeGraphEdges = useGraphEdges()
+  const graphPhase = useGraphPhase()
+  const currentStage = useStage()
+  const status = useStatus()
+  const seedGraphAction = usePipelineStore((s) => s.seedGraph)
+
+  // building flag 派生自 store phase + currentStage
+  const building = graphPhase === 'building' || currentStage === 'GRAPH_BUILDING'
+  const stats = { nodeCount: storeGraphNodes.length, edgeCount: storeGraphEdges.length }
+
+  const W = 900
+  const H = height
+
+  // 把 store 实时数据同步进本地 SimNode/SimEdge 状态（保留动画）
   useEffect(() => {
-    if (source === 'empty') {
-      setRenderedNodes([])
-      setRenderedEdges([])
+    if (!live) return
+    setNodes((prev) => syncNodesToStore(prev, storeGraphNodes))
+    setEdges((prev) => syncEdgesToStore(prev, storeGraphEdges))
+    if (graphPhase === 'completed') {
+      setStageLabel('图谱构建完成')
+    } else if (storeGraphNodes.length > 0 || storeGraphEdges.length > 0) {
+      setStageLabel(`图谱构建中 · 节点 ${storeGraphNodes.length} · 关系 ${storeGraphEdges.length}`)
+    }
+  }, [storeGraphNodes, storeGraphEdges, graphPhase, live])
+
+  // 终态/未运行时不显示"构建中"
+  useEffect(() => {
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+      setStageLabel(storeGraphNodes.length > 0 ? '图谱就绪' : '暂无图谱数据')
+    }
+  }, [status, storeGraphNodes.length])
+
+  // 启动时拉一次全量（seed 进 store + 本地）
+  useEffect(() => {
+    if (!runId) {
+      if (fallback) hydrateFromFallback(fallback)
       return
     }
-    const { nodes, edges } = buildGraphPositions(
-      rawNodes,
-      rawEdges,
-      posCacheRef.current,
-      W,
-      height,
-    )
-    setRenderedNodes(nodes)
-    setRenderedEdges(edges)
-    // 同步 posCache
-    const next = new Map<string, { x: number; y: number }>()
-    for (const n of nodes) next.set(n.id, { x: n.x, y: n.y })
-    posCacheRef.current = next
-  }, [rawNodes, rawEdges, source, height])
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api.get(`/pipeline/${runId}/graph-snapshot`)
+        if (cancelled) return
+        const data = r.data
+        const rawNodes: GraphNode[] = data.nodes || []
+        const rawEdges: GraphEdge[] = data.edges || []
+        // seed 进 store（供其他组件订阅）
+        seedGraphAction(rawNodes, rawEdges)
+        hydrateFromSnapshot(data)
+      } catch {/* ignore */}
+    })()
+    return () => { cancelled = true }
+  }, [runId, seedGraphAction])
 
-  // 更新 stageLabel
-  useEffect(() => {
-    if (source === 'empty') {
-      setStageLabel('等待图谱数据…')
-      return
-    }
-    if (progress?.phase === 'completed') {
-      setStageLabel('图谱构建完成 · 持续接收新增实体')
-    } else if (progress?.phase === 'growing' || progress?.phase === 'started') {
-      setStageLabel(`图谱构建中 · 节点 ${progress.nodes} · 关系 ${progress.edges}`)
+  const hydrateFromSnapshot = (data: any) => {
+    const rawNodes: GraphNode[] = data.nodes || []
+    const rawEdges: GraphEdge[] = data.edges || []
+    setNodes(seedNodes(rawNodes))
+    setEdges(seedEdges(rawEdges))
+    if (data.stage === 'GRAPH_BUILDING') {
+      setStageLabel('图谱构建中')
     } else {
-      setStageLabel(totalNodes > 0 ? `图谱就绪 · ${totalNodes} 节点 / ${totalEdges} 关系` : '图谱构建中…')
+      setStageLabel(rawNodes.length > 0 ? '图谱就绪' : '等待图谱数据…')
     }
-  }, [progress, source, totalNodes, totalEdges])
+  }
 
-  // 力模拟（仅节点数变化时跑一次稳定布局）
+  const hydrateFromFallback = (data: { nodes: any[]; edges: any[] }) => {
+    const mappedNodes: GraphNode[] = (data.nodes || []).map((n: any, i: number) => ({
+      id: n.id, label: n.label || n.name || '未命名',
+      type: n.type || n.entity_type || 'DEFAULT', index: i,
+    }))
+    const mappedEdges: GraphEdge[] = (data.edges || []).map((e: any, i: number) => ({
+      id: `e${i}`, source: e.source, target: e.target,
+      type: e.type || 'RELATED_TO', index: i,
+    }))
+    setNodes(seedNodes(mappedNodes))
+    setEdges(seedEdges(mappedEdges))
+    setStageLabel('演示数据 · 启动推演后开始增长')
+  }
+
+  // 力模拟
   useEffect(() => {
-    if (renderedNodes.length === 0) return
+    if (nodes.length === 0) return
     let raf: number
     let iter = 0
-    const maxIter = 200
+    const maxIter = 300
     const step = () => {
-      setRenderedNodes((prev) => {
-        if (prev.length === 0) return prev
-        const next = stepForceLayout(prev, renderedEdges, dragging, W, height, 1)
-        // 同步 posCache
-        for (const n of next) posCacheRef.current.set(n.id, { x: n.x, y: n.y })
+      setNodes((prev) => {
+        const next = prev.map((n) => ({ ...n }))
+        const cx = W / 2, cy = H / 2
+        for (let i = 0; i < next.length; i++) {
+          for (let j = i + 1; j < next.length; j++) {
+            const dx = next[j].x - next[i].x
+            const dy = next[j].y - next[i].y
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1
+            const force = 8000 / (dist * dist)
+            const fx = (dx / dist) * force
+            const fy = (dy / dist) * force
+            if (next[i].id !== dragging) { next[i].vx -= fx; next[i].vy -= fy }
+            if (next[j].id !== dragging) { next[j].vx += fx; next[j].vy += fy }
+          }
+        }
+        for (const edge of edges) {
+          const a = next.find((n) => n.id === edge.source)
+          const b = next.find((n) => n.id === edge.target)
+          if (!a || !b) continue
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const target = 140
+          const diff = (dist - target) * 0.018
+          const fx = (dx / dist) * diff
+          const fy = (dy / dist) * diff
+          if (a.id !== dragging) { a.vx += fx; a.vy += fy }
+          if (b.id !== dragging) { b.vx -= fx; b.vy -= fy }
+        }
+        for (const n of next) {
+          n.vx += (cx - n.x) * 0.004
+          n.vy += (cy - n.y) * 0.004
+        }
+        for (const n of next) {
+          if (n.id === dragging) continue
+          n.vx *= 0.78
+          n.vy *= 0.78
+          n.x += n.vx
+          n.y += n.vy
+          n.x = Math.max(35, Math.min(W - 35, n.x))
+          n.y = Math.max(35, Math.min(H - 35, n.y))
+        }
         return next
       })
       iter++
@@ -117,56 +228,53 @@ export default function RealtimeKnowledgeGraph({
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedNodes.length, renderedEdges.length, dragging, tick])
+  }, [edges.length, dragging, height, tick, nodes.length > 0])
 
-  // 破壳动效
+  // "破壳" 动效
   useEffect(() => {
-    if (renderedNodes.length === 0) return
+    if (nodes.length === 0) return
     let raf: number
     const step = () => {
-      let done = true
-      setRenderedNodes((ns) => {
-        setRenderedEdges((es) => {
-          const r = stepAppearance(ns, es)
-          done = r.done
-          return r.edges
-        })
-        return ns
-      })
-      if (!done) raf = requestAnimationFrame(step)
+      setNodes((prev) => prev.map((n) => {
+        if (n.birth < 1) return { ...n, birth: Math.min(1, n.birth + 0.06) }
+        return n
+      }))
+      setEdges((prev) => prev.map((e) => {
+        if (e.drawProgress < 1) return { ...e, drawProgress: Math.min(1, e.drawProgress + 0.05) }
+        return e
+      }))
+      if (nodes.some((n) => n.birth < 1) || edges.some((e) => e.drawProgress < 1)) {
+        raf = requestAnimationFrame(step)
+      }
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-  }, [renderedNodes.length, renderedEdges.length])
+  }, [nodes.length, edges.length])
 
-  const onPointerDown = useCallback((id: string, e: React.PointerEvent) => {
+  const onPointerDown = (id: string, e: React.PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragging(id)
     ;(e.target as Element).setPointerCapture(e.pointerId)
-  }, [])
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
     if (!dragging || !svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * W
-    const y = ((e.clientY - rect.top) / rect.height) * height
-    setRenderedNodes((prev) => prev.map((n) => (n.id === dragging ? { ...n, x, y, vx: 0, vy: 0 } : n)))
-    posCacheRef.current.set(dragging, { x, y })
-  }, [dragging, height])
-  const onPointerUp = useCallback(() => setDragging(null), [])
+    const y = ((e.clientY - rect.top) / rect.height) * H
+    setNodes((prev) => prev.map((n) => (n.id === dragging ? { ...n, x, y, vx: 0, vy: 0 } : n)))
+  }
+  const onPointerUp = () => setDragging(null)
 
   const typeCount = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const n of renderedNodes) m[n.type] = (m[n.type] || 0) + 1
+    for (const n of nodes) m[n.type] = (m[n.type] || 0) + 1
     return m
-  }, [renderedNodes])
+  }, [nodes])
 
   const containerCls = maximized
     ? 'fixed inset-4 z-50 card p-4 flex flex-col bg-white dark:bg-ink-900 shadow-2xl'
     : 'card p-4 flex flex-col'
-
-  const building = progress?.phase === 'started' || progress?.phase === 'growing'
 
   return (
     <div className={containerCls} style={maximized ? {} : { minHeight: height + 80 }}>
@@ -188,7 +296,7 @@ export default function RealtimeKnowledgeGraph({
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-[10px] font-mono text-ink-500 hidden sm:flex items-center gap-1">
             <Hash size={10} />
-            {totalNodes} 节点 / {totalEdges} 边
+            {stats.nodeCount} 节点 / {stats.edgeCount} 边
           </span>
           <div className="flex gap-1">
             <button className="btn-ghost h-7 w-7 p-0" onClick={() => setShowLabels((v) => !v)} title="标签">
@@ -216,27 +324,24 @@ export default function RealtimeKnowledgeGraph({
       >
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${W} ${height}`}
+          viewBox={`0 0 ${W} ${H}`}
           className="w-full h-full"
           style={{ cursor: dragging ? 'grabbing' : 'default' }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
         >
           <defs>
-            {Array.from(new Set(['DEFAULT', ...renderedNodes.map((n) => n.type)])).map((type) => {
-              const color = nodeColor(type)
-              return (
-                <radialGradient key={type} id={`grad-${type}`} cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor={color} stopOpacity="1" />
-                  <stop offset="100%" stopColor={color} stopOpacity="0.6" />
-                </radialGradient>
-              )
-            })}
+            {Object.entries(NODE_COLORS).map(([type, color]) => (
+              <radialGradient key={type} id={`grad-${type}`} cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor={color} stopOpacity="1" />
+                <stop offset="100%" stopColor={color} stopOpacity="0.6" />
+              </radialGradient>
+            ))}
           </defs>
-          <g transform={`translate(${W/2} ${height/2}) scale(${zoom}) translate(${-W/2} ${-height/2})`}>
-            {renderedEdges.map((edge) => {
-              const a = renderedNodes.find((n) => n.id === edge.source)
-              const b = renderedNodes.find((n) => n.id === edge.target)
+          <g transform={`translate(${W/2} ${H/2}) scale(${zoom}) translate(${-W/2} ${-H/2})`}>
+            {edges.map((edge) => {
+              const a = nodes.find((n) => n.id === edge.source)
+              const b = nodes.find((n) => n.id === edge.target)
               if (!a || !b) return null
               const isHighlighted = hovered === edge.source || hovered === edge.target
               const dx = b.x - a.x, dy = b.y - a.y
@@ -265,10 +370,10 @@ export default function RealtimeKnowledgeGraph({
               )
             })}
 
-            {renderedNodes.map((node) => {
+            {nodes.map((node) => {
               const isHighlighted = hovered === node.id
-              const color = nodeColor(node.type)
-              const r = nodeSize(node.type, node.influence) * node.birth
+              const color = NODE_COLORS[node.type] || NODE_COLORS.DEFAULT
+              const r = node.size * node.birth
               return (
                 <g
                   key={node.id}
@@ -284,7 +389,7 @@ export default function RealtimeKnowledgeGraph({
                   )}
                   <circle
                     r={r}
-                    fill={`url(#grad-${node.type})`}
+                    fill={`url(#grad-${node.type in NODE_COLORS ? node.type : 'DEFAULT'})`}
                     stroke={isHighlighted ? '#E91E63' : '#fff'}
                     strokeWidth={isHighlighted ? 3 : 2}
                   />
@@ -306,7 +411,7 @@ export default function RealtimeKnowledgeGraph({
           </g>
         </svg>
 
-        {renderedNodes.length === 0 && (
+        {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-ink-400">
             <Network size={36} className="mb-2 opacity-30" />
             <div className="text-xs">{building ? '等待节点涌现…' : '暂无图谱数据'}</div>
@@ -330,14 +435,14 @@ export default function RealtimeKnowledgeGraph({
           )}
         </AnimatePresence>
 
-        {renderedNodes.length > 0 && (
+        {nodes.length > 0 && (
           <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1.5 pointer-events-none">
             {Object.entries(typeCount).slice(0, 8).map(([type, count]) => (
               <span
                 key={type}
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-white/80 dark:bg-ink-900/80 backdrop-blur-sm"
               >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: nodeColor(type) }} />
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: NODE_COLORS[type] || NODE_COLORS.DEFAULT }} />
                 <span className="text-ink-700 dark:text-ink-200">{type}</span>
                 <span className="text-ink-500 font-mono">{count}</span>
               </span>
@@ -357,7 +462,7 @@ export default function RealtimeKnowledgeGraph({
             <div className="flex items-center justify-between mb-2">
               <span
                 className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded text-white"
-                style={{ background: nodeColor(selectedNode.type) }}
+                style={{ background: NODE_COLORS[selectedNode.type] || NODE_COLORS.DEFAULT }}
               >
                 {selectedNode.type}
               </span>
@@ -368,15 +473,95 @@ export default function RealtimeKnowledgeGraph({
             <div className="text-sm font-semibold text-ink-900 dark:text-white">{selectedNode.label}</div>
             <div className="text-[10px] text-ink-500 font-mono mt-1 break-all">ID: {selectedNode.id}</div>
             <div className="text-[10px] text-ink-500 mt-1">
-              {selectedNode.source && (
-                <span>来源 · {selectedNode.source} · </span>
-              )}
-              {selectedNode.round != null && <span>R{selectedNode.round} · </span>}
-              影响权重 {selectedNode.influence.toFixed(2)}
+              Index #{selectedNode.index} · 影响权重 {selectedNode.size.toFixed(0)}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   )
+}
+
+function seedNodes(raw: GraphNode[]): SimNode[] {
+  const cx = 450, cy = 240
+  const n = raw.length
+  return raw.map((node, i) => {
+    const angle = (i / Math.max(1, n)) * Math.PI * 2 - Math.PI / 2
+    const radius = 180 * (0.6 + ((i * 7) % 5) * 0.1)
+    return {
+      ...node,
+      x: cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 30,
+      y: cy + Math.sin(angle) * radius + (Math.random() - 0.5) * 30,
+      vx: 0, vy: 0,
+      color: NODE_COLORS[node.type] || NODE_COLORS.DEFAULT,
+      size: node.type === 'PERSON' ? 16 : 12,
+      birth: 0, isNew: true,
+    }
+  })
+}
+
+function seedEdges(raw: GraphEdge[]): SimEdge[] {
+  return raw.map((e) => ({ ...e, drawProgress: 0, isNew: true }))
+}
+
+/** 把 store 节点同步进本地 SimNode（已有节点保留位置/动画；新增节点随机散开） */
+function syncNodesToStore(prev: SimNode[], next: GraphNodeLive[]): SimNode[] {
+  if (next.length === 0) return prev.length > 0 ? [] : prev
+  if (next.length < prev.length) {
+    // 收缩：截断
+    return prev.slice(0, next.length)
+  }
+  if (next.length === prev.length) {
+    // 数量未变：仅更新 type/label（保位置）
+    return prev.map((n, i) => {
+      const sn = next[i]
+      if (!sn) return n
+      if (n.id === sn.id && n.type === sn.type && n.label === sn.label) return n
+      return { ...n, type: sn.type, label: sn.label }
+    })
+  }
+  // 增长：保留旧的，追加新的（随机散布，等力模拟拉回）
+  const cx = 450, cy = 240
+  const out = prev.map((n) => ({ ...n, isNew: false }))
+  for (let i = prev.length; i < next.length; i++) {
+    const sn = next[i]
+    const angle = (i / Math.max(1, next.length)) * Math.PI * 2
+    const radius = 60 + (i % 6) * 35
+    out.push({
+      id: sn.id,
+      label: sn.label,
+      type: sn.type,
+      index: sn.index,
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
+      vx: 0, vy: 0,
+      color: NODE_COLORS[sn.type] || NODE_COLORS.DEFAULT,
+      size: sn.type === 'PERSON' ? 16 : 12,
+      birth: 0, isNew: true,
+    })
+  }
+  return out
+}
+
+function syncEdgesToStore(prev: SimEdge[], next: GraphEdgeLive[]): SimEdge[] {
+  if (next.length === 0) return prev.length > 0 ? [] : prev
+  if (next.length < prev.length) return prev.slice(0, next.length)
+  if (next.length === prev.length) {
+    return prev.map((e, i) => {
+      const se = next[i]
+      if (!se) return e
+      if (e.id === se.id && e.source === se.source && e.target === se.target) return e
+      return { ...e, source: se.source, target: se.target, type: se.type }
+    })
+  }
+  const out = prev.map((e) => ({ ...e, isNew: false }))
+  for (let i = prev.length; i < next.length; i++) {
+    const se = next[i]
+    out.push({
+      id: se.id, source: se.source, target: se.target,
+      type: se.type, index: se.index,
+      drawProgress: 0, isNew: true,
+    })
+  }
+  return out
 }

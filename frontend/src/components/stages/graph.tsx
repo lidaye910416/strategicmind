@@ -4,10 +4,9 @@
  * 展示：节点 / 关系 实时数（SSE 推送 graph_progress 事件时累加）。
  *
  * 来源：原 components/StageCards.tsx 内嵌组件，P2-4 拆出。
- * 注意：组件内部仍使用 EventSource 直连 API（与 P0-2 unifiedSSE 目标有冲突，
- *       但本 P2-4 任务只做"拆文件"不改行为，保留 EventSource 后续单 PR 收敛）。
+ * FE3 P3-C：EventSource 统一在 store，本组件用 useGraphNodes() / useGraphEdges() 订阅。
  */
-import { useEffect, useState } from 'react'
+import { useGraphNodes, useGraphEdges } from '../../store/pipeline'
 import Stat from './Stat'
 
 interface Props {
@@ -17,27 +16,13 @@ interface Props {
 }
 
 export default function GraphBuildingContent({ artifact, isActive, runId }: Props) {
-  const [liveNodes, setLiveNodes] = useState(artifact?.entities_created || 0)
-  const [liveEdges, setLiveEdges] = useState(artifact?.relations_created || 0)
-
-  // 订阅 SSE 拿实时数据
-  useEffect(() => {
-    if (!runId || !isActive) return
-    const es = new EventSource(`/api/pipeline/${runId}/events`)
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data)
-        if (d.type === 'live_event' && d.event?.type === 'graph_progress') {
-          setLiveNodes(d.event.data?.nodes ?? liveNodes)
-          setLiveEdges(d.event.data?.edges ?? liveEdges)
-        } else if (d.current_stage === 'GRAPH_BUILDING' && d.artifacts?.GRAPH_BUILDING) {
-          setLiveNodes(d.artifacts.GRAPH_BUILDING.entities_created || 0)
-          setLiveEdges(d.artifacts.GRAPH_BUILDING.relations_created || 0)
-        }
-      } catch {/* ignore */}
-    }
-    return () => es.close()
-  }, [runId, isActive])
+  // ---- FE3 P3-C：store selector 替代自建 SSE ----
+  const graphNodes = useGraphNodes()
+  const graphEdges = useGraphEdges()
+  const liveNodes = graphNodes.length > 0 ? graphNodes.length : (artifact?.entities_created || 0)
+  const liveEdges = graphEdges.length > 0 ? graphEdges.length : (artifact?.relations_created || 0)
+  // 保留 runId 形参以兼容调用方
+  void runId
 
   return (
     <div className="space-y-2">

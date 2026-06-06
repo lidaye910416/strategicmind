@@ -10,19 +10,23 @@
  * 底部时间轴：点击 round 切换聚焦（其他 round 边淡化）
  * 右侧统计：本 round 新增边数 / 累计边数
  *
- * 数据源（P3-B 修复后）：
- *   1. store 内 simRounds（来自 SSE live_event 的 round_completed 事件）
- *      - 通过 useRoundStream(runId) 统一获取
- *   2. 不再自开 EventSource；事件分发统一由 store 的 _openSSE 完成
+ * 数据源（FE3 P3-C：统一 EventSource 入口）：
+ *   1. Store selector: useNetworkFrames()（由 store 内的唯一 EventSource
+ *      解析 round_progress 后写入，组件不再自建 SSE）
+ *   2. REST: /api/pipeline/<run_id>/network-frames（启动一次性拉全量）
  */
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Activity, Radio, Eye, EyeOff, Pause, Play,
   ChevronLeft, ChevronRight, Zap,
 } from 'lucide-react'
-import { useRoundStream } from '../store/hooks/useRoundStream'
-import type { SimRound } from '../store/pipeline'
+import api from '../services/api'
+import {
+  useNetworkFrames,
+  useLastEventAt,
+  type NetworkFrameLive,
+} from '../store/pipeline'
 
 const AGENT_COLORS: Record<string, string> = {
   CORPORATE_EXEC: '#FF6B35',
@@ -47,22 +51,25 @@ const ROUND_COLORS = [
   '#10B981', // R7 绿
 ]
 
-interface PositionedAgent {
+interface NetworkAgent {
   id: string
+  name: string
   type: string
   influence: number
-  x: number
-  y: number
-  vx: number
-  vy: number
-  name: string
 }
 
-interface FrameLike {
+interface NetworkEdge {
+  source: string
+  target: string
+  channel: string
   round: number
-  edges: { source: string; target: string; channel: string; round: number }[]
+}
+
+interface Frame {
+  round: number
   actions_count: number
   active_agents: number
+  edges: NetworkEdge[]
   cumulative_edge_count: number
 }
 
@@ -71,104 +78,100 @@ interface Props {
   height?: number
   title?: string
   /** 模拟数据（无 runId 时用） */
-  mockFrames?: SimRound[]
+  mockAgents?: NetworkAgent[]
+  mockFrames?: Frame[]
 }
 
-const W = 900
-
 export default function SimulationNetworkGraph({
-  runId, height = 480, title = '迭代关系网', mockFrames,
+  runId, height = 480, title = '迭代关系网',
+  mockAgents, mockFrames,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const { rounds, source, totalRounds, totalEdges, propagationEdges, agents } = useRoundStream(
-    runId,
-    { fallback: mockFrames || null },
-  )
-  const [positioned, setPositioned] = useState<PositionedAgent[]>([])
-  const posCacheRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const [agents, setAgents] = useState<NetworkAgent[]>(mockAgents || [])
+  const [frames, setFrames] = useState<Frame[]>(mockFrames || [])
   const [focusRound, setFocusRound] = useState<number | null>(null)
   const [autoFollow, setAutoFollow] = useState(true)
   const [showLabels, setShowLabels] = useState(true)
   const [hovered, setHovered] = useState<string | null>(null)
+  const loading = false
 
-  // 派生 frames 视图（带 cumulative_edge_count）
-  const frames: FrameLike[] = useMemo(() => {
-    let acc = 0
-    return rounds.map((r) => {
-      const f: FrameLike = {
-        round: r.round,
-        edges: r.propagation_edges || [],
-        actions_count: r.actions_count,
-        active_agents: r.active_agents?.length || 0,
-        cumulative_edge_count: 0,
-      }
-      acc += f.edges.length
-      f.cumulative_edge_count = acc
-      return f
-    })
-  }, [rounds])
+  // ---- FE3 P3-C：store selector 替代自建 SSE ----
+  const storeFrames = useNetworkFrames()
+  const lastEventAt = useLastEventAt()
 
-  // 把 agent 元数据 + 历史位置合并为渲染结构
+  const W = 900
+  const H = height
+
+  // 把 store frames 同步进本地 frames 状态（保持兼容）
   useEffect(() => {
-    if (source === 'empty') {
-      setPositioned([])
-      return
-    }
-    const cache = posCacheRef.current
-    const next: PositionedAgent[] = agents.map((a, i) => {
-      const reused = cache.get(a.id)
-      const angle = (i / Math.max(1, agents.length)) * Math.PI * 2
-      const radius = 200
-      return {
-        id: a.id,
-        type: a.type,
-        influence: a.influence,
-        x: reused?.x ?? W / 2 + Math.cos(angle) * radius + ((i * 11) % 13) - 6,
-        y: reused?.y ?? height / 2 + Math.sin(angle) * radius + ((i * 7) % 11) - 5,
-        vx: 0,
-        vy: 0,
-        name: a.id,
-      }
-    })
-    setPositioned(next)
-    for (const a of next) posCacheRef.current.set(a.id, { x: a.x, y: a.y })
-  }, [agents, source, height])
+    if (storeFrames.length === 0) return
+    setFrames(storeFrames.map(toLocalFrame))
+  }, [storeFrames])
 
-  // 自动跟随最新 round
+  // autoFollow 时跟随最新 round
   useEffect(() => {
-    if (autoFollow && totalRounds > 0) {
-      setFocusRound(frames[frames.length - 1]?.round ?? null)
-    }
-  }, [autoFollow, totalRounds, frames])
+    if (!autoFollow || storeFrames.length === 0) return
+    const last = storeFrames[storeFrames.length - 1]
+    setFocusRound(last.round)
+    // 仅依赖 lastEventAt 防止 loop（storeFrames 也会变化）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastEventAt])
 
-  // 单步力模拟（每次数据变化触发）
+  // 启动拉全量
   useEffect(() => {
-    if (positioned.length === 0) return
+    if (!runId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api.get(`/pipeline/${runId}/network-frames`)
+        if (cancelled) return
+        setAgents(r.data.agents || [])
+        setFrames(r.data.frames || [])
+      } catch {/* ignore */}
+    })()
+    return () => { cancelled = true }
+  }, [runId])
+
+  // 计算每条边的累计状态
+  const allEdgesWithRound = useMemo(() => {
+    return frames.flatMap((f) => f.edges.map((e) => ({ ...e, round: f.round })))
+  }, [frames])
+
+  // 力模拟
+  useEffect(() => {
+    if (agents.length === 0) return
     let raf: number
     let iter = 0
-    const maxIter = 300
-    const cx = W / 2, cy = height / 2
+    const maxIter = 400
     const step = () => {
-      setPositioned((prev) => {
+      setAgents((prev) => {
         const next = prev.map((a) => ({ ...a }))
-        const map = new Map(next.map((a) => [a.id, a]))
-        // 节点-节点排斥
-        for (let i = 0; i < next.length; i++) {
-          for (let j = i + 1; j < next.length; j++) {
-            const dx = next[j].x - next[i].x
-            const dy = next[j].y - next[i].y
+        // 附加位置信息
+        type AWithPos = NetworkAgent & { x: number; y: number; vx: number; vy: number }
+        const withPos: AWithPos[] = next.map((a, i) => {
+          const a2 = a as any
+          if (typeof a2.x !== 'number') {
+            const angle = (i / next.length) * Math.PI * 2
+            return { ...a, x: W/2 + Math.cos(angle) * 200, y: H/2 + Math.sin(angle) * 200, vx: 0, vy: 0 }
+          }
+          return a2
+        })
+        const cx = W / 2, cy = H / 2
+        for (let i = 0; i < withPos.length; i++) {
+          for (let j = i + 1; j < withPos.length; j++) {
+            const dx = withPos[j].x - withPos[i].x
+            const dy = withPos[j].y - withPos[i].y
             const dist = Math.sqrt(dx*dx + dy*dy) || 1
-            const force = 7000 / (dist * dist)
-            next[i].vx -= (dx/dist) * force
-            next[i].vy -= (dy/dist) * force
-            next[j].vx += (dx/dist) * force
-            next[j].vy += (dy/dist) * force
+            const force = 6000 / (dist * dist)
+            withPos[i].vx -= (dx/dist) * force
+            withPos[i].vy -= (dy/dist) * force
+            withPos[j].vx += (dx/dist) * force
+            withPos[j].vy += (dy/dist) * force
           }
         }
-        // 边-弹簧
-        for (const e of propagationEdges) {
-          const a = map.get(e.source)
-          const b = map.get(e.target)
+        for (const edge of allEdgesWithRound) {
+          const a = withPos.find((n) => n.id === edge.source)
+          const b = withPos.find((n) => n.id === edge.target)
           if (!a || !b) continue
           const dx = b.x - a.x, dy = b.y - a.y
           const dist = Math.sqrt(dx*dx + dy*dy) || 1
@@ -179,8 +182,7 @@ export default function SimulationNetworkGraph({
           b.vx -= (dx/dist) * diff
           b.vy -= (dy/dist) * diff
         }
-        // 中心引力 + 阻尼
-        for (const n of next) {
+        for (const n of withPos) {
           n.vx += (cx - n.x) * 0.004
           n.vy += (cy - n.y) * 0.004
           n.vx *= 0.8
@@ -188,29 +190,20 @@ export default function SimulationNetworkGraph({
           n.x += n.vx
           n.y += n.vy
           n.x = Math.max(40, Math.min(W - 40, n.x))
-          n.y = Math.max(40, Math.min(height - 40, n.y))
+          n.y = Math.max(40, Math.min(H - 40, n.y))
         }
-        for (const n of next) posCacheRef.current.set(n.id, { x: n.x, y: n.y })
-        return next
+        return withPos as any
       })
       iter++
       if (iter < maxIter) raf = requestAnimationFrame(step)
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positioned.length, propagationEdges.length])
+  }, [allEdgesWithRound.length, agents.length > 0])
 
-  const onMouseEnter = useCallback((id: string) => setHovered(id), [])
-  const onMouseLeave = useCallback(() => setHovered(null), [])
-
+  const totalRounds = frames.length
+  const totalEdges = allEdgesWithRound.length
   const focusFrame = focusRound != null ? frames.find((f) => f.round === focusRound) : null
-
-  const agentTypeCount = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const a of positioned) m[a.type] = (m[a.type] || 0) + 1
-    return m
-  }, [positioned])
 
   return (
     <div className="card p-4 flex flex-col" style={{ minHeight: height + 200 }}>
@@ -251,7 +244,7 @@ export default function SimulationNetworkGraph({
         className="relative rounded-xl bg-gradient-to-br from-ink-50/30 to-ink-100/30 dark:from-ink-900/30 dark:to-ink-800/30 overflow-hidden border border-ink-200/40"
         style={{ minHeight: height }}
       >
-        <svg ref={svgRef} viewBox={`0 0 ${W} ${height}`} className="w-full h-full">
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
           <defs>
             {ROUND_COLORS.map((c, i) => (
               <linearGradient key={i} id={`round-grad-${i}`} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -259,27 +252,24 @@ export default function SimulationNetworkGraph({
                 <stop offset="100%" stopColor={c} stopOpacity="0.4" />
               </linearGradient>
             ))}
-            {Array.from(new Set(['DEFAULT', ...positioned.map((n) => n.type)])).map((type) => {
-              const color = AGENT_COLORS[type] || AGENT_COLORS.DEFAULT
-              return (
-                <radialGradient key={type} id={`agent-grad-${type}`} cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor={color} stopOpacity="1" />
-                  <stop offset="100%" stopColor={color} stopOpacity="0.55" />
-                </radialGradient>
-              )
-            })}
+            {Object.entries(AGENT_COLORS).map(([type, color]) => (
+              <radialGradient key={type} id={`agent-grad-${type}`} cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor={color} stopOpacity="1" />
+                <stop offset="100%" stopColor={color} stopOpacity="0.55" />
+              </radialGradient>
+            ))}
           </defs>
 
           {/* Edges - 按 round 着色 */}
-          {propagationEdges.map((edge, i) => {
-            const a = positioned.find((n) => n.id === edge.source)
-            const b = positioned.find((n) => n.id === edge.target)
-            if (!a || !b) return null
+          {allEdgesWithRound.map((edge, i) => {
+            const a = agents.find((n) => n.id === edge.source) as any
+            const b = agents.find((n) => n.id === edge.target) as any
+            if (!a || !b || typeof a.x !== 'number') return null
             const colorIdx = (edge.round - 1) % ROUND_COLORS.length
             const isFocus = focusRound == null || edge.round === focusRound
             const isHighlighted = hovered === edge.source || hovered === edge.target
             return (
-              <g key={`e-${i}-${edge.source}-${edge.target}`} opacity={isFocus ? (hovered && !isHighlighted ? 0.2 : 0.85) : 0.15}>
+              <g key={`e-${i}`} opacity={isFocus ? (hovered && !isHighlighted ? 0.2 : 0.85) : 0.15}>
                 <line
                   x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                   stroke={ROUND_COLORS[colorIdx]}
@@ -302,19 +292,22 @@ export default function SimulationNetworkGraph({
           })}
 
           {/* Nodes */}
-          {positioned.map((node) => {
-            const r = 8 + node.influence * 14
-            const isHighlighted = hovered === node.id
-            const color = AGENT_COLORS[node.type] || AGENT_COLORS.DEFAULT
+          {agents.map((node) => {
+            const n = node as any
+            if (typeof n.x !== 'number') return null
+            const r = 8 + (n.influence || 0.5) * 14
+            const isHighlighted = hovered === n.id
+            const color = AGENT_COLORS[n.type] || AGENT_COLORS.DEFAULT
             return (
               <g
-                key={node.id}
-                transform={`translate(${node.x} ${node.y})`}
+                key={n.id}
+                transform={`translate(${n.x} ${n.y})`}
                 style={{ cursor: 'pointer' }}
-                onMouseEnter={() => onMouseEnter(node.id)}
-                onMouseLeave={onMouseLeave}
+                onMouseEnter={() => setHovered(n.id)}
+                onMouseLeave={() => setHovered(null)}
               >
-                {(node.influence) > 0.7 && (
+                {/* Halo for high-influence agents */}
+                {(n.influence || 0) > 0.7 && (
                   <circle r={r + 6} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.4}>
                     <animate attributeName="r" values={`${r+4};${r+10};${r+4}`} dur="2s" repeatCount="indefinite" />
                     <animate attributeName="stroke-opacity" values="0.5;0.1;0.5" dur="2s" repeatCount="indefinite" />
@@ -322,7 +315,7 @@ export default function SimulationNetworkGraph({
                 )}
                 <circle
                   r={r}
-                  fill={`url(#agent-grad-${node.type})`}
+                  fill={`url(#agent-grad-${n.type in AGENT_COLORS ? n.type : 'DEFAULT'})`}
                   stroke={isHighlighted ? '#fff' : color}
                   strokeWidth={isHighlighted ? 3 : 2}
                 />
@@ -335,7 +328,7 @@ export default function SimulationNetworkGraph({
                       textShadow: '0 0 3px #fff, 0 0 3px #fff',
                     }}
                   >
-                    {node.name.length > 8 ? node.name.slice(0, 8) + '…' : node.name}
+                    {n.name.length > 8 ? n.name.slice(0, 8) + '…' : n.name}
                   </text>
                 )}
               </g>
@@ -343,10 +336,10 @@ export default function SimulationNetworkGraph({
           })}
         </svg>
 
-        {positioned.length === 0 && (
+        {agents.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-ink-400">
             <Radio size={36} className="mb-2 opacity-30" />
-            <div className="text-xs">等待模拟启动</div>
+            <div className="text-xs">{loading ? '加载中…' : '等待模拟启动'}</div>
             <div className="text-[10px] mt-1">每个 round 完成时关系网会动态更新</div>
           </div>
         )}
@@ -373,9 +366,14 @@ export default function SimulationNetworkGraph({
         )}
 
         {/* Agent 图例 */}
-        {positioned.length > 0 && (
+        {agents.length > 0 && (
           <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 pointer-events-none">
-            {Object.entries(agentTypeCount).slice(0, 6).map(([type, count]) => (
+            {Object.entries(
+              agents.reduce<Record<string, number>>((m, a) => {
+                m[a.type] = (m[a.type] || 0) + 1
+                return m
+              }, {})
+            ).slice(0, 6).map(([type, count]) => (
               <span
                 key={type}
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-white/85 dark:bg-ink-900/85 backdrop-blur-sm"
@@ -442,4 +440,15 @@ export default function SimulationNetworkGraph({
       </div>
     </div>
   )
+}
+
+// 把 store 内的 NetworkFrameLive 转成本地 Frame 形态（保持兼容）
+function toLocalFrame(f: NetworkFrameLive): Frame {
+  return {
+    round: f.round,
+    actions_count: f.actions_count,
+    active_agents: f.active_agents,
+    edges: f.edges.map((e) => ({ source: e.source, target: e.target, channel: e.channel, round: e.round })),
+    cumulative_edge_count: f.cumulative_edge_count,
+  }
 }
