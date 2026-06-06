@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, AlertCircle, Loader2, ArrowUpRight, FileBarChart, Sparkles,
+  ArrowLeft, AlertCircle, Loader2, ArrowUpRight, FileBarChart, Download,
   Lightbulb, ArrowRight, CheckCircle2, Circle,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -173,8 +173,9 @@ export default function Report() {
               href={`/api/report/${reportId}/save`}
               className="btn-primary h-9"
               target="_blank" rel="noreferrer"
+              aria-label="导出 Markdown"
             >
-              <Sparkles size={14} /> 导出 <ArrowUpRight size={12} />
+              <Download size={14} /> 导出 Markdown <ArrowUpRight size={12} />
             </a>
           </div>
         }
