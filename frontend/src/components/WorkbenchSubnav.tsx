@@ -27,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { Activity, GitBranch, Users, MessageCircle } from 'lucide-react'
 import { useLastEventAt } from '../store/pipeline'
+import { WORKBENCH_SUBNAV } from '../i18n/zh'
 
 /** 子导航锚点定义；id 必须与 Workbench 中 <section id="..."> 对齐。 */
 export const SUBNAV_ANCHORS = [
@@ -65,7 +66,7 @@ function HeartbeatBadge() {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] text-ink-400">
         <span className="w-1.5 h-1.5 rounded-full bg-ink-300" />
-        {/* TBD_i18n */}未连接
+        {WORKBENCH_SUBNAV.notConnected}
       </span>
     )
   }
@@ -94,7 +95,7 @@ function HeartbeatBadge() {
       title={`上次事件时间：${new Date(lastEventAt).toLocaleTimeString()}`}
     >
       <span className={clsx('w-1.5 h-1.5 rounded-full', dotCls)} />
-      {/* TBD_i18n */}实时 · {elapsedSec} 秒前
+      {WORKBENCH_SUBNAV.heartbeat} · {WORKBENCH_SUBNAV.heartbeatSecondsAgo(elapsedSec)}
     </span>
   )
 }

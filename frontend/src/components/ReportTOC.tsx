@@ -17,11 +17,12 @@
  * 约束：
  *   - 单文件 < 400 行
  *   - 不引入新依赖（用浏览器 IntersectionObserver / 原生 select）
- *   - i18n 占位 TBD_i18n
+ *   - i18n 文案已落 REPORT_TOC（D5 集成时补齐）
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { ListTree } from 'lucide-react'
+import { REPORT_TOC } from '../i18n/zh'
 
 export interface TocItem {
   id: string
@@ -147,7 +148,7 @@ export default function ReportTOC({
       {/* 移动端：dropdown */}
       <div className="lg:hidden mb-3">
         <label className="sr-only" htmlFor="report-toc-select">
-          {/* TBD_i18n */}目录
+          {REPORT_TOC.title}
         </label>
         <div className="flex items-center gap-2">
           <ListTree size={14} className="text-ink-400" />
@@ -158,7 +159,7 @@ export default function ReportTOC({
             className="input flex-1 text-xs h-9"
           >
             <option value="" disabled>
-              {/* TBD_i18n */}跳转到章节…
+              {REPORT_TOC.dropdownPlaceholder}
             </option>
             {items.map((i) => (
               <option key={i.id} value={i.id}>
@@ -181,7 +182,7 @@ export default function ReportTOC({
           <div className="flex items-center gap-2 mb-3">
             <ListTree size={14} className="text-ink-400" />
             <div className="text-[11px] uppercase tracking-wider text-ink-500 font-bold">
-              {/* TBD_i18n */}目录
+              {REPORT_TOC.title}
             </div>
           </div>
           <ul className="space-y-1 max-h-[calc(100vh-180px)] overflow-y-auto pr-1">

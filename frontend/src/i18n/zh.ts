@@ -328,6 +328,12 @@ export const WORKBENCH_SUBNAV = {
   heartbeat: '实时',
   heartbeatSecondsAgo: (s: number) => `${s} 秒前`,
   heartbeatStale: '连接已断开',
+  notConnected: '未连接',
+}
+
+export const REPORT_TOC = {
+  title: '目录',
+  dropdownPlaceholder: '跳转到章节…',
 }
 
 export const DASHBOARD_ACTIONS = {
