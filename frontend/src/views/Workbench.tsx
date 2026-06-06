@@ -25,6 +25,7 @@ import KnowledgeGraph from '../components/KnowledgeGraph'
 import AgentInterview from '../components/AgentInterview'
 import WorkbenchSubnav from '../components/WorkbenchSubnav'
 
+import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
 import {
   WORKBENCH, STAGE_LABELS, STATUS_LABELS,  COMMON, APP_ROUTES,
@@ -67,6 +68,8 @@ export default function Workbench() {
   const [simulating, setSimulating] = useState(false)
   const [simResult, setSimResult] = useState<any>(null)
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
+  // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
 
   // ---- 初始化：搭建默认公司 + 加载演示图谱 ----
   // 来源：C3 P0 #7：用 AbortController 防止组件卸载后的 setState warning
@@ -106,6 +109,8 @@ export default function Workbench() {
         current_stage: 'SEED_PARSING',
         progress: 0,
       })
+      // P1-8: 记录开始时间用于 ETA
+      setRunStartedAt(Math.floor(Date.now() / 1000))
     } catch (e) {
       console.error('启动失败', e)
     }
@@ -159,12 +164,33 @@ export default function Workbench() {
   }, [companyId])
 
   // ---- 部门博弈连续推演 ----
+  // P1-10: 加 NProgress + 1/4→2/4→3/4→4/4 实时显示
+  const [simulatingRound, setSimulatingRound] = useState(0)  // 0=未开始, 1..4=当前回合
+  const [simulatingPct, setSimulatingPct] = useState(0)      // 0-100，进度条宽度
   const runCompanySimulation = useCallback(async () => {
     if (!companyId) return
     setSimulating(true)
+    setSimulatingRound(1)
+    setSimulatingPct(5)
+
+    // 后端单次 POST 4 回合，没有原生进度；前端按"经验时长"模拟 1/4→4/4
+    // 单回合预估 8-12s（保守），4 回合 32-48s；用平滑插值填充进度条
+    const TOTAL_ROUNDS = 4
+    const STEP_MS = 9000  // 每 9s 推进一步
+    const startTs = Date.now()
+    const tick = setInterval(() => {
+      const elapsed = Date.now() - startTs
+      const totalMs = STEP_MS * TOTAL_ROUNDS
+      // 进度条：线性插值到 95%（剩余 5% 等请求完成）
+      const pct = Math.min(95, (elapsed / totalMs) * 100)
+      setSimulatingPct(pct)
+      const newRound = Math.min(TOTAL_ROUNDS, Math.floor(elapsed / STEP_MS) + 1)
+      setSimulatingRound(newRound)
+    }, 500)
+
     try {
       const r = await api.post(`/company/${companyId}/simulate`, {
-        max_rounds: 4,
+        max_rounds: TOTAL_ROUNDS,
         topics: [
           topicInput,
           '是否拓展新市场',
@@ -173,10 +199,18 @@ export default function Workbench() {
         ],
       })
       setSimResult(r.data)
+      setSimulatingPct(100)
+      setSimulatingRound(TOTAL_ROUNDS)
     } catch (e) {
       console.error('仿真失败', e)
     } finally {
-      setSimulating(false)
+      clearInterval(tick)
+      // 成功后保留 100% 一会儿再清，让用户看到 4/4
+      setTimeout(() => {
+        setSimulating(false)
+        setSimulatingRound(0)
+        setSimulatingPct(0)
+      }, 600)
     }
   }, [companyId, topicInput])
 
@@ -193,6 +227,18 @@ export default function Workbench() {
 
   return (
     <div className="min-h-screen pb-20">
+      {/* P1-10: 顶部 NProgress 进度条（CSS 实现，部门博弈连续推演 1/4→4/4 期间显示） */}
+      {simulating && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-ink-200/40 dark:bg-ink-800/40 overflow-hidden">
+          <motion.div
+            className="h-full bg-gradient-to-r from-brand-500 via-accent-500 to-brand-500"
+            initial={{ width: '0%' }}
+            animate={{ width: `${simulatingPct}%` }}
+            transition={{ duration: 0.4, ease: 'linear' }}
+          />
+        </div>
+      )}
+
       <Hero
         eyebrow="战略智脑 · 推演工作台"
         title={WORKBENCH.title}
@@ -256,6 +302,21 @@ export default function Workbench() {
         <motion.div variants={fadeUp}>
           <WorkbenchSubnav />
         </motion.div>
+
+        {/* P1-8: 平台进度双卡（外部推演 + 内部推演，跨双卡 ETA 自动显示）
+            取代原 240-245 死代码空 fragment；P1-9 已从 LiveRunPanel 内嵌副本中上提 */}
+        {simState && (
+          <motion.div variants={fadeUp}>
+            <PlatformStatusCards
+              status={simState.status}
+              currentStage={stage}
+              currentRound={simState.current_round || 0}
+              totalRounds={simState.total_rounds || 0}
+              activeAgents={simState.active_agents || 0}
+              startedAt={runStartedAt ?? undefined}
+            />
+          </motion.div>
+        )}
 
         {/* ===== 主体：左右分栏 ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -342,24 +403,53 @@ export default function Workbench() {
               </div>
 
               {/* 多回合连续推演 */}
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={runCompanySimulation}
-                  disabled={!companyId || simulating}
-                  className="btn-ghost h-8 text-[11px] flex-1"
-                  title="用 4 个典型战略议题连续推演 4 回合"
-                >
-                  {simulating ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />}
-                  {WORKBENCH.runMultiRound}
-                </button>
-                <button
-                  onClick={downloadCompanyReport}
-                  disabled={!companyId}
-                  className="btn-ghost h-8 text-[11px] px-2"
-                  title="下载公司级报告（Markdown 格式）"
-                >
-                  <FileDown size={11} />
-                </button>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={runCompanySimulation}
+                    disabled={!companyId || simulating}
+                    className="btn-ghost h-8 text-[11px] flex-1"
+                    title="用 4 个典型战略议题连续推演 4 回合"
+                  >
+                    {simulating ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />}
+                    {WORKBENCH.runMultiRound}
+                  </button>
+                  <button
+                    onClick={downloadCompanyReport}
+                    disabled={!companyId}
+                    className="btn-ghost h-8 text-[11px] px-2"
+                    title="下载公司级报告（Markdown 格式）"
+                  >
+                    <FileDown size={11} />
+                  </button>
+                </div>
+                {/* P1-10: 实时回合指示 1/4 → 2/4 → 3/4 → 4/4 */}
+                {simulating && simulatingRound > 0 && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <span className="text-ink-500">推演中</span>
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4].map((r) => (
+                        <span
+                          key={r}
+                          className={`px-1.5 py-0.5 rounded font-bold transition-colors ${
+                            r < simulatingRound
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : r === simulatingRound
+                                ? 'bg-brand-500 text-white animate-pulse-soft'
+                                : 'bg-ink-100 text-ink-400 dark:bg-ink-800 dark:text-ink-500'
+                          }`}
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-brand-600 dark:text-brand-400 font-bold tabular-nums">
+                      {simulatingRound}/4
+                    </span>
+                    <span className="text-ink-400">·</span>
+                    <span className="text-ink-500 tabular-nums">{Math.round(simulatingPct)}%</span>
+                  </div>
+                )}
               </div>
 
               {/* 多回合结果 */}
