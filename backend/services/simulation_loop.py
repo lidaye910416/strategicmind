@@ -247,49 +247,61 @@ class SimulationLoop:
         return action
     
     def _build_decision_context(self, agent: StrategicAgent, round_num: int) -> str:
-        """Build context for agent decision-making"""
+        """构建决策上下文（中文）"""
         beliefs = agent.beliefs.to_dict()
         interests = agent.interests
         
-        context = f"""Round {round_num} Decision Context
+        context = f"""第 {round_num} 回合决策上下文
 
-Agent: {agent.name} ({agent.agent_type.value})
-Role: {agent.agent_type.value}
+主体：{agent.name}（{agent.agent_type.value}）
+角色：{agent.agent_type.value}
 
-Current Beliefs:
+当前信念：
 {self._format_beliefs(beliefs)}
 
-Primary Interests:
+主要利益：
 {', '.join(interests.primary_interests)}
 
-Available Actions:
+可用行动：
 {', '.join(agent.action_repertoire)}
 
-Recent Relationships:
+最近关系：
 {self._format_relationships(agent.relationships)}
 
-What action would this agent take and why?"""
+请基于以上情况，输出该主体的下一步行动和原因（用中文）。"""
         
         return context
     
     def _get_system_prompt(self, agent: StrategicAgent) -> str:
-        """Get system prompt for agent type"""
-        return f"""You are {agent.name}, a {agent.agent_type.value} in a strategic simulation.
+        """Get system prompt for agent type (中文)"""
+        return f"""你是 {agent.name}，在公司战略博弈中担任 {agent.agent_type.value} 角色。
 
-Your role is to make realistic strategic decisions based on:
-- Your beliefs and interests
-- The current situation
-- Available actions
-- Relationships with other actors
+【你的任务】
+基于以下因素做出真实、专业的战略决策：
+- 你的信念和利益
+- 当前局势
+- 可用行动
+- 与其他主体的关系
 
-Be strategic, considering:
-- Information asymmetry (you may have private information)
-- Hidden vs public actions
-- Long-term vs short-term implications
-- Coalition dynamics
+【战略思维】
+- 信息不对称（你可能拥有私有信息）
+- 公开行动 vs 隐藏行动
+- 长期 vs 短期影响
+- 联盟动态
 
-Output your decision in JSON format:
-{{"action_type": "...", "public_description": "...", "target_ids": [...], "is_hidden": false, "private_intent": "..."}}"""
+【输出要求 - 必须严格遵守】
+1. 全部用中文输出，包括 public_description 和 private_intent
+2. JSON 格式：{{"action_type": "MAKE_STATEMENT", "public_description": "...", "target_ids": [...], "is_hidden": false, "private_intent": "..."}}
+3. public_description 简洁、有战略感（1-2 句话）
+4. private_intent 是你的真实内心想法（1-2 句话）
+5. action_type 必须是以下之一：
+   MAKE_STATEMENT（公开发声）、PRIVATE_MEETING（私下会面）、PROPOSE_DEAL（提出交易）、
+   TRADE_ASSET（资产转移）、FILE_DOCUMENT（提交文件）、SPREAD_NARRATIVE（传播叙事）、
+   ACCUMULATE_POSITION（增持头寸）、GATHER_INTEL（情报收集）、SHARE_INTEL（情报共享）、
+   COORDINATE_POSITION（协调立场）、RATING_ACTION（评级行动）、PUBLISH_REPORT（发布报告）、
+   FORM_COALITION（组建联盟）、JOIN_COALITION（加入联盟）、LEAVE_COALITION（退出联盟）、
+   NEGOTIATE（谈判）、LEAK_INFORMATION（泄露信息）、CONCEALED_TRADE（暗盘交易）
+"""
     
     def _parse_action_response(
         self,

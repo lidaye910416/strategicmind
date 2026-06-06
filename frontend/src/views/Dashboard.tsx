@@ -13,6 +13,7 @@ import {
 import DocumentUploader from '../components/DocumentUploader'
 import SeedLoader from '../components/SeedLoader'
 import PipelineDashboard from '../components/PipelineDashboard'
+import SimulationExplainer from '../components/SimulationExplainer'
 import ProviderPicker from '../components/ProviderPicker'
 import Hero from '../components/layout/Hero'
 import { usePipelineStore, type PipelineStatus } from '../store/pipeline'
@@ -195,6 +196,15 @@ export default function Dashboard() {
             <div className="text-sm">{DASHBOARD.errorBox(error)}</div>
           </motion.div>
         )}
+
+        {/* 推演运行状态（实时显示） */}
+        <motion.section variants={fadeUp}>
+          <SimulationExplainer
+            currentStage={currentStage}
+            progress={progress}
+            status={status}
+          />
+        </motion.section>
 
         {/* 第 1 步：上传 */}
         <motion.section variants={fadeUp} className="card p-6">

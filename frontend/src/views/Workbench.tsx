@@ -20,6 +20,7 @@ import companyApi, { type CompanyContext, type TopicResolution } from '../servic
 import PipelineDashboard from '../components/PipelineDashboard'
 import RoundTimeline from '../components/RoundTimeline'
 import DepartmentGraph from '../components/DepartmentGraph'
+import SimulationExplainer from '../components/SimulationExplainer'
 import KnowledgeGraph from '../components/KnowledgeGraph'
 import AgentInterview from '../components/AgentInterview'
 
@@ -218,6 +219,15 @@ export default function Workbench() {
         animate="animate"
         className="px-4 md:px-8 max-w-7xl mx-auto space-y-4"
       >
+        {/* ===== 推演说明（让用户知道我们在干什么） ===== */}
+        <motion.div variants={fadeUp}>
+          <SimulationExplainer
+            currentStage={stage}
+            progress={progress}
+            status={simState?.status}
+          />
+        </motion.div>
+
         {/* ===== 顶部 7 步流水线 Dashboard ===== */}
         <motion.div variants={fadeUp}>
           <PipelineDashboard

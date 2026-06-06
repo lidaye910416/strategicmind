@@ -44,3 +44,13 @@ AggregateError [ECONNREFUSED]:
 AggregateError [ECONNREFUSED]: 
     at internalConnectMultiple (node:net:1193:18)
     at afterConnectMultiple (node:net:1783:7)
+10:39:54 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:45:19 [vite] hmr update /src/views/Dashboard.tsx, /src/index.css
+10:45:47 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:45:47 [vite] hmr update /src/components/SimulationExplainer.tsx, /src/index.css
+10:46:00 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:46:24 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:46:45 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:47:08 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:47:38 [vite] hmr update /src/components/RecentRuns.tsx, /src/index.css
+10:48:08 [vite] hmr update /src/views/Workbench.tsx, /src/index.css
