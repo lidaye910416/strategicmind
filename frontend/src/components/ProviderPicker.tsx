@@ -7,7 +7,7 @@
  *
  * Implements: US-100 模型切换 UI
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, Server, Cloud, FlaskConical, Key, Check, Loader2, AlertCircle,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import api from '../services/api'
 import { COMMON, PROVIDER } from '../i18n/zh'
+import { formatErrorMessage } from '../lib/formatError'
 
 interface ProviderInfo {
   provider: string
@@ -40,15 +41,49 @@ const ICON_BY_PROVIDER: Record<string, any> = {
   mock: FlaskConical,
 }
 
-const ACCENT_BY_PROVIDER: Record<string, { ring: string; bg: string; text: string }> = {
-  ollama:   { ring: 'ring-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/40',
-              text: 'text-emerald-700 dark:text-emerald-300' },
-  minimax:  { ring: 'ring-brand-500',   bg: 'bg-brand-100 dark:bg-brand-900/40',
-              text: 'text-brand-700 dark:text-brand-300' },
-  bailian:  { ring: 'ring-amber-500',   bg: 'bg-amber-100 dark:bg-amber-900/40',
-              text: 'text-amber-700 dark:text-amber-300' },
-  mock:     { ring: 'ring-purple-500',  bg: 'bg-purple-100 dark:bg-purple-900/40',
-              text: 'text-purple-700 dark:text-purple-300' },
+const ACCENT_BY_PROVIDER: Record<string, {
+  ring: string
+  bg: string
+  text: string
+  /** 选中态的卡片样式（静态 Tailwind，避免 JIT purge） */
+  cardSelected: string
+  /** 选中态的渐变背景（静态） */
+  gradientSelected: string
+  /** 选中态的深色渐变 */
+  gradientSelectedDark: string
+}> = {
+  ollama: {
+    ring: 'ring-emerald-500',
+    bg: 'bg-emerald-100 dark:bg-emerald-900/40',
+    text: 'text-emerald-700 dark:text-emerald-300',
+    cardSelected: 'border-emerald-500 ring-2 ring-emerald-500/40',
+    gradientSelected: 'bg-gradient-to-br from-emerald-50/40 to-white',
+    gradientSelectedDark: 'dark:from-emerald-950/20 dark:to-ink-900',
+  },
+  minimax: {
+    ring: 'ring-brand-500',
+    bg: 'bg-brand-100 dark:bg-brand-900/40',
+    text: 'text-brand-700 dark:text-brand-300',
+    cardSelected: 'border-brand-500 ring-2 ring-brand-500/40',
+    gradientSelected: 'bg-gradient-to-br from-brand-50/40 to-white',
+    gradientSelectedDark: 'dark:from-brand-950/20 dark:to-ink-900',
+  },
+  bailian: {
+    ring: 'ring-amber-500',
+    bg: 'bg-amber-100 dark:bg-amber-900/40',
+    text: 'text-amber-700 dark:text-amber-300',
+    cardSelected: 'border-amber-500 ring-2 ring-amber-500/40',
+    gradientSelected: 'bg-gradient-to-br from-amber-50/40 to-white',
+    gradientSelectedDark: 'dark:from-amber-950/20 dark:to-ink-900',
+  },
+  mock: {
+    ring: 'ring-purple-500',
+    bg: 'bg-purple-100 dark:bg-purple-900/40',
+    text: 'text-purple-700 dark:text-purple-300',
+    cardSelected: 'border-purple-500 ring-2 ring-purple-500/40',
+    gradientSelected: 'bg-gradient-to-br from-purple-50/40 to-white',
+    gradientSelectedDark: 'dark:from-purple-950/20 dark:to-ink-900',
+  },
 }
 
 export default function ProviderPicker({ open, onClose, onChanged }: Props) {
@@ -58,6 +93,28 @@ export default function ProviderPicker({ open, onClose, onChanged }: Props) {
   const [switching, setSwitching] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  // setTimeout 句柄 ref，组件卸载或下次切换前清掉（避免 leak + 闪烁）
+  const infoTimerRef = useRef<number | null>(null)
+
+  // 卸载时清掉 timer
+  useEffect(() => {
+    return () => {
+      if (infoTimerRef.current) {
+        clearTimeout(infoTimerRef.current)
+        infoTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const scheduleInfoClear = (ms: number) => {
+    if (infoTimerRef.current) {
+      clearTimeout(infoTimerRef.current)
+    }
+    infoTimerRef.current = window.setTimeout(() => {
+      setInfo(null)
+      infoTimerRef.current = null
+    }, ms)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -67,7 +124,7 @@ export default function ProviderPicker({ open, onClose, onChanged }: Props) {
       setCurrent(r.data.current)
       setOptions(r.data.options)
     } catch (e: any) {
-      setError(e?.message || '加载失败')
+      setError(formatErrorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -89,7 +146,7 @@ export default function ProviderPicker({ open, onClose, onChanged }: Props) {
   const handleSwitch = async (provider: string) => {
     if (provider === current) {
       setInfo(PROVIDER.alreadyCurrent)
-      setTimeout(() => setInfo(null), 2000)
+      scheduleInfoClear(2000)
       return
     }
     setSwitching(provider)
@@ -100,11 +157,11 @@ export default function ProviderPicker({ open, onClose, onChanged }: Props) {
       setCurrent(provider)
       setInfo(r.data.message)
       onChanged?.(provider)
-      setTimeout(() => setInfo(null), 3000)
+      scheduleInfoClear(3000)
     } catch (e: any) {
       const data = e?.response?.data
       setError(
-        (data?.error || e?.message || '切换失败') +
+        (data?.error || formatErrorMessage(e)) +
         (data?.hint ? ` · ${data.hint}` : '') +
         (data?.missing ? ` · 缺少：${data.missing}` : '')
       )
@@ -122,9 +179,9 @@ export default function ProviderPicker({ open, onClose, onChanged }: Props) {
       setInfo(r.data.message)
       onChanged?.(r.data.provider)
       await load()
-      setTimeout(() => setInfo(null), 3000)
+      scheduleInfoClear(3000)
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || '重置失败')
+      setError(e?.response?.data?.error || formatErrorMessage(e))
     } finally {
       setSwitching(null)
     }
@@ -229,9 +286,7 @@ export default function ProviderPicker({ open, onClose, onChanged }: Props) {
                         disabled={!p.available || !!switching}
                         className={`text-left rounded-xl border p-4 transition-all duration-200
                                     ${isCurrent
-                                      ? `border-${accent.ring.replace('ring-', '')} ring-2 ${accent.ring}/40
-                                         bg-gradient-to-br from-${accent.ring.replace('ring-', '')}-50/40 to-white
-                                         dark:from-${accent.ring.replace('ring-', '')}-950/20 dark:to-ink-900`
+                                      ? `${accent.cardSelected} ${accent.gradientSelected} ${accent.gradientSelectedDark}`
                                       : 'border-ink-200/60 dark:border-ink-800/60 hover:border-brand-300 dark:hover:border-brand-700 bg-white dark:bg-ink-900/40'}
                                     ${!p.available ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                       >

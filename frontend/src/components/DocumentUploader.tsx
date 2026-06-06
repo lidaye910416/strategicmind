@@ -1,13 +1,19 @@
 /**
  * DocumentUploader - Drag-and-drop file upload with onUploaded callback.
  *
+ * 来源：C3 P0 #11 + C1 C-53/54
+ *   - Promise.allSettled 并发上传（一次 RTT 完成 N 文件）
+ *   - 用 Map<id, File> 存 File 引用，不按 name 回查（更安全）
+ *   - AbortController 取消按钮
+ *
  * Implements: US-060
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Upload, X, CheckCircle2, XCircle, Loader2, StopCircle } from 'lucide-react'
 import api from '../services/api'
 import { UPLOADER } from '../i18n/zh'
+import { formatErrorMessage } from '../lib/formatError'
 
 interface UploadedFile {
   id: string
@@ -15,6 +21,8 @@ interface UploadedFile {
   filename: string
   size: number
   status: 'uploading' | 'completed' | 'error'
+  /** 按文件去重保存的 raw File 引用 */
+  file: File
 }
 
 interface Props {
@@ -25,6 +33,8 @@ export default function DocumentUploader({ onUploaded }: Props) {
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [dragActive, setDragActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 用 ref 保存 AbortController 句柄，组件外不触发 re-render
+  const controllersRef = useRef<Map<string, AbortController>>(new Map())
 
   const handleFiles = useCallback(async (fileList: FileList) => {
     setError(null)
@@ -34,17 +44,20 @@ export default function DocumentUploader({ onUploaded }: Props) {
       filename: f.name,
       size: f.size,
       status: 'uploading',
+      file: f,
     }))
     setFiles((prev) => [...prev, ...newFiles])
 
-    for (const fd of newFiles) {
-      const file = Array.from(fileList).find((f) => f.name === fd.filename)
-      if (!file) continue
+    // 并发上传（Promise.allSettled）：N 文件 = 1×RTT 而非 N×RTT
+    const tasks = newFiles.map(async (fd) => {
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', fd.file)
+      const controller = new AbortController()
+      controllersRef.current.set(fd.id, controller)
       try {
         const r = await api.post('/graph/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
+          signal: controller.signal,
         })
         const docId: string = r.data?.doc_id || ''
         setFiles((prev) => prev.map((f) =>
@@ -52,13 +65,30 @@ export default function DocumentUploader({ onUploaded }: Props) {
         ))
         onUploaded?.({ id: fd.id, docId, filename: fd.filename })
       } catch (e: any) {
+        // 用户主动取消：不报错
+        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') {
+          setFiles((prev) => prev.map((f) =>
+            f.id === fd.id ? { ...f, status: 'error' } : f
+          ))
+          return
+        }
         setFiles((prev) => prev.map((f) =>
           f.id === fd.id ? { ...f, status: 'error' } : f
         ))
-        setError(UPLOADER.failed(fd.filename, e?.message || '未知错误'))
+        setError(UPLOADER.failed(fd.filename, formatErrorMessage(e)))
+      } finally {
+        controllersRef.current.delete(fd.id)
       }
-    }
+    })
+    await Promise.allSettled(tasks)
   }, [onUploaded])
+
+  const handleCancel = useCallback((id: string) => {
+    const controller = controllersRef.current.get(id)
+    if (controller) {
+      controller.abort()
+    }
+  }, [])
 
   return (
     <div className="space-y-3">
@@ -127,6 +157,16 @@ export default function DocumentUploader({ onUploaded }: Props) {
                 </span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {f.status === 'uploading' && (
+                  <button
+                    onClick={() => handleCancel(f.id)}
+                    className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-300"
+                    title="取消上传"
+                    aria-label="取消上传"
+                  >
+                    <StopCircle size={14} />
+                  </button>
+                )}
                 {f.status === 'uploading' && <Loader2 size={14} className="animate-spin text-brand-500" />}
                 {f.status === 'completed' && <CheckCircle2 size={14} className="text-emerald-500" />}
                 {f.status === 'error' && <XCircle size={14} className="text-rose-500" />}

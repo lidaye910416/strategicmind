@@ -10,13 +10,14 @@
  *
  * Implements: US-100 默认种子 + US-100 透明化
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sparkles, Loader2, CheckCircle2, X, FileText, ExternalLink,
   ChevronDown, ChevronUp, AlertCircle,
 } from 'lucide-react'
 import api from '../services/api'
+import { formatErrorMessage } from '../lib/formatError'
 
 interface Props {
   /** 上传成功后回调，告知父组件 doc_id */
@@ -27,22 +28,34 @@ const SEED_URL = '/default_seed.txt'
 const SEED_FILENAME = 'hubei_plan_seed.txt'
 const PREVIEW_LINES = 8
 
+/**
+ * 来源：C3 P0 #12
+ *   - LoaderState 联合类型：每种 kind 只能有合法的字段组合
+ *   - preview 改 ref + 派生，避免 string|null 状态机污染渲染
+ *   - loadPreview 加 useCallback 稳定引用
+ */
+type LoaderState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'uploaded'; docId: string }
+  | { kind: 'error'; error: string }
+
 export default function SeedLoader({ onLoaded }: Props) {
-  const [state, setState] = useState<'idle' | 'loading' | 'uploaded' | 'error'>('idle')
-  const [error, setError] = useState<string | null>(null)
-  const [docId, setDocId] = useState<string | null>(null)
+  const [state, setState] = useState<LoaderState>({ kind: 'idle' })
   const [preview, setPreview] = useState<string | null>(null)
+  const previewRef = useRef<string | null>(null)
   const [showFull, setShowFull] = useState(false)
   const [loadingPreview, setLoadingPreview] = useState(false)
 
   // Eager-load the file content so user can preview without uploading
-  const loadPreview = async () => {
-    if (preview !== null) return
+  const loadPreview = useCallback(async () => {
+    if (previewRef.current !== null) return
     setLoadingPreview(true)
     try {
       const r = await fetch(SEED_URL)
       if (r.ok) {
         const text = await r.text()
+        previewRef.current = text
         setPreview(text)
       }
     } catch {
@@ -50,24 +63,23 @@ export default function SeedLoader({ onLoaded }: Props) {
     } finally {
       setLoadingPreview(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     // Auto-load preview on mount so the user can see what the seed is
     loadPreview()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadPreview])
 
   const handleLoad = async () => {
-    setState('loading')
-    setError(null)
+    setState({ kind: 'loading' })
     try {
       // Use cached preview if available, otherwise fetch fresh
-      let text = preview
+      let text = previewRef.current
       if (!text) {
         const r = await fetch(SEED_URL)
         if (!r.ok) throw new Error(`无法获取默认种子 (${r.status})`)
         text = await r.text()
+        previewRef.current = text
         setPreview(text)
       }
 
@@ -81,19 +93,15 @@ export default function SeedLoader({ onLoaded }: Props) {
       const newDocId: string = up.data?.doc_id || ''
       if (!newDocId) throw new Error('上传成功但未返回 doc_id')
 
-      setState('uploaded')
-      setDocId(newDocId)
+      setState({ kind: 'uploaded', docId: newDocId })
       onLoaded?.({ id: `seed_${Date.now()}`, docId: newDocId, filename: SEED_FILENAME })
     } catch (e: any) {
-      setState('error')
-      setError(e?.message || '加载失败')
+      setState({ kind: 'error', error: formatErrorMessage(e) })
     }
   }
 
   const handleRemove = () => {
-    setState('idle')
-    setDocId(null)
-    setError(null)
+    setState({ kind: 'idle' })
   }
 
   const previewLines = preview ? preview.split('\n') : []
@@ -103,7 +111,7 @@ export default function SeedLoader({ onLoaded }: Props) {
 
   return (
     <div className="space-y-2">
-      {state === 'uploaded' ? (
+      {state.kind === 'uploaded' ? (
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -117,7 +125,7 @@ export default function SeedLoader({ onLoaded }: Props) {
               示例种子已就绪
             </div>
             <div className="text-[11px] text-emerald-600/70 dark:text-emerald-400/70 font-mono truncate">
-              {SEED_FILENAME} · {lineCount} 行 · {charCount} 字 · {docId?.slice(0, 8)}
+              {SEED_FILENAME} · {lineCount} 行 · {charCount} 字 · {state.docId.slice(0, 8)}
             </div>
           </div>
           <button
@@ -133,7 +141,7 @@ export default function SeedLoader({ onLoaded }: Props) {
           whileHover={{ y: -1 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleLoad}
-          disabled={state === 'loading'}
+          disabled={state.kind === 'loading'}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl
                      bg-gradient-to-br from-brand-50 to-accent-50/50
                      dark:from-brand-950/30 dark:to-accent-950/20
@@ -145,7 +153,7 @@ export default function SeedLoader({ onLoaded }: Props) {
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-brand-500 to-accent-500
                           inline-flex items-center justify-center text-white shadow-soft
                           group-hover:scale-105 transition-transform shrink-0">
-            {state === 'loading' ? (
+            {state.kind === 'loading' ? (
               <Loader2 size={18} className="animate-spin" />
             ) : (
               <Sparkles size={18} />
@@ -153,7 +161,7 @@ export default function SeedLoader({ onLoaded }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-ink-900 dark:text-white">
-              {state === 'loading' ? '正在加载示例…' : '使用内置示例推演'}
+              {state.kind === 'loading' ? '正在加载示例…' : '使用内置示例推演'}
             </div>
             <div className="text-[11px] text-ink-500 dark:text-ink-400 truncate flex items-center gap-1">
               <FileText size={10} />
@@ -231,13 +239,13 @@ export default function SeedLoader({ onLoaded }: Props) {
         )}
       </AnimatePresence>
 
-      {error && (
+      {state.kind === 'error' && (
         <div className="flex items-start gap-2 px-3 py-2 rounded-lg
                         bg-rose-50 dark:bg-rose-950/30
                         border border-rose-200/60 dark:border-rose-800/60
                         text-xs text-rose-700 dark:text-rose-300">
           <AlertCircle size={12} className="mt-0.5 shrink-0" />
-          {error}
+          {state.error}
         </div>
       )}
 

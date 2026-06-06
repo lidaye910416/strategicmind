@@ -12,6 +12,7 @@ import {
   ChevronRight, Clock, Zap, Loader2, AlertCircle, Activity,
 } from 'lucide-react'
 import api from '../services/api'
+import { formatErrorMessage } from '../lib/formatError'
 
 interface Action {
   action_type: string
@@ -195,7 +196,7 @@ export default function RoundTimeline({ simulationId }: Props) {
       }
     } catch (e: any) {
       if (e?.response?.status !== 404) {
-        setError(e?.message || '加载失败')
+        setError(formatErrorMessage(e))
       }
     } finally {
       setLoading(false)
