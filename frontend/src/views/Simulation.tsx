@@ -41,7 +41,8 @@ export default function Simulation() {
   const [beliefs, setBeliefs] = useState<BeliefPoint[]>([])
   const [agents, setAgents] = useState<string[]>([])
   const [notFound, setNotFound] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  // P1-3: 默认展开高级视图（信念演化 + 阵营分布），仍可手动折叠
+  const [showAdvanced, setShowAdvanced] = useState(true)
 
   useEffect(() => {
     if (!runId) return
