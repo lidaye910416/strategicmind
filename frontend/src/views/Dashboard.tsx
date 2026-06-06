@@ -19,7 +19,7 @@ import Hero from '../components/layout/Hero'
 import { usePipelineStore, type PipelineStatus } from '../store/pipeline'
 import api from '../services/api'
 import {
-  COMMON, DASHBOARD, REPORT_STYLE_LABELS, APP_ROUTES, DEMO, PROVIDER,
+  COMMON, DASHBOARD, REPORT_STYLE_LABELS, APP_ROUTES, PROVIDER,
   STAGE_LABELS,
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
@@ -167,9 +167,6 @@ export default function Dashboard() {
             <Link to="/workbench" className="btn-ghost h-9">
               <Network size={14} /> 推演工作台
             </Link>
-            <Link to="/demo" className="btn-ghost h-9">
-              <Sparkles size={14} /> {DEMO.viewDemo}
-            </Link>
             <Link
               to={runId && status === 'completed' ? APP_ROUTES.report(runId) : '#'}
               className={`btn-primary h-9 ${!(runId && status === 'completed') ? 'pointer-events-none opacity-50' : ''}`}
@@ -210,10 +207,19 @@ export default function Dashboard() {
         <motion.section variants={fadeUp} className="card p-6">
           <div className="flex items-center gap-3">
             <span className="step-num">1</span>
-            <div>
+            <div className="flex-1">
               <h2 className="font-semibold text-ink-900 dark:text-white">{DASHBOARD.step1}</h2>
               <p className="text-xs text-ink-500 dark:text-ink-400 mt-0.5">{DASHBOARD.step1Hint}</p>
             </div>
+            <Link
+              to="/demo"
+              className="text-[11px] text-ink-400 hover:text-brand-600 dark:hover:text-brand-300
+                         transition-colors flex items-center gap-1 px-2 py-1
+                         rounded hover:bg-ink-50 dark:hover:bg-ink-900/40"
+            >
+              没文档？
+              <span className="text-brand-600 dark:text-brand-300 font-medium">看个示例</span>
+            </Link>
           </div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

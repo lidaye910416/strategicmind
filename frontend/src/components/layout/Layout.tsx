@@ -92,13 +92,19 @@ export default function Layout({ children }: Props) {
             导航
           </div>
           <NavItem to="/" icon={Home} label="工作台" active={isActive('/')} />
-          <NavItem to="/demo" icon={Sparkles} label="案例示范" active={isDemo} />
 
           {/* 最近运行（动态列表） */}
           <RecentRuns />
         </nav>
 
         <div className="px-3 py-3 border-t border-ink-200/60 dark:border-ink-800/60 flex items-center gap-2">
+          <Link
+            to="/demo"
+            className={`btn-ghost h-9 px-2 text-xs ${isDemo ? 'text-brand-600 dark:text-brand-300' : ''}`}
+            title="查看案例示范（辅助功能）"
+          >
+            <Sparkles size={14} />
+          </Link>
           <button
             onClick={toggleDark}
             className="btn-ghost h-9 px-3 text-xs flex-1"
