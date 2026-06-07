@@ -510,9 +510,26 @@ class PipelineOrchestrator:
             docs = self._load_seed_documents(doc_ids)
             if docs:
                 gen = StrategicConfigGenerator(config={})
-                cfg = gen.generate(docs[0], requirement=run.config.get("requirement", ""))
+                user_params = run.config.get("user_params") or {}
+                cfg = gen.generate(
+                    docs[0],
+                    requirement=run.config.get("requirement", ""),
+                    user_params=user_params or None,
+                )
                 sim_config["topics"] = cfg.topics
                 sim_config["metrics"] = cfg.metrics
+                # P2-G3 关键：把派生 max_rounds / agents 写回 sim_config
+                if cfg.max_rounds and cfg.max_rounds > sim_config.get("max_rounds", 0):
+                    sim_config["max_rounds"] = cfg.max_rounds
+                if cfg.agents:
+                    sim_config["agents"] = [
+                        a if isinstance(a, dict) else {
+                            "agent_type": getattr(a, "agent_type", "ANALYST"),
+                            "id": getattr(a, "id", "agent"),
+                            "name": getattr(a, "name", ""),
+                        }
+                        for a in cfg.agents
+                    ]
         except Exception:
             pass
         return {"sim_config": sim_config, "generated": True}
