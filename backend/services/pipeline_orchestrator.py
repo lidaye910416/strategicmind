@@ -53,6 +53,15 @@ from backend.services.belief_engine import BeliefEngine
 from backend.services.propagation_layer import PropagationLayer
 from backend.services.strategic_profile_generator import StrategicProfileGenerator
 from backend.services.strategic_config_generator import StrategicConfigGenerator
+from backend.services.market_environment import (
+    MarketEnvironmentAgent,
+    MARKET_CYCLE_LABELS_CN,
+    POLICY_STANCE_LABELS_CN,
+)
+from backend.services.external_shock_simulator import (
+    ExternalShockSimulator,
+    ShockType,
+)
 from backend.tools.search_tool import SearchTool
 
 
@@ -119,9 +128,15 @@ class PipelineOrchestrator:
         # Stash defaults; resolve via property so env changes are picked up
         self._upload_folder_default = upload_folder
         self._checkpoint_dir_default = checkpoint_dir
-        # Per-instance event bus (defaults to module singleton).
-        # Injectable for unit tests / multi-orchestrator scenarios.
-        self.event_bus: EventBus = event_bus or EventBus()
+        # Per-instance event bus (defaults to module singleton so the SSE
+        # endpoint in backend.app.api.pipeline (which subscribes to the
+        # module-level ``event_bus``) sees frames emitted here. Tests can
+        # still inject their own ``event_bus`` for isolation.
+        if event_bus is not None:
+            self.event_bus: EventBus = event_bus
+        else:
+            from backend.services.event_bus import event_bus as _global_bus
+            self.event_bus = _global_bus
         # Ensure dirs exist (use current env)
         self._ensure_dirs()
         self._init_state()
@@ -478,10 +493,16 @@ class PipelineOrchestrator:
     async def _stage_config_generation(self, run: PipelineRun) -> Dict[str, Any]:
         prev = run.artifacts.get(Stage.PROFILE_GENERATION.value, {})
         agent_dicts = prev.get("agents", [])
+        # P4 LOOP: 多年推演需要保证 simulated_hours >= max_rounds * hours_per_round
+        # 默认 hours_per_round=6，max_rounds=36 (3年×12月) → simulated_hours 至少 216
+        max_rounds = int(run.config.get("max_rounds", 3))
+        hours_per_round = 6  # 与 SimulationLoop 默认一致
+        min_sim_hours = max_rounds * hours_per_round
+        sim_hours_cfg = int(run.config.get("simulated_hours", 72))
         sim_config: Dict[str, Any] = {
             "agents": agent_dicts,
-            "max_rounds": int(run.config.get("max_rounds", 3)),
-            "simulated_hours": int(run.config.get("simulated_hours", 72)),
+            "max_rounds": max_rounds,
+            "simulated_hours": max(sim_hours_cfg, min_sim_hours),
         }
         # Best-effort use of StrategicConfigGenerator on a synthesized seed doc
         try:
@@ -524,24 +545,389 @@ class PipelineOrchestrator:
             propagation_layer=propagation,
             llm_provider=self.llm_provider,
         )
-        # Bridge: sim_loop's progress_callback → event_bus.emit (per
-        # arch-spec §2.2). Lambda captures run_id + stage at call time.
+        # P4 LOOP: 接入 MarketEnvironmentAgent（每 4 轮季度演化）+ ExternalShockSimulator（每 3 轮按用户外部因素注入）
+        # 设计目标：MiroFish 风格"按年份循环迭代 + 内外部环境变化"
+        user_params = run.config.get("user_params") or {}
+        industry = (
+            run.config.get("industry")
+            or user_params.get("industry")
+            or "digital_service"
+        )
+        market_env = MarketEnvironmentAgent()
+        external_factors = user_params.get("external_factors") or []
+        shock_sim = ExternalShockSimulator(config={"base_probability": 0.1})
+
         run_id = run.run_id
-        progress_callback = (
-            lambda evt: self.event_bus.emit(
+
+        def _emit_market_event(quarter: int, snapshot: Dict[str, Any]) -> None:
+            """Emit a market_event SSE frame with the freshly-evolved indicators."""
+            cycle_cn = snapshot.get("cycle_label_cn") or MARKET_CYCLE_LABELS_CN.get(
+                snapshot.get("current_cycle", ""), ""
+            )
+            stance_cn = POLICY_STANCE_LABELS_CN.get(
+                snapshot.get("policy_stance", ""), ""
+            )
+            self.event_bus.emit(
+                run_id, "market_event", {
+                    "quarter": quarter,
+                    "fiscal_year_offset": snapshot.get("fiscal_year_offset", 0),
+                    "industry": industry,
+                    "sector_growth_rate": round(snapshot.get("sector_growth_rate", 0.0), 4),
+                    "policy_stance": snapshot.get("policy_stance", ""),
+                    "policy_stance_cn": stance_cn,
+                    "policy_pressure": round(snapshot.get("policy_pressure", 0.0), 3),
+                    "capital_availability": round(snapshot.get("capital_availability", 0.0), 3),
+                    "consumer_sentiment": round(snapshot.get("consumer_sentiment", 0.0), 3),
+                    "current_cycle": snapshot.get("current_cycle", ""),
+                    "cycle_label_cn": cycle_cn,
+                    "msg_cn": f"市场事件 Q{quarter}: 行业增速 {snapshot.get('sector_growth_rate', 0) * 100:+.1f}% / 周期 {cycle_cn} / 政策 {stance_cn}",
+                },
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+
+        def _emit_shock_injected(round_num: int, factor: str, shock) -> None:
+            """Emit a shock_injected SSE frame when an external factor triggers a shock."""
+            try:
+                shock_dict = shock.to_dict() if hasattr(shock, "to_dict") else dict(shock)
+            except Exception:
+                shock_dict = {"shock_type": str(getattr(shock, "shock_type", "UNKNOWN"))}
+            self.event_bus.emit(
+                run_id, "shock_injected", {
+                    "round": round_num,
+                    "factor": factor,
+                    "shock": shock_dict,
+                    "msg_cn": f"外部冲击 R{round_num}（{factor[:20]}）: {shock_dict.get('shock_type', '')}",
+                },
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+
+        def _on_progress(evt: Dict[str, Any]) -> None:
+            """progress_callback: emit round_progress + per-N-round market/shock side effects."""
+            # 1) Always emit round_progress (back-compat)
+            self.event_bus.emit(
                 run_id, "round_progress", evt,
                 stage=Stage.SIMULATION_RUNNING.value,
             )
-        )
+            # 2) P4 LOOP: 每 4 轮演化一次市场（季度）
+            try:
+                round_num = int(evt.get("round") or 0)
+            except Exception:
+                round_num = 0
+            if round_num > 0 and round_num % 4 == 0:
+                try:
+                    market_env.evolve_quarter()
+                    snap = market_env.snapshot()
+                    _emit_market_event(market_env.fiscal_quarter, snap)
+                except Exception:
+                    # Never let a market-evolution failure break the simulation
+                    pass
+            # 3) P4 LOOP: 每 3 轮 + 外部因素非空 → 注入 shock
+            if (
+                round_num > 0
+                and round_num % 3 == 0
+                and external_factors
+            ):
+                # Round-robin: 同一个 factor 在不同 R 注入
+                factor = external_factors[(round_num // 3 - 1) % len(external_factors)]
+                try:
+                    shock = shock_sim.inject_shock(
+                        context={"agents": agents, "round": round_num, "factor": factor},
+                        probability=1.0,  # 用户显式提供 → 必触发
+                        round_num=round_num,
+                    )
+                    if shock is not None:
+                        _emit_shock_injected(round_num, factor, shock)
+                except Exception:
+                    pass
+
         try:
             results = await sim_loop.run(
                 agents=agents,
                 max_rounds=int(sim_config.get("max_rounds", 3)),
-                progress_callback=progress_callback,
+                simulated_hours=int(sim_config.get("simulated_hours", 72)),
+                progress_callback=_on_progress,
             )
         except Exception as e:
             return {"error": str(e), "current_round": 0, "round_results": []}
+        # Persist latest market snapshot on the run for cross-year / hydrate use
+        try:
+            run.artifacts["_market_env_snapshot"] = market_env.snapshot()
+        except Exception:
+            pass
         return results
+
+    # ---------- P4 LOOP: 跨年推演（再推 1 年） ----------
+
+    def advance_year(
+        self,
+        run_id: str,
+        year_offset: int = 1,
+    ) -> Dict[str, Any]:
+        """
+        Run an additional ``year_offset`` year(s) (default 1) on top of a
+        previously-completed/failed run. Reuses the checkpoint + artifacts
+        to keep the existing graph + agents; emits ``year_advanced`` and
+        additional ``market_event`` / ``shock_injected`` events through
+        the event bus.
+
+        Spec: G5 (MiroFish loop) — POST /api/pipeline/<id>/advance-year
+        """
+        run = self._runs.get(run_id)
+        if run is None:
+            # 尝试从磁盘 checkpoint 恢复
+            ckpt = self._load_checkpoint(run_id)
+            if not ckpt:
+                return {"error": "Run not found", "run_id": run_id}
+            # 重建一个内存 run（status 设为 failed 以便 advance_year 启动）
+            run = PipelineRun(
+                run_id=run_id,
+                status="failed",
+                config=ckpt.get("config") or {},
+            )
+            run.artifacts = ckpt.get("artifacts") or {}
+            run.completed_stages = list(ckpt.get("completed_stages") or [])
+            self._runs[run_id] = run
+        if run.status not in ("completed", "failed"):
+            return {
+                "error": f"Cannot advance year from status={run.status}; need completed/failed",
+                "run_id": run_id,
+            }
+
+        # 计算本轮再推 1 年的回合数（12 月 + 1 年）
+        user_params = run.config.get("user_params") or {}
+        time_step = user_params.get("time_step", "month")
+        per_year = {"year": 1, "quarter": 4, "month": 12}.get(time_step, 12)
+        rounds_to_run = per_year * max(1, int(year_offset))
+
+        # 准备 control queue（与正常 start 路径相同），并重置 status
+        import asyncio
+        run.status = "running"
+        run.error = None
+        try:
+            self._control[run_id] = asyncio.Queue()
+        except RuntimeError:
+            # No running loop in this thread — fall back to a thread
+            import threading
+            def _thread_target():
+                asyncio.run(self._advance_year_run(run_id, rounds_to_run))
+            threading.Thread(target=_thread_target, daemon=True).start()
+            return {
+                "run_id": run_id,
+                "year_offset": year_offset,
+                "rounds_to_run": rounds_to_run,
+                "status": "running",
+                "message": "advance-year kicked off in background thread",
+            }
+
+        # Run on the existing event loop if possible
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            task = loop.create_task(self._advance_year_run(run_id, rounds_to_run))
+            self._tasks[run_id] = task
+        else:
+            import threading
+            def _thread_target():
+                asyncio.run(self._advance_year_run(run_id, rounds_to_run))
+            threading.Thread(target=_thread_target, daemon=True).start()
+
+        return {
+            "run_id": run_id,
+            "year_offset": year_offset,
+            "rounds_to_run": rounds_to_run,
+            "status": "running",
+            "message": f"再推 {year_offset} 年（{rounds_to_run} 回合）已启动",
+        }
+
+    async def _advance_year_run(self, run_id: str, rounds_to_run: int) -> None:
+        """Internal: actually run the additional rounds for advance-year."""
+        run = self._runs.get(run_id)
+        if run is None:
+            return
+        try:
+            # 优先复用上一次 SIMULATION_RUNNING 结果的 agents / config
+            sim_artifact = run.artifacts.get(Stage.SIMULATION_RUNNING.value) or {}
+            sim_config = (sim_artifact.get("sim_config")
+                          or run.artifacts.get(Stage.CONFIG_GENERATION.value, {}).get("sim_config")
+                          or {})
+            agents_meta = sim_config.get("agents") or []
+            if not agents_meta:
+                raise RuntimeError("No agents in stored config; cannot advance year")
+
+            agent_type_map = {t.value: t for t in AgentType}
+            agents: List[StrategicAgent] = []
+            for a in agents_meta:
+                try:
+                    agents.append(StrategicAgent(
+                        name=a.get("name", "Agent"),
+                        agent_type=agent_type_map.get(a.get("type"), AgentType.ANALYST),
+                        influence_weight=a.get("influence_weight", 0.5),
+                    ))
+                except Exception:
+                    continue
+            if not agents:
+                raise RuntimeError("No agents rehydrated for advance-year")
+
+            belief_engine = BeliefEngine()
+            propagation = PropagationLayer()
+            sim_loop = SimulationLoop(
+                belief_engine=belief_engine,
+                propagation_layer=propagation,
+                llm_provider=self.llm_provider,
+            )
+
+            # 复用 _stage_simulation_running 中的市场环境 + shock 接线
+            user_params = run.config.get("user_params") or {}
+            industry = (
+                run.config.get("industry")
+                or user_params.get("industry")
+                or "digital_service"
+            )
+            market_env = MarketEnvironmentAgent()
+            # Restore prior snapshot if any
+            prior_snap = run.artifacts.get("_market_env_snapshot")
+            if isinstance(prior_snap, dict):
+                try:
+                    market_env.sector_growth_rate = prior_snap.get("sector_growth_rate", market_env.sector_growth_rate)
+                    market_env.cycle_position = prior_snap.get("cycle_position", market_env.cycle_position)
+                    market_env.fiscal_quarter = prior_snap.get("fiscal_quarter", market_env.fiscal_quarter)
+                    market_env.fiscal_year_offset = prior_snap.get("fiscal_year_offset", market_env.fiscal_year_offset)
+                except Exception:
+                    pass
+            external_factors = user_params.get("external_factors") or []
+            shock_sim = ExternalShockSimulator(config={"base_probability": 0.1})
+
+            def _emit_market_event(quarter: int, snapshot: Dict[str, Any]) -> None:
+                cycle_cn = snapshot.get("cycle_label_cn") or MARKET_CYCLE_LABELS_CN.get(
+                    snapshot.get("current_cycle", ""), ""
+                )
+                stance_cn = POLICY_STANCE_LABELS_CN.get(
+                    snapshot.get("policy_stance", ""), ""
+                )
+                self.event_bus.emit(
+                    run_id, "market_event", {
+                        "quarter": quarter,
+                        "fiscal_year_offset": snapshot.get("fiscal_year_offset", 0),
+                        "industry": industry,
+                        "sector_growth_rate": round(snapshot.get("sector_growth_rate", 0.0), 4),
+                        "policy_stance": snapshot.get("policy_stance", ""),
+                        "policy_stance_cn": stance_cn,
+                        "policy_pressure": round(snapshot.get("policy_pressure", 0.0), 3),
+                        "capital_availability": round(snapshot.get("capital_availability", 0.0), 3),
+                        "consumer_sentiment": round(snapshot.get("consumer_sentiment", 0.0), 3),
+                        "current_cycle": snapshot.get("current_cycle", ""),
+                        "cycle_label_cn": cycle_cn,
+                        "msg_cn": f"市场事件 Q{quarter}: 行业增速 {snapshot.get('sector_growth_rate', 0) * 100:+.1f}% / 周期 {cycle_cn} / 政策 {stance_cn}",
+                    },
+                    stage=Stage.SIMULATION_RUNNING.value,
+                )
+
+            def _emit_shock_injected(round_num: int, factor: str, shock) -> None:
+                try:
+                    shock_dict = shock.to_dict() if hasattr(shock, "to_dict") else dict(shock)
+                except Exception:
+                    shock_dict = {"shock_type": str(getattr(shock, "shock_type", "UNKNOWN"))}
+                self.event_bus.emit(
+                    run_id, "shock_injected", {
+                        "round": round_num,
+                        "factor": factor,
+                        "shock": shock_dict,
+                        "msg_cn": f"外部冲击 R{round_num}（{factor[:20]}）: {shock_dict.get('shock_type', '')}",
+                    },
+                    stage=Stage.SIMULATION_RUNNING.value,
+                )
+
+            # 起始轮次：在已有 round_results 之后续推
+            existing = sim_artifact.get("round_results") or []
+            start_round = len(existing) + 1
+
+            def _on_progress(evt: Dict[str, Any]) -> None:
+                # 用 event.round 直接作为全局轮号（start_round + n-1）
+                try:
+                    local_n = int(evt.get("round") or 0)
+                except Exception:
+                    local_n = 0
+                global_round = start_round + max(0, local_n - 1)
+                evt2 = dict(evt)
+                evt2["round"] = global_round
+                self.event_bus.emit(
+                    run_id, "round_progress", evt2,
+                    stage=Stage.SIMULATION_RUNNING.value,
+                )
+                if local_n > 0 and local_n % 4 == 0:
+                    try:
+                        market_env.evolve_quarter()
+                        snap = market_env.snapshot()
+                        _emit_market_event(market_env.fiscal_quarter, snap)
+                    except Exception:
+                        pass
+                if local_n > 0 and local_n % 3 == 0 and external_factors:
+                    factor = external_factors[(local_n // 3 - 1) % len(external_factors)]
+                    try:
+                        shock = shock_sim.inject_shock(
+                            context={"agents": agents, "round": global_round, "factor": factor},
+                            probability=1.0,
+                            round_num=global_round,
+                        )
+                        if shock is not None:
+                            _emit_shock_injected(global_round, factor, shock)
+                    except Exception:
+                        pass
+
+            # Run additional rounds
+            self.event_bus.emit(
+                run_id, "year_advanced", {
+                    "year_offset": 1,
+                    "rounds_to_run": rounds_to_run,
+                    "start_round": start_round,
+                    "msg_cn": f"再推 1 年（{rounds_to_run} 回合）启动",
+                },
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+            new_results = await sim_loop.run(
+                agents=agents,
+                max_rounds=rounds_to_run,
+                simulated_hours=rounds_to_run * 6,
+                progress_callback=_on_progress,
+            )
+            # 合并：append new round_results to the prior sim artifact
+            merged = list(existing) + list(new_results.get("round_results", []))
+            sim_artifact["round_results"] = merged
+            sim_artifact["current_round"] = len(merged)
+            sim_artifact["total_rounds"] = len(merged)
+            sim_artifact["advanced_year"] = True
+            run.artifacts[Stage.SIMULATION_RUNNING.value] = sim_artifact
+            run.artifacts["_market_env_snapshot"] = market_env.snapshot()
+            run.status = "completed"
+            run.current_stage = Stage.COMPLETED
+            run.progress = 1.0
+            self._save_checkpoint(run)
+            self.event_bus.emit(
+                run_id, "year_advanced", {
+                    "year_offset": 1,
+                    "status": "completed",
+                    "rounds_added": len(new_results.get("round_results", [])),
+                    "total_rounds": len(merged),
+                    "msg_cn": f"再推 1 年完成（共 {len(merged)} 回合）",
+                },
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+        except Exception as e:
+            run.status = "failed"
+            run.error = f"advance-year failed: {e}\n{traceback.format_exc()}"
+            self._save_checkpoint(run)
+            self.event_bus.emit(
+                run_id, "year_advanced", {
+                    "status": "failed",
+                    "error": str(e),
+                    "msg_cn": f"再推 1 年失败：{e}",
+                },
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+        finally:
+            self._control.pop(run_id, None)
 
     async def _stage_report_generating(self, run: PipelineRun) -> Dict[str, Any]:
         # Lazy import to avoid circular dependency with app.__init__

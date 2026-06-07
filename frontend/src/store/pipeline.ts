@@ -158,6 +158,8 @@ interface PipelineState {
   pause: () => Promise<void>
   resume: () => Promise<void>
   cancel: () => Promise<void>
+  /** P4 LOOP (G5): 再推 1 年 — 仅 completed/failed run 可用 */
+  advanceYear: (yearOffset?: number) => Promise<{ run_id: string; year_offset: number; rounds_to_run: number; status: string } | null>
   reset: () => void
   setProgress: (stage: string, progress: number) => void
   setStatus: (status: PipelineStatus) => void
@@ -370,6 +372,30 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     await http.post(`/pipeline/${runId}/cancel`)
     set({ status: 'cancelled' })
     _closeSSE(get, set)
+  },
+
+  /**
+   * P4 LOOP (G5): 再推 1 年
+   * - 仅 completed/failed run 可用
+   * - 后端会重置 status=running + 跑 12 轮（time_step=month）+ 9 次市场事件
+   * - 前端立刻进入 running UI 状态，SSE 通道保持打开接收新一轮事件
+   */
+  advanceYear: async (yearOffset = 1) => {
+    const { runId } = get()
+    if (!runId) return null
+    // 乐观更新：把 status 切回 running，stage 切到 SIMULATION_RUNNING，UI 立即有反应
+    set({
+      status: 'running',
+      currentStage: 'SIMULATION_RUNNING',
+      error: null,
+    })
+    try {
+      const r = await http.post(`/pipeline/${runId}/advance-year`, { year_offset: yearOffset })
+      return r.data
+    } catch (e: any) {
+      set({ status: 'failed', error: formatErrorMessage(e) })
+      return null
+    }
   },
 
   reset: () => {

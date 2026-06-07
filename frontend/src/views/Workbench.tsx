@@ -14,6 +14,7 @@ import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
   GitBranch, Users, Database, BookOpen,
   Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
+  FastForward,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
@@ -63,6 +64,9 @@ export default function Workbench() {
   const pausePipeline = usePipelineStore((s) => s.pause)
   const resumePipeline = usePipelineStore((s) => s.resume)
   const cancelPipeline = usePipelineStore((s) => s.cancel)
+  // P4 LOOP (G5): 跨年推演 — 仅 completed/failed 可点
+  const advanceYear = usePipelineStore((s) => s.advanceYear)
+  const [advancingYear, setAdvancingYear] = useState(false)
   // P1-8 / P1-11: 快照供 PlatformStatusCards 取 current_round / total_rounds / active_agents
   const snapshot = useSnapshot()
   // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
@@ -227,6 +231,20 @@ export default function Workbench() {
     } catch (e) { console.error(e) }
   }, [pausePipeline, resumePipeline, cancelPipeline])
 
+  // P4 LOOP (G5): "再推 1 年" — 在 completed/failed run 上推进
+  const handleAdvanceYear = useCallback(async () => {
+    if (advancingYear) return
+    setAdvancingYear(true)
+    try {
+      await advanceYear(1)
+    } catch (e) {
+      console.error('advance-year 失败', e)
+    } finally {
+      // 跑 12 轮要一会儿；保持按钮显示 loading 由 store 状态切换来驱动
+      setTimeout(() => setAdvancingYear(false), 1500)
+    }
+  }, [advanceYear, advancingYear])
+
   const currentStageIdx = STAGES.findIndex((s) => s.key === stage)
   const isCompleted = stage === 'COMPLETED'
 
@@ -273,6 +291,18 @@ export default function Workbench() {
                 <FileText size={14} /> 查看报告
                 <ArrowUpRight size={12} />
               </Link>
+            )}
+            {/* P4 LOOP (G5): 跨年推演 — completed/failed run 可点 */}
+            {(status === 'completed' || status === 'failed') && runId && (
+              <button
+                onClick={handleAdvanceYear}
+                disabled={advancingYear}
+                className="btn-primary h-9 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                title={WORKBENCH.advanceYearTitle}
+              >
+                {advancingYear ? <Loader2 size={14} className="animate-spin" /> : <FastForward size={14} />}
+                {WORKBENCH.advanceYear}
+              </button>
             )}
           </div>
         }
