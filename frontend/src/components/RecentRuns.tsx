@@ -320,7 +320,7 @@ export default function RecentRuns() {
                           <div className="flex-1 h-px bg-ink-200/40 dark:bg-ink-800/40" />
                         </div>
                         {/* 该组卡片网格 */}
-                        <ul className="grid gap-2.5 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+                        <ul className="grid gap-2 sm:grid-cols-1 lg:grid-cols-2">
                           {group.runs.map((r) => {
                       const s = STATUS_STYLES[r.status] || STATUS_STYLES.cancelled
                       const isConfirming = deleteConfirm === r.run_id
@@ -362,30 +362,20 @@ export default function RecentRuns() {
                             />
                           )}
 
-                          {/* 状态徽章 (唯一指示) — 文字 + 颜色, 无重复色点 / icon */}
-                          <span
-                            className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.bg} ${s.color}`}
-                          >
-                            {s.label}
-                          </span>
-
-                          {/* 主信息 */}
-                          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                            {/* 第一行: 状态 label + 摘要 + 相对时间 */}
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${s.bg} ${s.color}`}>
-                                {s.label}
-                              </span>
-                              <span
-                                className="text-[12px] text-ink-700 dark:text-ink-200 truncate min-w-0"
-                                title={summary}
-                              >
-                                {summary}
-                              </span>
-                              <span className="ml-auto text-[10px] text-ink-400 shrink-0 font-medium tabular-nums">
-                                {relTime}
-                              </span>
-                            </div>
+                          {/* 主信息 - 状态徽章 + 摘要 + 相对时间 一行搞定 */}
+                          <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                            <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.bg} ${s.color}`}>
+                              {s.label}
+                            </span>
+                            <span
+                              className="text-[12px] text-ink-700 dark:text-ink-200 truncate min-w-0 flex-1"
+                              title={summary}
+                            >
+                              {summary}
+                            </span>
+                            <span className="text-[10px] text-ink-400 shrink-0 font-medium tabular-nums">
+                              {relTime}
+                            </span>
                           </div>
 
                           {/* 操作区: 报告 + 复制 + 删除 */}
@@ -393,46 +383,46 @@ export default function RecentRuns() {
                             <Link
                               to={APP_ROUTES.report(r.run_id)}
                               className="inline-flex items-center justify-center
-                                         w-9 h-9 rounded-l-md border-r border-ink-200/40
+                                         w-7 h-7 my-auto rounded-l-md border-r border-ink-200/40
                                          text-brand-600 dark:text-brand-400
                                          hover:bg-brand-50 dark:hover:bg-brand-950/30
                                          transition-colors"
                               title={RECENT_RUNS.viewReportTitle}
                             >
-                              <FileText size={14} />
+                              <FileText size={12} />
                             </Link>
                             <button
                               onClick={() => cloneConfig(r.run_id)}
                               className="inline-flex items-center justify-center
-                                         w-9 h-9 border-r border-ink-200/40
+                                         w-7 h-7 my-auto border-r border-ink-200/40
                                          text-ink-600 dark:text-ink-300
                                          hover:bg-ink-50 dark:hover:bg-ink-800/60
                                          transition-colors"
                               title={RECENT_RUNS.copyConfigTitle(r.run_id)}
                             >
-                              <Copy size={14} />
+                              <Copy size={12} />
                             </button>
                             {isConfirming ? (
                               <button
                                 onClick={() => deleteRun(r.run_id)}
                                 className="inline-flex items-center justify-center
-                                           w-9 h-9 rounded-r-md
+                                           w-7 h-7 my-auto rounded-r-md
                                            text-rose-600 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100
                                            transition-colors"
                                 title="确认删除"
                               >
-                                <Check size={14} />
+                                <Check size={12} />
                               </button>
                             ) : (
                               <button
                                 onClick={() => setDeleteConfirm(r.run_id)}
                                 className="inline-flex items-center justify-center
-                                           w-9 h-9 rounded-r-md
+                                           w-7 h-7 my-auto rounded-r-md
                                            text-ink-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20
                                            transition-colors"
                                 title="删除"
                               >
-                                <Trash2 size={12} />
+                                <Trash2 size={11} />
                               </button>
                             )}
                           </div>

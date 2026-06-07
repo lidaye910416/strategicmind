@@ -7,7 +7,6 @@ import { ReactNode, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Sparkles, Sun, Moon, Zap } from 'lucide-react'
-import RecentRuns from '../RecentRuns'
 
 interface Props { children: ReactNode }
 
@@ -92,9 +91,6 @@ export default function Layout({ children }: Props) {
             导航
           </div>
           <NavItem to="/" icon={Home} label="工作台" active={isActive('/')} />
-
-          {/* 最近运行（动态列表） */}
-          <RecentRuns />
         </nav>
 
         <div className="px-3 py-3 border-t border-ink-200/60 dark:border-ink-800/60 flex items-center gap-2">

@@ -23,6 +23,7 @@ import UploadCard, { type UploadItem } from '../components/dashboard/UploadCard'
 import ConfigCard, { type ReportStyle } from '../components/dashboard/ConfigCard'
 import RunControlBar from '../components/dashboard/RunControlBar'
 import LiveSnapshotSection from '../components/dashboard/LiveSnapshotSection'
+import RecentRuns from '../components/RecentRuns'
 import ProviderPicker from '../components/ProviderPicker'
 import {
   DEFAULT_USER_PARAMS, type SimulationUserParams,
@@ -189,6 +190,7 @@ export default function Dashboard() {
           />
         </motion.div>
         <motion.div variants={fadeUp}><LiveSnapshotSection runId={runId || ''} status={status} /></motion.div>
+        <motion.div variants={fadeUp}><RecentRuns /></motion.div>
         <div className="pt-6 pb-2 flex items-center justify-center gap-2 text-xs text-ink-400 dark:text-ink-500">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-soft" />
           战略智脑 · StrategicMind · v0.1
