@@ -1,13 +1,17 @@
 /**
- * RecentRuns - 可折叠的最近推演列表。
+ * RecentRuns - 历史任务卡片列表 (G4 P3 PERSIST 重构版)。
  *
- * 改进：
- * - 支持单条删除（X 按钮）
- * - 支持批量清空已完成
- * - 默认折叠，不占主屏空间
- * - 实时状态点 + 进度条
- * - 点击展开运行详情
- * - PR-3 P2-1：行首 checkbox + 顶部"对比选中 (N)" 入口（featureFlags.compareRuns = true 时启用）
+ * 设计：
+ *   - 每条历史 run 渲染为一张卡片
+ *   - 卡片内容：run_id + 状态徽章 + config 摘要（年限/部门数/外部因素数）+ 风格 badge + 时间
+ *   - 卡片底部 2 个操作按钮：查看报告 / 复制配置
+ *   - 默认折叠，避免占用 Dashboard 视觉
+ *   - 后端 GET /api/pipeline/runs 已返回 config_summary（无需前端再 fetch /pipeline/<id>）
+ *   - 复制配置：跳 Dashboard 预填 user_params（不复制 doc_ids，提示由 ConfigCard 顶部 banner 展示）
+ *
+ * 来源：
+ *   - 沿用旧 RecentRuns 的 P2-1 多选对比 + X 删除 + 清空已完成
+ *   - 顶部 "对比 (N)" 入口保留（featureFlag 守门）
  */
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -21,15 +25,27 @@ import { APP_ROUTES, STAGE_LABELS, RECENT_RUNS } from '../i18n/zh'
 import { formatErrorMessage } from '../lib/formatError'
 import { flags } from '../lib/featureFlags'
 
+interface ConfigSummary {
+  years: number | null
+  time_step: string | null
+  departments: string[]
+  departments_count: number
+  external_factors_count: number
+  report_style: string | null
+  simulation_hours: number | null
+}
+
 interface Run {
   run_id: string
   status: string
-  progress: number
-  completed_stages: string[]
+  progress?: number
+  completed_stages?: string[]
   current_stage?: string
   started_at?: number
   updated_at?: number
-  config?: { report_style?: string }
+  config_summary?: ConfigSummary
+  // 兼容老接口（无 config_summary 时退化用）
+  config?: { report_style?: string; simulation_hours?: number; user_params?: any }
 }
 
 const STATUS_STYLES: Record<string, { dot: string; label: string; icon: any; color: string }> = {
@@ -40,7 +56,40 @@ const STATUS_STYLES: Record<string, { dot: string; label: string; icon: any; col
   cancelled: { dot: 'bg-ink-400', label: '已取消', icon: X, color: 'text-ink-500' },
 }
 
+const STYLE_BADGE_CLASS: Record<string, string> = {
+  executive: 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300',
+  technical: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+  narrative: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+}
+
 const MAX_COMPARE = 3
+
+function formatTimestamp(ts?: number): string {
+  if (!ts) return ''
+  return new Date(ts * 1000).toLocaleString('zh-CN', {
+    month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function summarizeConfig(run: Run): string {
+  // 优先用后端新返回的 config_summary
+  if (run.config_summary) {
+    const s = run.config_summary
+    return RECENT_RUNS.configSummary(s.years, s.departments_count, s.external_factors_count)
+  }
+  // 退化：自己从 config.user_params / config 拼
+  const up = run.config?.user_params
+  const y = up?.years
+  const depts = Array.isArray(up?.departments) ? up.departments.length : 0
+  const ef = Array.isArray(up?.external_factors) ? up.external_factors.length : 0
+  return RECENT_RUNS.configSummary(y, depts, ef)
+}
+
+function styleLabel(run: Run): string {
+  const s = run.config_summary?.report_style ?? run.config?.report_style
+  return RECENT_RUNS.styleBadge(s)
+}
 
 export default function RecentRuns() {
   const navigate = useNavigate()
@@ -54,7 +103,7 @@ export default function RecentRuns() {
 
   const compareEnabled = flags.compareRuns
 
-  // P1-15: 复制此 run 的配置到 Dashboard（仅复用 hours/style；doc_ids 留空）
+  // P3 PERSIST：复制此 run 的配置（user_params + hours + style），doc_ids 留空
   const cloneConfig = (runId: string) => {
     navigate(`/?cloneConfig=${encodeURIComponent(runId)}`)
   }
@@ -79,8 +128,7 @@ export default function RecentRuns() {
     setError(null)
     try {
       const r = await api.get('/pipeline/runs')
-      const sortFn = (a: Run, b: Run) => b.run_id.localeCompare(a.run_id)
-      const list: Run[] = ((r.data.runs || []) as Run[]).slice().sort(sortFn)
+      const list: Run[] = (r.data.runs || []) as Run[]
       setRuns(list)
       // 清理已不存在的选中项
       setSelected((prev) => prev.filter((id) => list.some((x) => x.run_id === id)))
@@ -117,7 +165,7 @@ export default function RecentRuns() {
     setSelected((prev) => prev.filter((id) => !completed.some((r) => r.run_id === id)))
     for (const r of completed) {
       try {
-        await api.delete(`/pipeline/${r.run_id}`)
+        await api.delete(`/pipeline/${r.runId}`)
       } catch (e) { /* 忽略 */ }
     }
   }
@@ -152,7 +200,6 @@ export default function RecentRuns() {
               {runningCount} 运行中
             </span>
           )}
-          {/* PR-3 P2-1：对比选中计数 badge */}
           {compareEnabled && selected.length > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-semibold flex items-center gap-0.5">
               <BarChart3 size={8} />
@@ -161,7 +208,6 @@ export default function RecentRuns() {
           )}
         </div>
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {/* PR-3 P2-1：对比入口按钮（featureFlag 关闭时 disabled） */}
           {compareEnabled && (
             <button
               onClick={goCompare}
@@ -217,10 +263,10 @@ export default function RecentRuns() {
             transition={{ duration: 0.2 }}
             className="overflow-hidden border-t border-ink-200/40 dark:border-ink-800/40"
           >
-            <div className="max-h-80 overflow-y-auto">
+            <div className="max-h-[28rem] overflow-y-auto">
               {loading && runs.length === 0 ? (
                 <div className="flex items-center gap-2 px-3 py-4 text-xs text-ink-400">
-                  <Loader2 size={12} className="animate-spin" /> 加载中…
+                  <Loader2 size={12} className="animate-spin" /> {RECENT_RUNS.loadingTitle}
                 </div>
               ) : error ? (
                 <div className="px-3 py-2 text-xs text-rose-500">{error}</div>
@@ -228,10 +274,10 @@ export default function RecentRuns() {
                 <div className="px-3 py-6 text-center text-xs text-ink-400 flex flex-col items-center gap-1.5">
                   <Inbox size={20} className="opacity-50" />
                   暂无运行
-                  <div className="text-[10px]">从工作台启动推演后，历史任务会显示在这里</div>
+                  <div className="text-[10px]">{RECENT_RUNS.emptyHint}</div>
                 </div>
               ) : (
-                <ul className="divide-y divide-ink-100 dark:divide-ink-800/60">
+                <ul className="grid gap-2 p-2 sm:grid-cols-1 lg:grid-cols-2">
                   <AnimatePresence initial={false}>
                     {runs.map((r) => {
                       const s = STATUS_STYLES[r.status] || STATUS_STYLES.cancelled
@@ -240,99 +286,71 @@ export default function RecentRuns() {
                       const running = r.status === 'running'
                       const isConfirming = deleteConfirm === r.run_id
                       const isSelected = selected.includes(r.run_id)
-                      const selectable = compareEnabled && done  // 只让已完成 run 可对比
+                      const selectable = compareEnabled && done
                       const checkboxDisabled = !selectable || (!isSelected && selected.length >= MAX_COMPARE)
+                      const style = (r.config_summary?.report_style
+                        || r.config?.report_style
+                        || 'default') as string
+                      const styleClass = STYLE_BADGE_CLASS[style] || 'bg-ink-100 text-ink-600 dark:bg-ink-800 dark:text-ink-300'
+                      const summary = summarizeConfig(r)
 
                       return (
                         <motion.li
                           key={r.run_id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0, x: -20, height: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className={`group px-3 py-2 hover:bg-ink-50/60 dark:hover:bg-ink-900/30 transition-colors
-                                      ${isSelected ? 'bg-brand-50/50 dark:bg-brand-950/20' : ''}`}
+                          layout
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -10, scale: 0.95 }}
+                          transition={{ duration: 0.18 }}
+                          className={`group relative rounded-lg border
+                                      ${isSelected
+                                        ? 'border-brand-400/70 bg-brand-50/40 dark:bg-brand-950/20'
+                                        : 'border-ink-200/60 dark:border-ink-800/60 bg-white/40 dark:bg-ink-900/30'}
+                                      hover:border-brand-300/70 hover:shadow-soft
+                                      transition-all overflow-hidden`}
                         >
-                          <div className="flex items-center gap-2">
-                            {/* PR-3 P2-1：多选 checkbox（仅 compareEnabled 时显示） */}
-                            {compareEnabled && (
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                disabled={checkboxDisabled}
-                                onChange={() => toggleSelect(r.run_id)}
-                                title={selectable
-                                  ? (isSelected ? '取消选中' : '加入对比')
-                                  : (selected.length >= MAX_COMPARE ? `最多 ${MAX_COMPARE} 个` : '仅已完成 run 可对比')}
-                                className="w-3.5 h-3.5 shrink-0 cursor-pointer
-                                           disabled:cursor-not-allowed disabled:opacity-40
-                                           accent-brand-500"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            )}
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
-                            <Icon size={11} className={s.color} />
-                            <div className="text-[11px] font-mono text-ink-700 dark:text-ink-200 truncate flex-1">
-                              {r.run_id}
-                            </div>
-                            {/* 操作按钮 - hover 时显示 */}
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {done && (
-                                <Link
-                                  to={APP_ROUTES.report(r.run_id)}
-                                  className="p-1 rounded text-ink-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30"
-                                  title="查看报告"
-                                >
-                                  <FileText size={11} />
-                                </Link>
+                          <div className="p-2.5 space-y-1.5">
+                            {/* 第一行：状态点 + run_id + 风格 badge */}
+                            <div className="flex items-center gap-1.5">
+                              {compareEnabled && (
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  disabled={checkboxDisabled}
+                                  onChange={() => toggleSelect(r.run_id)}
+                                  title={selectable
+                                    ? (isSelected ? '取消选中' : '加入对比')
+                                    : (selected.length >= MAX_COMPARE ? `最多 ${MAX_COMPARE} 个` : '仅已完成 run 可对比')}
+                                  className="w-3.5 h-3.5 shrink-0 cursor-pointer
+                                             disabled:cursor-not-allowed disabled:opacity-40
+                                             accent-brand-500"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
                               )}
-                              <Link
-                                to={APP_ROUTES.simulation(r.run_id)}
-                                className="p-1 rounded text-ink-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30"
-                                title="查看推演"
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
+                              <Icon size={11} className={`${s.color} shrink-0`} />
+                              <div className="text-[11px] font-mono text-ink-700 dark:text-ink-200 truncate flex-1 min-w-0">
+                                {r.run_id}
+                              </div>
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${styleClass}`}
+                                title="报告风格"
                               >
-                                <Activity size={11} />
-                              </Link>
-                              {/* P1-15: 复制此 run 的配置（hours/style）到 Dashboard */}
-                              <button
-                                onClick={() => cloneConfig(r.run_id)}
-                                className="p-1 rounded text-ink-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30"
-                                title={RECENT_RUNS.copyConfigTitle(r.run_id)}
-                              >
-                                <Copy size={11} />
-                              </button>
-                              {isConfirming ? (
-                                <>
-                                  <button
-                                    onClick={() => deleteRun(r.run_id)}
-                                    className="p-1 rounded text-rose-600 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100"
-                                    title="确认删除"
-                                  >
-                                    <Check size={11} />
-                                  </button>
-                                  <button
-                                    onClick={() => setDeleteConfirm(null)}
-                                    className="p-1 rounded text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800"
-                                    title="取消"
-                                  >
-                                    <X size={11} />
-                                  </button>
-                                </>
-                              ) : (
-                                <button
-                                  onClick={() => setDeleteConfirm(r.run_id)}
-                                  className="p-1 rounded text-ink-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                  title="删除"
-                                >
-                                  <Trash2 size={11} />
-                                </button>
-                              )}
+                                {styleLabel(r)}
+                              </span>
                             </div>
-                          </div>
-                          {/* 状态行 + 进度条 */}
-                          <div className="mt-1.5 ml-3.5 space-y-1">
-                            <div className="flex items-center justify-between gap-2 text-[10px]">
-                              <span className={`font-medium ${s.color}`}>{s.label}</span>
+
+                            {/* 第二行：config 摘要（年限/部门/外部因素） */}
+                            <div
+                              className="text-[10.5px] text-ink-600 dark:text-ink-300 truncate"
+                              title={summary}
+                            >
+                              {summary}
+                            </div>
+
+                            {/* 第三行：状态 / 进度 / 时间 */}
+                            <div className="flex items-center justify-between gap-1.5 text-[10px]">
+                              <span className={`font-semibold ${s.color}`}>{s.label}</span>
                               {running && r.current_stage && (
                                 <span className="text-ink-500 truncate">
                                   {STAGE_LABELS[r.current_stage] || r.current_stage}
@@ -343,8 +361,15 @@ export default function RecentRuns() {
                                   {Math.round((r.progress || 0) * 100)}%
                                 </span>
                               )}
+                              {r.updated_at && (
+                                <span className="text-ink-400 flex items-center gap-0.5 ml-auto">
+                                  <Clock size={8} />
+                                  {formatTimestamp(r.updated_at)}
+                                </span>
+                              )}
                             </div>
-                            {/* 进度条 */}
+
+                            {/* 进度条（running/done 显示） */}
                             {(running || done) && (
                               <div className="h-0.5 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden">
                                 <div
@@ -355,16 +380,63 @@ export default function RecentRuns() {
                                 />
                               </div>
                             )}
-                            {/* 时间戳 */}
-                            {r.updated_at && (
-                              <div className="text-[9px] text-ink-400 flex items-center gap-0.5">
-                                <Clock size={8} />
-                                {new Date(r.updated_at * 1000).toLocaleString('zh-CN', {
-                                  month: '2-digit', day: '2-digit',
-                                  hour: '2-digit', minute: '2-digit',
-                                })}
+
+                            {/* 第四行：操作按钮（2 个主要 + 隐藏删除） */}
+                            <div className="flex items-center gap-1.5 pt-1">
+                              {/* 查看报告 - 跳 /report/<id> */}
+                              <Link
+                                to={APP_ROUTES.report(r.run_id)}
+                                className="flex-1 inline-flex items-center justify-center gap-1
+                                           h-7 px-2 rounded-md
+                                           bg-brand-500 hover:bg-brand-600 text-white
+                                           text-[11px] font-semibold transition-colors"
+                                title={RECENT_RUNS.viewReportTitle}
+                              >
+                                <FileText size={11} /> {RECENT_RUNS.viewReport}
+                              </Link>
+                              {/* 复制配置 - 跳 /?cloneConfig=<id> */}
+                              <button
+                                onClick={() => cloneConfig(r.run_id)}
+                                className="flex-1 inline-flex items-center justify-center gap-1
+                                           h-7 px-2 rounded-md
+                                           border border-ink-200/80 dark:border-ink-700/60
+                                           hover:bg-ink-50 dark:hover:bg-ink-800/60
+                                           text-ink-700 dark:text-ink-200
+                                           text-[11px] font-semibold transition-colors"
+                                title={RECENT_RUNS.copyConfigTitle(r.run_id)}
+                              >
+                                <Copy size={11} /> {RECENT_RUNS.copyConfig}
+                              </button>
+                              {/* 删除/确认删除（hover 显示） */}
+                              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {isConfirming ? (
+                                  <>
+                                    <button
+                                      onClick={() => deleteRun(r.run_id)}
+                                      className="p-1 rounded text-rose-600 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100"
+                                      title="确认删除"
+                                    >
+                                      <Check size={11} />
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteConfirm(null)}
+                                      className="p-1 rounded text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800"
+                                      title="取消"
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => setDeleteConfirm(r.run_id)}
+                                    className="p-1 rounded text-ink-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    title="删除"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                )}
                               </div>
-                            )}
+                            </div>
                           </div>
                         </motion.li>
                       )

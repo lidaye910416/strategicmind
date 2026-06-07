@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Copy } from 'lucide-react'
 import { usePipelineStore, type PipelineStatus } from '../store/pipeline'
 import api from '../services/api'
 import { DASHBOARD, DASHBOARD_ACTIONS, APP_ROUTES } from '../i18n/zh'
@@ -139,6 +139,30 @@ export default function Dashboard() {
       />
       <motion.div variants={stagger(0.07)} initial="initial" animate="animate"
         className="px-6 md:px-10 pb-16 space-y-5 max-w-6xl">
+        {/* P3 PERSIST: 顶部 banner — 复制配置后将打开新上传页 */}
+        {clonedFrom && !clonedFrom.startsWith('__error__') && (
+          <motion.div
+            variants={fadeUp}
+            data-testid="clone-banner"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg
+                       border border-brand-300/60 bg-brand-50/70
+                       dark:bg-brand-950/30 dark:border-brand-800/60
+                       text-brand-800 dark:text-brand-200 text-xs"
+          >
+            <Copy size={14} className="shrink-0" />
+            <span className="font-semibold">{DASHBOARD_ACTIONS.cloneOpenUploadHint}</span>
+            <span className="text-ink-500 dark:text-ink-400">
+              · {DASHBOARD_ACTIONS.cloneSuccessHint}
+            </span>
+            <button
+              onClick={() => setClonedFrom(null)}
+              className="ml-auto text-ink-400 hover:text-ink-700 text-[10px] px-1.5"
+              title="关闭提示"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
         {error && (
           <motion.div variants={fadeUp}
             className="card border-red-300/60 bg-red-50 dark:bg-red-950/30 dark:border-red-900/60

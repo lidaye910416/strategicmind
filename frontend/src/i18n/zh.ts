@@ -360,9 +360,11 @@ export const REPORT_TOC = {
 
 export const DASHBOARD_ACTIONS = {
   cloneSuccessPrefix: '已从历史 run ',
-  cloneSuccessTail: ' 复制配置：时长 / 报告风格 已自动填入',
+  cloneSuccessTail: ' 复制配置成功 — 年限 / 部门 / 外部因素 / 报告风格 已预填',
+  cloneSuccessHint: '请上传新的种子文档以启动新推演（不会复制旧 doc）',
   cloneFailed: (id: string) => `复制配置失败（run: ${id}），请手动配置参数`,
   cloneFailedConsole: '复制配置失败',
+  cloneOpenUploadHint: '将打开新上传页',
 }
 
 export const REPORT_ACTIONS = {
@@ -388,6 +390,27 @@ export const RECENT_RUNS = {
   compareSelectHint: '已选 0 个 — 至少勾 2 个，最多 3 个',
   compareSelected: (n: number) => `已选 ${n} 个`,
   compareDisabledTitle: '对比功能当前已关闭（featureFlags.compareRuns = false）',
+  // P3 PERSIST: 卡片化 UI
+  viewReport: '查看报告',
+  viewReportTitle: '查看该 run 的最终战略报告',
+  configSummary: (y?: number | null, depts?: number, ef?: number) => {
+    const parts: string[] = []
+    if (y) parts.push(`${y} 年`)
+    if (depts) parts.push(`${depts} 部门`)
+    if (ef) parts.push(`${ef} 外部因素`)
+    return parts.length > 0 ? parts.join(' · ') : '默认配置'
+  },
+  configSummaryEmpty: '默认配置',
+  styleBadge: (s?: string | null) => {
+    if (s === 'executive') return '高管'
+    if (s === 'technical') return '技术'
+    if (s === 'narrative') return '叙事'
+    return '默认'
+  },
+  loadingTitle: '加载中…',
+  loadingHint: '正在从 ./data/pipelines/ 读取历史任务',
+  emptyHint: '推演启动后会自动出现在这里，重启后端不丢失',
+  noSummary: '默认配置',
 }
 
 export const PROVIDER = {
