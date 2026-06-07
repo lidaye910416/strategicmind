@@ -493,9 +493,19 @@ class PipelineOrchestrator:
     async def _stage_config_generation(self, run: PipelineRun) -> Dict[str, Any]:
         prev = run.artifacts.get(Stage.PROFILE_GENERATION.value, {})
         agent_dicts = prev.get("agents", [])
+
+        # P2-G3: 先用 user_params 派生 max_rounds（如果 user_params 存在）
+        user_params = run.config.get("user_params") or {}
+        if user_params:
+            years = int(user_params.get("years", 1))
+            time_step = user_params.get("time_step", "month")
+            step_mult = {"year": 1, "quarter": 4, "month": 12}.get(time_step, 12)
+            max_rounds = years * step_mult
+        else:
+            max_rounds = int(run.config.get("max_rounds", 3))
+
         # P4 LOOP: 多年推演需要保证 simulated_hours >= max_rounds * hours_per_round
         # 默认 hours_per_round=6，max_rounds=36 (3年×12月) → simulated_hours 至少 216
-        max_rounds = int(run.config.get("max_rounds", 3))
         hours_per_round = 6  # 与 SimulationLoop 默认一致
         min_sim_hours = max_rounds * hours_per_round
         sim_hours_cfg = int(run.config.get("simulated_hours", 72))
@@ -503,6 +513,7 @@ class PipelineOrchestrator:
             "agents": agent_dicts,
             "max_rounds": max_rounds,
             "simulated_hours": max(sim_hours_cfg, min_sim_hours),
+            "user_params": user_params,  # 透传给下游
         }
         # Best-effort use of StrategicConfigGenerator on a synthesized seed doc
         try:
@@ -510,7 +521,6 @@ class PipelineOrchestrator:
             docs = self._load_seed_documents(doc_ids)
             if docs:
                 gen = StrategicConfigGenerator(config={})
-                user_params = run.config.get("user_params") or {}
                 cfg = gen.generate(
                     docs[0],
                     requirement=run.config.get("requirement", ""),
