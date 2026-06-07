@@ -13,6 +13,8 @@ import { Loader2 } from 'lucide-react'
 
 // 懒加载视图（首屏只装 Dashboard 即可）
 const Dashboard = lazy(() => import('../views/Dashboard'))
+const Home = lazy(() => import('../views/Home'))
+const History = lazy(() => import('../views/History'))
 const Demo = lazy(() => import('../views/Demo'))
 const Simulation = lazy(() => import('../views/Simulation'))
 const Report = lazy(() => import('../views/Report'))
@@ -43,6 +45,8 @@ export default function AppRoutes() {
     <Suspense fallback={<RouteSkeleton />}>
       <Routes>
         <Route path={APP_ROUTES.home} element={<Dashboard />} />
+        <Route path={APP_ROUTES.welcome} element={<Home />} />
+        <Route path={APP_ROUTES.history} element={<History />} />
         <Route path="/demo" element={<Demo />} />
         <Route path="/simulation/:runId" element={<Simulation />} />
         <Route path="/report/:reportId" element={<Report />} />

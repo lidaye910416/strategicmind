@@ -306,13 +306,59 @@ export const CONFIG = {
 
 export const APP_ROUTES = {
   home: '/',
+  welcome: '/welcome',
   workbench: '/workbench',
   workbenchWithRun: (id: string) => `/workbench/${id}`,
+  history: '/history',
   simulation: (id: string) => `/simulation/${id}`,
   report: (id: string) => `/report/${id}`,
   compare: '/compare',
   compareWithRuns: (ids: string[]) => `/compare?runs=${ids.map(encodeURIComponent).join(',')}`,
   notFound: '404 - 页面不存在',
+}
+
+export const NAV = {
+  home: '首页',
+  workbench: '工作台',
+  history: '历史任务',
+}
+
+export const HOME = {
+  badge: 'v0.1 · 战略推演',
+  title1: '上传一份种子文档，',
+  title2: '即刻推演公司未来',
+  subtitle: 'StrategicMind 把公司战略推演拆成 7 步流水线 — 从知识图谱构建，到多回合部门博弈，再到结构化战略报告。',
+  ctaStart: '启动推演 →',
+  ctaStartTitle: '打开工作台，上传种子文档并配置参数',
+  ctaHistory: '查看历史任务',
+  ctaHistoryTitle: '查看所有历史推演任务',
+  feature1Title: '知识图谱',
+  feature1Desc: '从种子文档自动抽取实体与关系，构建公司态势图。',
+  feature2Title: '多回合推演',
+  feature2Desc: '部门 Agent 立场博弈 + 外部市场事件，跨季度推演。',
+  feature3Title: '结构化报告',
+  feature3Desc: '基于完成度自动生成执行摘要 / 技术 / 叙事三种风格。',
+  latestTitle: '最近一次推演',
+  latestEmpty: '尚无完成的任务，去工作台启动第一次推演。',
+  latestCta: '查看完整报告 →',
+}
+
+export const HISTORY = {
+  title: '历史任务',
+  subtitle: '所有推演任务，按更新时间倒序。',
+  searchPlaceholder: '搜索 run_id 或部门…',
+  filterAll: '全部状态',
+  filterCompleted: '已完成',
+  filterRunning: '运行中',
+  filterFailed: '失败',
+  filterPaused: '已暂停',
+  filterCancelled: '已取消',
+  dateAll: '全部时间',
+  dateToday: '今天',
+  date7d: '最近 7 天',
+  date30d: '最近 30 天',
+  emptyFiltered: '当前筛选下没有任务。',
+  resultCount: (n: number) => `共 ${n} 条任务`,
 }
 
 

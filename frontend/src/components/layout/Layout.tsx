@@ -6,7 +6,8 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Sparkles, Sun, Moon, Zap } from 'lucide-react'
+import { Home, Sparkles, Sun, Moon, Zap, History as HistoryIcon, LayoutGrid } from 'lucide-react'
+import { APP_ROUTES, NAV } from '../../i18n/zh'
 
 interface Props { children: ReactNode }
 
@@ -57,8 +58,11 @@ function NavItem({
 export default function Layout({ children }: Props) {
   const [dark, toggleDark] = useDarkMode()
   const location = useLocation()
-  const isActive = (p: string) =>
-    p === '/' ? location.pathname === '/' : location.pathname === p
+  const isActive = (p: string) => {
+    if (p === '/') return location.pathname === '/'
+    if (p === '/workbench') return location.pathname === '/workbench' || /^\/workbench\/[^/]+/.test(location.pathname)
+    return location.pathname === p || location.pathname.startsWith(p + '/')
+  }
   const isDemo = location.pathname === '/demo'
 
   return (
@@ -78,7 +82,7 @@ export default function Layout({ children }: Props) {
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-ink-200/60
                         dark:border-ink-800/60 glass-strong">
-        <Link to="/" className="px-5 h-16 flex items-center gap-3 border-b border-ink-200/60 dark:border-ink-800/60">
+        <Link to={APP_ROUTES.welcome} className="px-5 h-16 flex items-center gap-3 border-b border-ink-200/60 dark:border-ink-800/60">
           <div className="relative w-9 h-9 rounded-xl brand-mark" />
           <div className="leading-none">
             <div className="text-base font-bold tracking-tight">战略智脑</div>
@@ -86,11 +90,13 @@ export default function Layout({ children }: Props) {
           </div>
         </Link>
 
-        <nav className="flex-1 px-3 py-4 overflow-y-auto nice-scroll">
+        <nav className="flex-1 px-3 py-4 overflow-y-auto nice-scroll" aria-label="主导航">
           <div className="px-2 pt-1 pb-2 text-[11px] uppercase tracking-wider text-ink-400 dark:text-ink-500">
             导航
           </div>
-          <NavItem to="/" icon={Home} label="工作台" active={isActive('/')} />
+          <NavItem to={APP_ROUTES.welcome} icon={Home} label={NAV.home} active={isActive(APP_ROUTES.welcome)} />
+          <NavItem to={APP_ROUTES.home} icon={LayoutGrid} label={NAV.workbench} active={isActive(APP_ROUTES.home)} />
+          <NavItem to={APP_ROUTES.history} icon={HistoryIcon} label={NAV.history} active={isActive(APP_ROUTES.history)} />
         </nav>
 
         <div className="px-3 py-3 border-t border-ink-200/60 dark:border-ink-800/60 flex items-center gap-2">
@@ -123,7 +129,7 @@ export default function Layout({ children }: Props) {
 
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 inset-x-0 z-30 h-14 glass-strong border-b border-ink-200/60 dark:border-ink-800/60 flex items-center px-4 gap-3">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to={APP_ROUTES.welcome} className="flex items-center gap-2">
           <div className="relative w-8 h-8 rounded-lg brand-mark" />
           <div className="text-sm font-bold">战略智脑</div>
         </Link>
