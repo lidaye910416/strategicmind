@@ -682,13 +682,8 @@ export default function Workbench() {
                 <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500/20 to-accent-500/20 inline-flex items-center justify-center text-brand-600">
                   <GitBranch size={16} />
                 </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                    {WORKBENCH.stagesTitle}
-                  </div>
-                  <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                    7 步推演流水线
-                  </div>
+                <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
+                  {WORKBENCH.stagesTitle}
                 </div>
               </div>
 
