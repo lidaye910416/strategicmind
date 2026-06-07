@@ -334,7 +334,6 @@ export default function RecentRuns() {
                         <ul className="grid gap-2.5 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
                           {group.runs.map((r) => {
                       const s = STATUS_STYLES[r.status] || STATUS_STYLES.cancelled
-                      const Icon = s.icon
                       const done = r.status === 'completed'
                       const running = r.status === 'running'
                       const isConfirming = deleteConfirm === r.run_id
@@ -356,70 +355,78 @@ export default function RecentRuns() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -10, scale: 0.95 }}
                           transition={{ duration: 0.18 }}
-                          className={`group relative rounded-xl border
+                          className={`group relative flex items-stretch gap-2 rounded-lg border px-2.5 py-2
                                       ${isSelected
                                         ? 'border-brand-400/70 bg-brand-50/40 dark:bg-brand-950/20'
-                                        : 'border-ink-200/60 dark:border-ink-800/60 bg-white/60 dark:bg-ink-900/40'}
-                                      hover:border-brand-300/70 hover:shadow-soft
-                                      transition-all overflow-hidden flex flex-col`}
+                                        : 'border-ink-200/40 dark:border-ink-800/40 bg-white/30 dark:bg-ink-900/20'}
+                                      hover:border-brand-300/70 hover:bg-white/60 dark:hover:bg-ink-900/40
+                                      transition-all`}
                         >
-                          {/* 顶部: 状态色条 + checkbox + 状态徽章 */}
-                          <div className={`h-1 ${s.bar}`} />
+                          {/* checkbox (对比模式) */}
+                          {compareEnabled && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={checkboxDisabled}
+                              onChange={() => toggleSelect(r.run_id)}
+                              title={selectable
+                                ? (isSelected ? '取消选中' : '加入对比')
+                                : (selected.length >= MAX_COMPARE ? `最多 ${MAX_COMPARE} 个` : '仅已完成 run 可对比')}
+                              className="w-4 h-4 mt-2 shrink-0 cursor-pointer
+                                         disabled:cursor-not-allowed disabled:opacity-40
+                                         accent-brand-500"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
 
-                          <div className="p-3.5 flex-1 flex flex-col gap-2.5">
-                            {/* 第一行: checkbox + 状态徽章 (大色块) + 报告风格 */}
-                            <div className="flex items-center gap-2">
-                              {compareEnabled && (
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  disabled={checkboxDisabled}
-                                  onChange={() => toggleSelect(r.run_id)}
-                                  title={selectable
-                                    ? (isSelected ? '取消选中' : '加入对比')
-                                    : (selected.length >= MAX_COMPARE ? `最多 ${MAX_COMPARE} 个` : '仅已完成 run 可对比')}
-                                  className="w-4 h-4 shrink-0 cursor-pointer
-                                             disabled:cursor-not-allowed disabled:opacity-40
-                                             accent-brand-500"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              )}
-                              <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-semibold ${s.bg} ${s.color}`}>
-                                <Icon size={12} /> {s.label}
+                          {/* 状态色点 (左) */}
+                          <div className="flex flex-col items-center gap-1 pt-0.5 w-2 shrink-0">
+                            <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+                            {running && <Activity size={9} className="text-blue-500 animate-pulse" />}
+                          </div>
+
+                          {/* 主信息 */}
+                          <div className="flex-1 min-w-0 flex flex-col gap-1">
+                            {/* 第一行: 状态 label + 摘要 + 相对时间 */}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${s.bg} ${s.color}`}>
+                                {s.label}
                               </span>
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${styleClass}`}
-                                title="报告风格"
+                                className="text-[12px] text-ink-700 dark:text-ink-200 truncate min-w-0"
+                                title={summary}
                               >
-                                {styleLabel(r)}
+                                {summary}
                               </span>
-                              {/* 相对时间 - 大字号，醒目 */}
-                              <span className="ml-auto text-[11px] text-ink-500 font-medium">
+                              <span className="ml-auto text-[10px] text-ink-400 shrink-0 font-medium tabular-nums">
                                 {relTime}
                               </span>
                             </div>
-
-                            {/* 第二行: config 摘要 (主要信息) */}
-                            <div
-                              className="text-[12px] text-ink-700 dark:text-ink-200 leading-relaxed"
-                              title={summary}
-                            >
-                              {summary}
+                            {/* 第二行: 报告风格 + 短 id + 阶段 (仅 running) */}
+                            <div className="flex items-center gap-1.5 text-[10px] text-ink-500">
+                              <span className={`px-1.5 py-0.5 rounded font-medium ${styleClass}`}>
+                                {styleLabel(r)}
+                              </span>
+                              <span className="font-mono text-ink-400">
+                                #{r.run_id.replace(/^run_/, '').slice(0, 8)}
+                              </span>
+                              {running && r.current_stage && (
+                                <>
+                                  <span className="text-ink-300">·</span>
+                                  <span className="truncate">{STAGE_LABELS[r.current_stage] || r.current_stage}</span>
+                                  <span className="text-ink-300">·</span>
+                                  <span className="font-mono font-semibold text-blue-600">{Math.round((r.progress || 0) * 100)}%</span>
+                                </>
+                              )}
+                              {done && (
+                                <span className="ml-auto font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  ✓ 100%
+                                </span>
+                              )}
                             </div>
-
-                            {/* 第三行: 当前阶段 / 进度 (running 时) */}
-                            {running && r.current_stage && (
-                              <div className="text-[10px] text-ink-500 flex items-center gap-1.5">
-                                <Activity size={10} className="text-blue-500" />
-                                <span>{STAGE_LABELS[r.current_stage] || r.current_stage}</span>
-                                <span className="text-ink-300">·</span>
-                                <span className="font-mono">{Math.round((r.progress || 0) * 100)}%</span>
-                              </div>
-                            )}
-
                             {/* 进度条 (running/done) */}
                             {(running || done) && (
-                              <div className="h-1 bg-ink-100/80 dark:bg-ink-800/60 rounded-full overflow-hidden">
+                              <div className="h-0.5 bg-ink-100/80 dark:bg-ink-800/40 rounded-full overflow-hidden">
                                 <div
                                   className={`h-full rounded-full transition-all duration-500 ${
                                     done ? 'bg-emerald-500' : 'bg-blue-500'
@@ -430,44 +437,48 @@ export default function RecentRuns() {
                             )}
                           </div>
 
-                          {/* 底部: 2 个主操作按钮 (始终显示) */}
-                          <div className="flex items-stretch border-t border-ink-200/40 dark:border-ink-800/40">
+                          {/* 操作区: 报告 + 复制 + 删除 */}
+                          <div className="flex items-stretch shrink-0">
                             <Link
                               to={APP_ROUTES.report(r.run_id)}
-                              className="flex-1 inline-flex items-center justify-center gap-1.5
-                                         py-2.5 text-[12px] font-semibold
+                              className="inline-flex items-center justify-center
+                                         w-9 h-9 rounded-l-md border-r border-ink-200/40
                                          text-brand-600 dark:text-brand-400
                                          hover:bg-brand-50 dark:hover:bg-brand-950/30
                                          transition-colors"
                               title={RECENT_RUNS.viewReportTitle}
                             >
-                              <FileText size={13} /> {RECENT_RUNS.viewReport}
+                              <FileText size={14} />
                             </Link>
-                            <div className="w-px bg-ink-200/40 dark:bg-ink-800/40" />
                             <button
                               onClick={() => cloneConfig(r.run_id)}
-                              className="flex-1 inline-flex items-center justify-center gap-1.5
-                                         py-2.5 text-[12px] font-semibold
-                                         text-ink-700 dark:text-ink-200
+                              className="inline-flex items-center justify-center
+                                         w-9 h-9 border-r border-ink-200/40
+                                         text-ink-600 dark:text-ink-300
                                          hover:bg-ink-50 dark:hover:bg-ink-800/60
                                          transition-colors"
                               title={RECENT_RUNS.copyConfigTitle(r.run_id)}
                             >
-                              <Copy size={13} /> {RECENT_RUNS.copyConfig}
+                              <Copy size={14} />
                             </button>
-                            <div className="w-px bg-ink-200/40 dark:bg-ink-800/40" />
                             {isConfirming ? (
                               <button
                                 onClick={() => deleteRun(r.run_id)}
-                                className="px-3 text-rose-600 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 text-[12px] font-semibold transition-colors"
+                                className="inline-flex items-center justify-center
+                                           w-9 h-9 rounded-r-md
+                                           text-rose-600 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100
+                                           transition-colors"
                                 title="确认删除"
                               >
-                                <Check size={13} />
+                                <Check size={14} />
                               </button>
                             ) : (
                               <button
                                 onClick={() => setDeleteConfirm(r.run_id)}
-                                className="px-3 text-ink-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
+                                className="inline-flex items-center justify-center
+                                           w-9 h-9 rounded-r-md
+                                           text-ink-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20
+                                           transition-colors"
                                 title="删除"
                               >
                                 <Trash2 size={12} />
