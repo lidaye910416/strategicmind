@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, Activity, Loader2, RefreshCcw, Inbox, ChevronRight,
   Trash2, X, Check, AlertCircle, Pause, Copy, GitCompare, BarChart3,
+  Sun, Moon, CalendarDays, Archive,
 } from 'lucide-react'
 import api from '../services/api'
 import { APP_ROUTES, STAGE_LABELS, RECENT_RUNS } from '../i18n/zh'
@@ -88,6 +89,37 @@ function summarizeConfig(run: Run): string {
   const depts = Array.isArray(up?.departments) ? up.departments.length : 0
   const ef = Array.isArray(up?.external_factors) ? up.external_factors.length : 0
   return RECENT_RUNS.configSummary(y, depts, ef)
+}
+
+/** 按日期分组 runs（按 updated_at 降序后归入 今天/昨天/本周/更早）*/
+function groupRunsByDate(runs: Run[]): { key: string; label: string; icon: any; runs: Run[] }[] {
+  // 1) 先按 updated_at 降序排序
+  const sorted = [...runs].sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
+
+  // 2) 按"今天/昨天/本周/更早"分桶
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000
+  const yesterdayStart = todayStart - 86400
+  const weekStart = todayStart - 86400 * 7
+
+  const buckets: Record<string, { label: string; icon: any; runs: Run[] }> = {
+    today:     { label: '今天',   icon: Sun,         runs: [] },
+    yesterday: { label: '昨天',   icon: Moon,        runs: [] },
+    week:      { label: '本周',   icon: CalendarDays, runs: [] },
+    earlier:   { label: '更早',   icon: Archive,     runs: [] },
+  }
+  for (const r of sorted) {
+    const t = r.updated_at || 0
+    if (t >= todayStart) buckets.today.runs.push(r)
+    else if (t >= yesterdayStart) buckets.yesterday.runs.push(r)
+    else if (t >= weekStart) buckets.week.runs.push(r)
+    else buckets.earlier.runs.push(r)
+  }
+  // 3) 过滤空桶 + 按顺序输出
+  const order: Array<keyof typeof buckets> = ['today', 'yesterday', 'week', 'earlier']
+  return order
+    .filter((k) => buckets[k].runs.length > 0)
+    .map((k) => ({ key: k, ...buckets[k] }))
 }
 
 function styleLabel(run: Run): string {
@@ -281,9 +313,26 @@ export default function RecentRuns() {
                   <div className="text-[10px]">{RECENT_RUNS.emptyHint}</div>
                 </div>
               ) : (
-                <ul className="grid gap-3 p-3 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+                <div className="px-3 py-3 space-y-4">
                   <AnimatePresence initial={false}>
-                    {runs.map((r) => {
+                    {groupRunsByDate(runs).map((group) => (
+                      <div key={group.key}>
+                        {/* 分组标题：今天 / 昨天 / 本周 / 更早 + 数量 */}
+                        <div className="flex items-center gap-2 mb-2 px-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <group.icon size={13} className="text-ink-500" />
+                            <span className="text-[11px] font-semibold text-ink-700 dark:text-ink-200 uppercase tracking-wider">
+                              {group.label}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-ink-400 font-mono">
+                            {group.runs.length} 次
+                          </span>
+                          <div className="flex-1 h-px bg-ink-200/40 dark:bg-ink-800/40" />
+                        </div>
+                        {/* 该组卡片网格 */}
+                        <ul className="grid gap-2.5 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+                          {group.runs.map((r) => {
                       const s = STATUS_STYLES[r.status] || STATUS_STYLES.cancelled
                       const Icon = s.icon
                       const done = r.status === 'completed'
@@ -428,8 +477,11 @@ export default function RecentRuns() {
                         </motion.li>
                       )
                     })}
+                        </ul>
+                      </div>
+                    ))}
                   </AnimatePresence>
-                </ul>
+                </div>
               )}
             </div>
           </motion.div>
