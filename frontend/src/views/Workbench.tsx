@@ -8,7 +8,7 @@
  * Implements: US-208 推演工作台
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
@@ -52,6 +52,7 @@ export default function Workbench() {
 
   // ---- 状态 ----
   const navigate = useNavigate()
+  const { runId: urlRunId } = useParams<{ runId: string }>()
   const [searchParams] = useSearchParams()
   const [company, setCompany] = useState<CompanyContext | null>(null)
   // P1-19: 阶段/进度/状态全部由 store 派生（SSE 自动推），不再用 local state + 2s 轮询
@@ -63,6 +64,7 @@ export default function Workbench() {
   const pausePipeline = usePipelineStore((s) => s.pause)
   const resumePipeline = usePipelineStore((s) => s.resume)
   const cancelPipeline = usePipelineStore((s) => s.cancel)
+  const hydrateFromRunId = usePipelineStore((s) => s.hydrateFromRunId)
   // P1-8 / P1-11: 快照供 PlatformStatusCards 取 current_round / total_rounds / active_agents
   const snapshot = useSnapshot()
   // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
@@ -76,7 +78,35 @@ export default function Workbench() {
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
   // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+  // P3 PERSIST: 标记 hydrate 状态（用于顶部"恢复中 / 3 秒后看到内容" 提示）
+  const [hydrating, setHydrating] = useState(false)
+  const [hydrateError, setHydrateError] = useState<string | null>(null)
 
+  // ---- P3 PERSIST: 关键 — URL /workbench/:runId 直接刷新恢复 ----
+  // store 的 hydrateFromRunId 内部已实现：retry 3 次 (1s/2s/4s) + 拉 graph/network + 重开 SSE
+  useEffect(() => {
+    if (!urlRunId) return
+    if (urlRunId === runId) return  // store 已有这个 run，跳过
+    const controller = new AbortController()
+    setHydrating(true)
+    setHydrateError(null)
+    const start = Date.now()
+    hydrateFromRunId(urlRunId, controller.signal)
+      .then((ok) => {
+        const elapsed = Date.now() - start
+        // eslint-disable-next-line no-console
+        console.info(`[Workbench] hydrate ${ok ? 'ok' : 'failed'} in ${elapsed}ms`)
+        if (!ok) setHydrateError(`未找到 run ${urlRunId}（3 次重试后仍失败）`)
+      })
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error('[Workbench] hydrate error', e)
+        setHydrateError(String(e?.message || e))
+      })
+      .finally(() => setHydrating(false))
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlRunId])
   // ---- P1-14: URL ?prefill= 预填议题（由 Report 派生或 AgentInterview 跳转而来） ----
   useEffect(() => {
     const prefill = searchParams.get('prefill')
@@ -253,6 +283,31 @@ export default function Workbench() {
             <Link to={APP_ROUTES.home} className="btn-ghost h-9">
               <Home size={14} /> {COMMON.backToDashboard}
             </Link>
+            {hydrating && (
+              <span
+                data-testid="hydrating-badge"
+                className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full
+                           bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60
+                           dark:border-amber-800/60 text-amber-700 dark:text-amber-300
+                           text-[11px] font-semibold"
+                title="正在从后端恢复推演状态（最多 3 次重试）"
+              >
+                <Loader2 size={11} className="animate-spin" />
+                恢复中…
+              </span>
+            )}
+            {hydrateError && !hydrating && (
+              <span
+                data-testid="hydrate-error-badge"
+                className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full
+                           bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60
+                           dark:border-rose-800/60 text-rose-700 dark:text-rose-300
+                           text-[11px] font-semibold"
+                title={hydrateError}
+              >
+                恢复失败
+              </span>
+            )}
             {runId && (
               <span className={`badge-${status}`}>
                 {STATUS_LABELS[status] || status}

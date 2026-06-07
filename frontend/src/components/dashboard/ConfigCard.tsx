@@ -103,7 +103,7 @@ export default function ConfigCard({
           </div>
           <div className="flex items-center gap-1 text-ink-500">
             <Info size={11} />
-            <span>文档需重新上传（旧文档已过期）</span>
+            <span>{DASHBOARD_ACTIONS.cloneSuccessHint}</span>
           </div>
           <button
             onClick={onDismissClone}

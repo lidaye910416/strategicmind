@@ -398,31 +398,131 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 
   /**
    * Hydrate from a runId (e.g. from URL /workbench/:runId).
-   * Fetches the snapshot from REST and opens SSE.
-   * Returns true if the run exists and was loaded.
+   *
+   * P3 PERSIST (G4) — 强鲁棒 hydrate：
+   *   1) GET /api/pipeline/<id> — 失败 retry 3 次 (1s / 2s / 4s 指数退避)
+   *   2) 成功后并行 GET /api/pipeline/<id>/graph-snapshot + /network-frames
+   *      把 graphNodes / graphEdges / simRounds 一次填满（中途刷新恢复不丢进度）
+   *   3) 终态不开 SSE；非终态重新打开 SSE（store 内的 EventSource 已被 router
+   *      ``key={runId}`` remount 流程关掉，这里再开一次保证实时推流）
+   *
+   * 任意外部 AbortSignal 触发会立即取消所有等待并返回 false。
    */
   hydrateFromRunId: async (runId, signal) => {
     if (!runId) return false
-    try {
-      const r = await http.get(`/pipeline/${runId}`, { signal })
-      const data = r.data
-      if (!data || !data.run_id) return false
-      set({
-        runId: data.run_id,
-        status: (data.status as PipelineStatus) || 'idle',
-        currentStage: data.current_stage || 'IDLE',
-        progress: typeof data.progress === 'number' ? data.progress : 0,
-        snapshot: data,
-        error: data.error || null,
-      })
-      // 终态就不开 SSE 了
-      if (!['completed', 'failed', 'cancelled'].includes(data.status)) {
-        _openSSE(data.run_id, get, set)
+
+    // Helper: 包裹一个 timeout 的 sleep，监听外部 signal
+    const sleep = (ms: number) => new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, ms)
+      if (signal) {
+        const onAbort = () => { clearTimeout(t); resolve() }
+        if (signal.aborted) onAbort()
+        else signal.addEventListener('abort', onAbort, { once: true })
       }
-      return true
-    } catch {
+    })
+    const isAborted = () => !!signal?.aborted
+
+    // ---- Step 1: GET /pipeline/<id> 重试 ----
+    const RETRY_DELAYS_MS = [1000, 2000, 4000]  // 3 attempts total
+    let snap: any = null
+    let lastErr: any = null
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      if (isAborted()) return false
+      try {
+        const r = await http.get(`/pipeline/${runId}`, { signal })
+        if (r.data && r.data.run_id) {
+          snap = r.data
+          break
+        }
+        lastErr = new Error('empty payload')
+      } catch (e) {
+        lastErr = e
+      }
+      // 失败：等指数退避再 retry
+      if (attempt < RETRY_DELAYS_MS.length) {
+        await sleep(RETRY_DELAYS_MS[attempt])
+      }
+    }
+    if (!snap) {
+      // 3 次都失败：保留最后一次错误以供上层 toast
+      // eslint-disable-next-line no-console
+      console.warn('[hydrateFromRunId] 3 次 retry 后仍失败', lastErr)
       return false
     }
+
+    // ---- Step 2: 写入 snapshot 字段 ----
+    set({
+      runId: snap.run_id,
+      status: (snap.status as PipelineStatus) || 'idle',
+      currentStage: snap.current_stage || 'IDLE',
+      progress: typeof snap.progress === 'number' ? snap.progress : 0,
+      snapshot: snap,
+      error: snap.error || null,
+    })
+
+    // ---- Step 3: 并行拉 graph-snapshot + network-frames 把 store 填满 ----
+    // 仅在"中途刷新后还想继续看" 的场景有意义，所以非终态 + completed 都拉；
+    // 网络错失败不影响后续 SSE — 降级为 console.warn
+    const fillPromises: Promise<void>[] = []
+    fillPromises.push((async () => {
+      if (isAborted()) return
+      try {
+        const r = await http.get(`/pipeline/${runId}/graph-snapshot`, { signal })
+        const data = r.data || {}
+        const nodes = Array.isArray(data.nodes) ? data.nodes as GraphNodeData[] : []
+        const edges = Array.isArray(data.edges) ? data.edges as GraphEdgeData[] : []
+        if (nodes.length || edges.length) {
+          get().setGraphSnapshot(nodes, edges, {
+            phase: 'completed',
+            nodes: nodes.length,
+            edges: edges.length,
+          })
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[hydrateFromRunId] graph-snapshot 拉取失败（降级）', e)
+      }
+    })())
+    fillPromises.push((async () => {
+      if (isAborted()) return
+      try {
+        const r = await http.get(`/pipeline/${runId}/network-frames`, { signal })
+        const data = r.data || {}
+        const frames = Array.isArray(data.frames) ? data.frames as any[] : []
+        if (frames.length) {
+          // 把后端的 round_result frame 映射到 simRounds（用 SimRound 形状）
+          // 注：appendSimRound 有 round 去重，所以多次 hydrate 不会重复 push
+          for (const f of frames) {
+            get().appendSimRound({
+              round: f.round_num,
+              total_rounds: data.total_rounds,
+              actions_count: f.actions_count ?? (Array.isArray(f.actions) ? f.actions.length : 0),
+              belief_updates_count: Array.isArray(f.belief_updates) ? f.belief_updates.length : 0,
+              propagation_events_count: Array.isArray(f.propagation_events) ? f.propagation_events.length : 0,
+              active_agents: f.active_agents,
+              actions: f.actions,
+              belief_updates: f.belief_updates,
+              propagation_events: f.propagation_events,
+              new_entities: undefined,
+              new_relations: undefined,
+              ts: f.end_time ? f.end_time * 1000 : Date.now(),
+            } as SimRound)
+          }
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[hydrateFromRunId] network-frames 拉取失败（降级）', e)
+      }
+    })())
+    // 等两个 fill 全部完成（任一降级失败都不影响主流程）
+    await Promise.all(fillPromises)
+
+    // ---- Step 4: 非终态重开 SSE ----
+    if (isAborted()) return false
+    if (!['completed', 'failed', 'cancelled'].includes(snap.status)) {
+      _openSSE(snap.run_id, get, set)
+    }
+    return true
   },
 
   addUploadedDoc: (docId) =>

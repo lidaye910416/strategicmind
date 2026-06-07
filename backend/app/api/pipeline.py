@@ -453,20 +453,130 @@ def get_network_frames(run_id: str):
     return jsonify(_read_network_frames(run_id))
 
 
+def _extract_config_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a flat config_summary dict for the runs list view.
+
+    Reads both the new ``user_params`` envelope (G3) and the legacy top-
+    level keys (``simulation_hours``, ``report_style``) so the summary
+    works for runs created before the params refactor.
+    """
+    summary: Dict[str, Any] = {
+        "years": None,
+        "time_step": None,
+        "departments": [],
+        "departments_count": 0,
+        "external_factors_count": 0,
+        "report_style": None,
+        "simulation_hours": None,
+    }
+    if not isinstance(config, dict):
+        return summary
+    user_params = config.get("user_params") or {}
+    if not isinstance(user_params, dict):
+        user_params = {}
+    summary["years"] = (
+        user_params.get("years")
+        or config.get("years")
+    )
+    summary["time_step"] = (
+        user_params.get("time_step")
+        or config.get("time_step")
+    )
+    depts = user_params.get("departments")
+    if isinstance(depts, list):
+        summary["departments"] = [str(d) for d in depts if d]
+    elif isinstance(config.get("departments"), list):
+        summary["departments"] = [str(d) for d in config["departments"] if d]
+    summary["departments_count"] = len(summary["departments"])
+    ef = user_params.get("external_factors")
+    if isinstance(ef, list):
+        summary["external_factors_count"] = len(ef)
+    elif isinstance(ef, str):
+        summary["external_factors_count"] = len(
+            [s for s in ef.replace("\n", ",").split(",") if s.strip()]
+        )
+    summary["report_style"] = (
+        config.get("report_style")
+        or user_params.get("report_style")
+    )
+    sh = config.get("simulation_hours")
+    if sh is None:
+        sh = user_params.get("simulation_hours")
+    summary["simulation_hours"] = sh
+    return summary
+
+
+def _project_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
+    """Project a full run snapshot down to the fields used by the list view.
+
+    Strips the (potentially huge) ``artifacts`` blob but keeps enough
+    metadata for the RecentRuns card UI: status, timestamps, current
+    stage/progress, and a flat ``config_summary`` extracted from the
+    run's ``config`` dict.
+    """
+    if not isinstance(run, dict):
+        return {}
+    return {
+        "run_id": run.get("run_id"),
+        "status": run.get("status"),
+        "current_stage": run.get("current_stage"),
+        "progress": run.get("progress"),
+        "started_at": run.get("started_at"),
+        "updated_at": run.get("updated_at"),
+        "completed_stages": run.get("completed_stages", []),
+        "error": run.get("error"),
+        "config_summary": _extract_config_summary(run.get("config") or {}),
+    }
+
+
 @pipeline_bp.route('/runs', methods=['GET'])
 def list_pipeline_runs():
-    """List all known runs (in-memory + on-disk checkpoints)."""
+    """List all known runs (in-memory + on-disk checkpoints).
+
+    Returns a flat, UI-ready projection of each run with a
+    ``config_summary`` block (years / time_step / departments /
+    external_factors_count / report_style) so the RecentRuns card view
+    can render without re-fetching every run's full config.
+
+    Honors ``?limit=`` (default 20, max 50) for the on-disk scan; the
+    in-memory list is the active set and is always included. Results
+    are sorted by ``updated_at`` desc (newest first).
+    """
     import os
+    try:
+        limit = int(request.args.get("limit", "20"))
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 50))
+
     orch = get_orchestrator()
-    runs = orch.list_runs()
-    # Also pull from disk
+    runs_by_id: Dict[str, Dict[str, Any]] = {}
+    # 1) In-memory runs (live, may still be running)
+    for r in orch.list_runs():
+        rid = r.get("run_id")
+        if rid:
+            runs_by_id[rid] = r
+    # 2) On-disk checkpoints (survive restarts)
     ckpt_dir = orch.checkpoint_dir
     if os.path.isdir(ckpt_dir):
         for f in os.listdir(ckpt_dir):
-            if f.endswith(".json"):
-                run_id = f[:-5]
-                if not any(r.get("run_id") == run_id for r in runs):
-                    snap = orch._load_checkpoint(run_id)
-                    if snap:
-                        runs.append(snap)
-    return jsonify({"runs": runs, "count": len(runs)})
+            if not f.endswith(".json"):
+                continue
+            run_id = f[:-5]
+            if run_id in runs_by_id:
+                continue
+            snap = orch._load_checkpoint(run_id)
+            if snap:
+                runs_by_id[run_id] = snap
+
+    # Project to UI shape and sort by updated_at desc
+    projected = [
+        _project_run_for_list(r) for r in runs_by_id.values()
+        if r.get("run_id")
+    ]
+    projected.sort(
+        key=lambda x: x.get("updated_at") or 0.0,
+        reverse=True,
+    )
+    projected = projected[:limit]
+    return jsonify({"runs": projected, "count": len(projected), "limit": limit})
