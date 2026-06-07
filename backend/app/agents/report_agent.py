@@ -33,6 +33,7 @@ class ReportAgent:
         self,
         simulation_results: Dict[str, Any],
         report_style: str = "executive",
+        user_params: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate a strategic report.
@@ -40,6 +41,8 @@ class ReportAgent:
         Args:
             simulation_results: Results from simulation
             report_style: Style of report (executive/technical/narrative)
+            user_params: Optional user-supplied params (e.g. external_factors
+                and selected_departments) to weave into the prompt.
 
         Returns:
             Generated report text
@@ -48,7 +51,9 @@ class ReportAgent:
         context = await self._gather_context(simulation_results)
 
         # Generate report using LLM
-        prompt = self._build_report_prompt(context, report_style, simulation_results)
+        prompt = self._build_report_prompt(
+            context, report_style, simulation_results, user_params=user_params,
+        )
 
         messages = [{"role": "user", "content": prompt}]
         response = await self.llm_provider.chat(messages)
@@ -154,6 +159,7 @@ class ReportAgent:
         context: str,
         style: str,
         simulation_results: Dict[str, Any],
+        user_params: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Build prompt for report generation"""
         style_instructions = {
@@ -172,10 +178,44 @@ class ReportAgent:
                 "well-structured report for the user."
             )
 
+        # P2-G3 remainder: surface user-supplied external_factors and
+        # selected_departments so the LLM explicitly addresses them in
+        # the report (and the generated .md contains those keywords).
+        user_params = user_params or {}
+        extra_blocks: List[str] = []
+        external_factors = [
+            str(x).strip() for x in (user_params.get("external_factors") or [])
+            if str(x).strip()
+        ]
+        if external_factors:
+            factors_lines = "\n".join(f"- {f}" for f in external_factors)
+            extra_blocks.append(
+                "## 外部因素 (user-specified)\n"
+                "The user explicitly called out the following external "
+                "factors. The report MUST reference each one and discuss "
+                "its impact on strategy, risk, and next steps.\n"
+                f"{factors_lines}"
+            )
+        selected_departments = [
+            str(d).strip() for d in (user_params.get("departments") or [])
+            if str(d).strip()
+        ]
+        if selected_departments:
+            dept_lines = "\n".join(f"- {d}" for d in selected_departments)
+            extra_blocks.append(
+                "## 部门覆盖范围 (user-specified)\n"
+                "The user scoped the analysis to the following departments; "
+                "make sure findings and recommendations cover each.\n"
+                f"{dept_lines}"
+            )
+        extra_section = "\n\n".join(extra_blocks)
+
         return f"""Generate a strategic report based on the following simulation results and context.
 
 Context:
 {context}
+
+{extra_section}
 
 Style: {style_instructions.get(style, style_instructions['executive'])}
 

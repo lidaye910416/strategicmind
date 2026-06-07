@@ -480,13 +480,40 @@ class PipelineOrchestrator:
                     agent_type=types[i % len(types)],
                     influence_weight=0.5 + 0.1 * i,
                 ))
-        return {
-            "agents": [{
+
+        # P2-G3 remainder: append 3 ANALYST slot agents per department so
+        # the PROFILE artifact reflects the user-supplied departments.
+        # Stable id "{dept}_slot_{i}" lets the report/UI reference them.
+        user_params = run.config.get("user_params") or {}
+        departments = user_params.get("departments") or []
+        for dept in departments:
+            for slot in range(3):
+                agents.append(StrategicAgent(
+                    name=f"{dept}-Analyst-{slot+1}",
+                    agent_type=AgentType.ANALYST,
+                    influence_weight=0.5,
+                ))
+
+        # Serialise agents. Department slot agents (the last 3*|departments|
+        # entries) get a "department" field plus a stable "id" tag.
+        slot_offset = len(agents) - 3 * len(departments)
+        agent_dicts: List[Dict[str, Any]] = []
+        for idx, a in enumerate(agents):
+            d: Dict[str, Any] = {
                 "agent_id": a.agent_id,
                 "name": a.name,
                 "type": a.agent_type.value,
                 "influence_weight": a.influence_weight,
-            } for a in agents],
+            }
+            if idx >= slot_offset and departments:
+                slot_idx = idx - slot_offset
+                dept = departments[slot_idx // 3]
+                d["department"] = dept
+                d["id"] = f"{dept}_slot_{slot_idx % 3}"
+            agent_dicts.append(d)
+
+        return {
+            "agents": agent_dicts,
             "count": len(agents),
         }
 
@@ -968,8 +995,15 @@ class PipelineOrchestrator:
             )
         tools = [SearchTool(knowledge_store)]
         report_agent = ReportAgent(tools=tools, llm_provider=self.llm_provider)
+        # P2-G3 remainder: pass user_params so the report surfaces
+        # user-specified external_factors and selected_departments.
+        report_user_params = run.config.get("user_params") or {}
         try:
-            content = await report_agent.generate(sim_results, report_style="executive")
+            content = await report_agent.generate(
+                sim_results,
+                report_style="executive",
+                user_params=report_user_params or None,
+            )
         except Exception as e:
             content = (
                 f"# Strategic Report (degraded)\n\n"
