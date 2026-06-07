@@ -23,6 +23,7 @@ import UploadCard, { type UploadItem } from '../components/dashboard/UploadCard'
 import ConfigCard, { type ReportStyle } from '../components/dashboard/ConfigCard'
 import RunControlBar from '../components/dashboard/RunControlBar'
 import LiveSnapshotSection from '../components/dashboard/LiveSnapshotSection'
+import LatestRunGraph from '../components/dashboard/LatestRunGraph'
 import RecentRuns from '../components/RecentRuns'
 import ProviderPicker from '../components/ProviderPicker'
 import {
@@ -189,8 +190,12 @@ export default function Dashboard() {
             onCancel={cancel} onReset={() => { reset(); setUploads([]) }}
           />
         </motion.div>
-        <motion.div variants={fadeUp}><LiveSnapshotSection runId={runId || ''} status={status} /></motion.div>
         <motion.div variants={fadeUp}><RecentRuns /></motion.div>
+        {/* 无活跃 runId 时挂"上次完成的图谱"; 有 runId 时 LiveSnapshotSection 接管实时态 */}
+        {!runId && (
+          <motion.div variants={fadeUp}><LatestRunGraph /></motion.div>
+        )}
+        <motion.div variants={fadeUp}><LiveSnapshotSection runId={runId || ''} status={status} /></motion.div>
         <div className="pt-6 pb-2 flex items-center justify-center gap-2 text-xs text-ink-400 dark:text-ink-500">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-soft" />
           战略智脑 · StrategicMind · v0.1

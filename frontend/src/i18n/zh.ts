@@ -205,6 +205,11 @@ export const DASHBOARD = {
   errorBox: (msg: string) => `出错了：${msg}`,
   stageTitle: '7 步推演流水线',
   progress: '进度',
+  // 首页 LatestRunGraph: 拉取最新一次 completed run 的图谱
+  latestGraphTitle: '上次完成的图谱',
+  latestGraphLoading: '正在拉取图谱数据…',
+  latestGraphNoHistory: '启动一次推演后，知识图谱将自动展示在这里',
+  latestGraphFailed: (id: string) => `拉取图谱失败（run: ${id}）`,
   // P3-A: 多维度参数化
   years: '模拟年限',
   yearsUnit: (n: number) => `${n} 年`,

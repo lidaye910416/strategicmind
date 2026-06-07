@@ -121,7 +121,7 @@ export default function RecentRuns() {
   const [runs, setRuns] = useState<Run[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState(true)  // 默认折叠
+  const [collapsed, setCollapsed] = useState(false)  // 默认展开，避免用户感知"栏目消失"
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   // PR-3 P2-1：多选 + 对比入口
   const [selected, setSelected] = useState<string[]>([])
@@ -213,7 +213,7 @@ export default function RecentRuns() {
             size={12}
             className={`text-ink-400 transition-transform ${collapsed ? '' : 'rotate-90'}`}
           />
-          <span className="text-[11px] uppercase tracking-wider text-ink-500 dark:text-ink-400 font-semibold">
+          <span className="text-[13px] uppercase tracking-wider text-ink-800 dark:text-ink-100 font-bold">
             历史任务
           </span>
           <span className="text-[10px] text-ink-400">
