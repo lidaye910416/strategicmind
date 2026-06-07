@@ -165,7 +165,7 @@ export default function RecentRuns() {
     setSelected((prev) => prev.filter((id) => !completed.some((r) => r.run_id === id)))
     for (const r of completed) {
       try {
-        await api.delete(`/pipeline/${r.runId}`)
+        await api.delete(`/pipeline/${r.run_id}`)
       } catch (e) { /* 忽略 */ }
     }
   }
