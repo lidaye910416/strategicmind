@@ -340,6 +340,12 @@ export const WORKBENCH = {
   ctaStartNewRound: '用此立场开新一轮推演',
   ctaStartNewRoundTitle: '基于当前决议的立场，作为下一轮推演的初始上下文',
   etaApprox: (mins: number) => `预计还需 ~${mins} 分钟`,
+  // P4 LOOP (G5): "再推 1 年" 跨年推演
+  advanceYear: '再推 1 年',
+  advanceYearTitle: '在当前已完成/失败的 run 基础上再推 1 年（12 回合）',
+  advanceYearRunning: '再推 1 年中…',
+  marketEventTitle: '市场事件',
+  marketEventBadge: '市场',
 }
 
 export const WORKBENCH_SUBNAV = {

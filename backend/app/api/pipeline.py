@@ -350,6 +350,31 @@ def cancel_pipeline(run_id: str):
     return jsonify({"error": "Cannot cancel"}), 400
 
 
+@pipeline_bp.route('/<run_id>/advance-year', methods=['POST'])
+def advance_year(run_id: str):
+    """
+    P4 LOOP (G5): 在已 completed/failed 的 run 上再推 1 年。
+
+    Body: ``{"year_offset": 1}``（默认 1）
+    行为：
+      - 校验 run 当前状态（仅 completed/failed 可推进）
+      - 复用历史 checkpoint 的 agents + 知识图谱
+      - 跑 12 轮（time_step=month）或 4 轮（time_step=quarter）或 1 轮（year）
+      - 每 4 轮触发一次市场季度演化，emit ``market_event``
+      - 每 3 轮 + external_factors 非空 → 注入外部冲击，emit ``shock_injected``
+      - 完成后 emit ``year_advanced`` 终态事件
+    """
+    data = request.get_json(silent=True) or {}
+    year_offset = int(data.get("year_offset", 1))
+    orch = get_orchestrator()
+    result = orch.advance_year(run_id, year_offset=year_offset)
+    if "error" in result and "Cannot advance year" in result["error"]:
+        return jsonify(result), 400
+    if result.get("error") == "Run not found":
+        return jsonify(result), 404
+    return jsonify(result), 202
+
+
 @pipeline_bp.route('/<run_id>/events', methods=['GET'])
 def pipeline_events(run_id: str):
     """SSE endpoint - streams pipeline status updates and live events.
@@ -390,17 +415,19 @@ def pipeline_events(run_id: str):
 
             while True:
                 # 1) Drain any pending live events (non-blocking).
-                if sub_kind == "local":
-                    try:
-                        while True:
-                            evt = sub_q.get_nowait()
-                            yield f"data: {json.dumps(evt, default=str, ensure_ascii=False)}\n\n"
-                    except queue.Empty:
-                        pass
-                # When using the global asyncio bus we still poll the
-                # local fallback subscriptions (they are registered too
-                # via _publish_event's global path) - this is a no-op
-                # when nothing was published.
+                # Works for both "local" (legacy in-process subs) and
+                # "global" (the project-wide EventBus singleton in
+                # backend.services.event_bus). Both expose a thread-safe
+                # ``queue.Queue`` that supports ``get_nowait()``.
+                try:
+                    while True:
+                        evt = sub_q.get_nowait()
+                        yield f"data: {json.dumps(evt, default=str, ensure_ascii=False)}\n\n"
+                except queue.Empty:
+                    pass
+                except Exception:
+                    # Defensive: never let a bad subscriber break SSE.
+                    pass
 
                 # 2) Sleep 0.5s before next snapshot.
                 time.sleep(0.5)
