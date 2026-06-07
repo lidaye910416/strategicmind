@@ -413,6 +413,16 @@ def pipeline_events(run_id: str):
             if snap.get("status") in terminal:
                 return
 
+            # 关键修复：SSE 新订阅时, 立即把历史事件 (subscribe 之前已 emit 但未被该订阅者接收的) 重放一遍。
+            # 否则 GRAPH_BUILDING/SIMULATION 等阶段的事件会被错过，前端看到空图谱。
+            try:
+                bus = _resolve_global_bus()
+                if bus is not None and hasattr(bus, "get_history"):
+                    for hist_frame in (bus.get_history(run_id) or []):
+                        yield f"data: {json.dumps(hist_frame, default=str, ensure_ascii=False)}\n\n"
+            except Exception:
+                pass
+
             while True:
                 # 1) Drain any pending live events (non-blocking).
                 # Works for both "local" (legacy in-process subs) and

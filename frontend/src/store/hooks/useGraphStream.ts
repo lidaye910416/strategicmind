@@ -36,12 +36,16 @@ export function useGraphStream(runId: string | null | undefined, opts: UseGraphS
   const setGraphSnapshot = usePipelineStore((s) => s.setGraphSnapshot)
 
   const lastRunId = useRef<string | null>(null)
+  const lastPhase = useRef<string | null>(null)
+  const lastStage = useRef<string | null>(null)
 
   // 启动时拉一次全量（仅当 store 为空 + runId 变化时）
   useEffect(() => {
     if (!runId) return
     if (lastRunId.current === runId) return
     lastRunId.current = runId
+    lastPhase.current = null
+    lastStage.current = null
 
     // 已有数据（SSE 已经在推）就跳过 REST 补底
     if (storeNodes.length > 0) return
@@ -55,7 +59,7 @@ export function useGraphStream(runId: string | null | undefined, opts: UseGraphS
         setGraphSnapshot(
           (data.nodes || []) as GraphNodeData[],
           (data.edges || []) as GraphEdgeData[],
-          { phase: 'completed', nodes: data.nodes?.length ?? 0, edges: data.edges?.length ?? 0 },
+          { phase: data.current_stage || 'completed', nodes: data.nodes?.length ?? 0, edges: data.edges?.length ?? 0 },
         )
       } catch {
         // 静默：SSE 后续会陆续补上
@@ -66,6 +70,34 @@ export function useGraphStream(runId: string | null | undefined, opts: UseGraphS
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId])
+
+  // 关键修复：当 stage 推进（e.g. SEED_PARSING → GRAPH_BUILDING → ENTITY_EXTRACTION）
+  // 或 graph_progress phase 变化时，重新拉全量 snapshot 补底。
+  // 因为 SSE live_event 链路不稳（多个 stage 的 emit 路径不一致），
+  // 用 stage 推进事件做兜底，确保 store 总是反映后端最新数据。
+  useEffect(() => {
+    if (!runId) return
+    if (lastRunId.current !== runId) return  // 第一次会跑上面那个 effect
+    if (progress.phase === lastPhase.current) return
+    lastPhase.current = progress.phase
+    // 当 phase 进入 graph_building/completed 时拉一次
+    if (!['graph_building', 'completed', 'starting'].includes(progress.phase)) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await http.get(`/pipeline/${runId}/graph-snapshot`)
+        if (cancelled) return
+        const data = r.data || {}
+        setGraphSnapshot(
+          (data.nodes || []) as GraphNodeData[],
+          (data.edges || []) as GraphEdgeData[],
+          { phase: data.current_stage || progress.phase, nodes: data.nodes?.length ?? 0, edges: data.edges?.length ?? 0 },
+        )
+      } catch { /* 静默 */ }
+    })()
+    return () => { cancelled = true }
+  }, [runId, progress.phase])
 
   const source: UseGraphStreamResult['source'] = useMemo(() => {
     if (storeNodes.length > 0 || storeEdges.length > 0) return 'store'

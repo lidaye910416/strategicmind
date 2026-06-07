@@ -1,0 +1,1271 @@
+{
+  "run_id": "adv_year_1",
+  "status": "completed",
+  "current_stage": "COMPLETED",
+  "progress": 1.0,
+  "config": {
+    "user_params": {
+      "years": 1,
+      "time_step": "month",
+      "external_factors": []
+    }
+  },
+  "completed_stages": [],
+  "artifacts": {
+    "SIMULATION_RUNNING": {
+      "current_round": 24,
+      "total_rounds": 24,
+      "round_results": [
+        {
+          "round_num": 1
+        },
+        {
+          "round_num": 2
+        },
+        {
+          "round_num": 3
+        },
+        {
+          "round_num": 4
+        },
+        {
+          "round_num": 5
+        },
+        {
+          "round_num": 6
+        },
+        {
+          "round_num": 7
+        },
+        {
+          "round_num": 8
+        },
+        {
+          "round_num": 9
+        },
+        {
+          "round_num": 10
+        },
+        {
+          "round_num": 11
+        },
+        {
+          "round_num": 12
+        },
+        {
+          "round_num": 1,
+          "start_time": "2026-06-07T13:12:02.201058",
+          "end_time": "2026-06-07T13:12:02.201148",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 1,
+              "timestamp": "2026-06-07T13:12:02.201096",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 1,
+              "timestamp": "2026-06-07T13:12:02.201105",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 1,
+                "timestamp": "2026-06-07T13:12:02.201096",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 1,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 1,
+                "timestamp": "2026-06-07T13:12:02.201105",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 1,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 2,
+          "start_time": "2026-06-07T13:12:02.201156",
+          "end_time": "2026-06-07T13:12:02.201222",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 2,
+              "timestamp": "2026-06-07T13:12:02.201182",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 2,
+              "timestamp": "2026-06-07T13:12:02.201188",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 2,
+                "timestamp": "2026-06-07T13:12:02.201182",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 2,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 2,
+                "timestamp": "2026-06-07T13:12:02.201188",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 2,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 3,
+          "start_time": "2026-06-07T13:12:02.201228",
+          "end_time": "2026-06-07T13:12:02.201292",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 3,
+              "timestamp": "2026-06-07T13:12:02.201252",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 3,
+              "timestamp": "2026-06-07T13:12:02.201257",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 3,
+                "timestamp": "2026-06-07T13:12:02.201252",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 3,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 3,
+                "timestamp": "2026-06-07T13:12:02.201257",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 3,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 4,
+          "start_time": "2026-06-07T13:12:02.201297",
+          "end_time": "2026-06-07T13:12:02.201356",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 4,
+              "timestamp": "2026-06-07T13:12:02.201319",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 4,
+              "timestamp": "2026-06-07T13:12:02.201323",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 4,
+                "timestamp": "2026-06-07T13:12:02.201319",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 4,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 4,
+                "timestamp": "2026-06-07T13:12:02.201323",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 4,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 5,
+          "start_time": "2026-06-07T13:12:02.201372",
+          "end_time": "2026-06-07T13:12:02.201423",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 5,
+              "timestamp": "2026-06-07T13:12:02.201394",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 5,
+              "timestamp": "2026-06-07T13:12:02.201399",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 5,
+                "timestamp": "2026-06-07T13:12:02.201394",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 5,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 5,
+                "timestamp": "2026-06-07T13:12:02.201399",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 5,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 6,
+          "start_time": "2026-06-07T13:12:02.201428",
+          "end_time": "2026-06-07T13:12:02.201487",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 6,
+              "timestamp": "2026-06-07T13:12:02.201450",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 6,
+              "timestamp": "2026-06-07T13:12:02.201454",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 6,
+                "timestamp": "2026-06-07T13:12:02.201450",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 6,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 6,
+                "timestamp": "2026-06-07T13:12:02.201454",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 6,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 7,
+          "start_time": "2026-06-07T13:12:02.201492",
+          "end_time": "2026-06-07T13:12:02.201550",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 7,
+              "timestamp": "2026-06-07T13:12:02.201513",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 7,
+              "timestamp": "2026-06-07T13:12:02.201517",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 7,
+                "timestamp": "2026-06-07T13:12:02.201513",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 7,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 7,
+                "timestamp": "2026-06-07T13:12:02.201517",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 7,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 8,
+          "start_time": "2026-06-07T13:12:02.201554",
+          "end_time": "2026-06-07T13:12:02.201616",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 8,
+              "timestamp": "2026-06-07T13:12:02.201577",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 8,
+              "timestamp": "2026-06-07T13:12:02.201581",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 8,
+                "timestamp": "2026-06-07T13:12:02.201577",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 8,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 8,
+                "timestamp": "2026-06-07T13:12:02.201581",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 8,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 9,
+          "start_time": "2026-06-07T13:12:02.201629",
+          "end_time": "2026-06-07T13:12:02.201689",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 9,
+              "timestamp": "2026-06-07T13:12:02.201651",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 9,
+              "timestamp": "2026-06-07T13:12:02.201656",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 9,
+                "timestamp": "2026-06-07T13:12:02.201651",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 9,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 9,
+                "timestamp": "2026-06-07T13:12:02.201656",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 9,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 10,
+          "start_time": "2026-06-07T13:12:02.201694",
+          "end_time": "2026-06-07T13:12:02.201752",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 10,
+              "timestamp": "2026-06-07T13:12:02.201716",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 10,
+              "timestamp": "2026-06-07T13:12:02.201720",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 10,
+                "timestamp": "2026-06-07T13:12:02.201716",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 10,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 10,
+                "timestamp": "2026-06-07T13:12:02.201720",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 10,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 11,
+          "start_time": "2026-06-07T13:12:02.201756",
+          "end_time": "2026-06-07T13:12:02.201917",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 11,
+              "timestamp": "2026-06-07T13:12:02.201776",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 11,
+              "timestamp": "2026-06-07T13:12:02.201781",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 11,
+                "timestamp": "2026-06-07T13:12:02.201776",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 11,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 11,
+                "timestamp": "2026-06-07T13:12:02.201781",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 11,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        },
+        {
+          "round_num": 12,
+          "start_time": "2026-06-07T13:12:02.201923",
+          "end_time": "2026-06-07T13:12:02.201991",
+          "simulated_hour": 6,
+          "actions": [
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 12,
+              "timestamp": "2026-06-07T13:12:02.201949",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            },
+            {
+              "action_type": "MAKE_STATEMENT",
+              "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "public_description": "stub",
+              "target_ids": [],
+              "private_intent": "stub",
+              "secret_terms": {},
+              "round_num": 12,
+              "timestamp": "2026-06-07T13:12:02.201955",
+              "is_hidden": false,
+              "propagation_channels": [
+                "DIRECT"
+              ],
+              "metadata": {}
+            }
+          ],
+          "belief_updates": [],
+          "propagation_events": [
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 12,
+                "timestamp": "2026-06-07T13:12:02.201949",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "5b65256e-f0da-402b-874d-a947b9ca1796",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 12,
+              "is_public": true
+            },
+            {
+              "action": {
+                "action_type": "MAKE_STATEMENT",
+                "actor_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+                "public_description": "stub",
+                "target_ids": [],
+                "private_intent": "stub",
+                "secret_terms": {},
+                "round_num": 12,
+                "timestamp": "2026-06-07T13:12:02.201955",
+                "is_hidden": false,
+                "propagation_channels": [
+                  "DIRECT"
+                ],
+                "metadata": {}
+              },
+              "channel": "DIRECT",
+              "source_id": "c437aef1-30f7-4bec-8264-a6bd23657de2",
+              "target_ids": [
+                "5b65256e-f0da-402b-874d-a947b9ca1796",
+                "c437aef1-30f7-4bec-8264-a6bd23657de2"
+              ],
+              "content": "stub",
+              "round_num": 12,
+              "is_public": true
+            }
+          ],
+          "active_agents": [
+            "5b65256e-f0da-402b-874d-a947b9ca1796",
+            "c437aef1-30f7-4bec-8264-a6bd23657de2"
+          ],
+          "metadata": {}
+        }
+      ],
+      "sim_config": {
+        "agents": [
+          {
+            "name": "E1",
+            "type": "corporate_exec",
+            "influence_weight": 0.9
+          },
+          {
+            "name": "E2",
+            "type": "analyst",
+            "influence_weight": 0.5
+          }
+        ],
+        "max_rounds": 12,
+        "simulated_hours": 72
+      },
+      "advanced_year": true
+    },
+    "_market_env_snapshot": {
+      "sector_growth_rate": 0.06763496101134764,
+      "market_size_billion": 100.0,
+      "competition_intensity": 0.5,
+      "policy_stance": "NEUTRAL",
+      "policy_pressure": 0.3,
+      "capital_availability": 0.5193652056445758,
+      "interest_rate_level": 0.04,
+      "tech_maturity": 0.6,
+      "innovation_pace": 0.5,
+      "consumer_sentiment": 0.5104685570267897,
+      "customer_price_sensitivity": 0.5,
+      "current_cycle": "PEAK",
+      "cycle_label_cn": "见顶期",
+      "fiscal_quarter": 4,
+      "fiscal_year_offset": 0
+    }
+  },
+  "error": null,
+  "started_at": 1780809122.200921,
+  "updated_at": 1780809122.202019
+}

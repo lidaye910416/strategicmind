@@ -14,7 +14,7 @@ import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
   GitBranch, Users, Database, BookOpen,
   Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
-  FastForward,
+  FastForward, Rocket, Upload,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
@@ -77,7 +77,7 @@ export default function Workbench() {
   const [resolving, setResolving] = useState(false)
   const [simulating, setSimulating] = useState(false)
   const [simResult, setSimResult] = useState<any>(null)
-  const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
+  const [graphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
   // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
 
@@ -106,9 +106,10 @@ export default function Workbench() {
     }
   }, [])
 
-  // ---- 初始化：搭建默认公司 + 加载演示图谱 ----
+  // ---- 初始化：仅在有 runId 时才搭建默认公司（不预先加载 demo 假数据，避免一打开就显示一堆"示例"） ----
   // 来源：C3 P0 #7：用 AbortController 防止组件卸载后的 setState warning
   useEffect(() => {
+    if (!runId) return  // 没 runId 不预创建，避免空 Workbench 看着像 demo
     const controller = new AbortController()
     ;(async () => {
       try {
@@ -122,16 +123,9 @@ export default function Workbench() {
         if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
         console.error('公司初始化失败', e)
       }
-      try {
-        const r = await api.get('/graph/demo-graph', { signal: controller.signal })
-        setGraphData({ nodes: r.data.nodes || [], edges: r.data.edges || [] })
-      } catch (e: any) {
-        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
-        console.error('图谱加载失败', e)
-      }
     })()
     return () => controller.abort()
-  }, [])
+  }, [runId])
 
   // ---- 启动推演（store 派生 + SSE 推流；不再需要本地 simState / 2s 轮询） ----
   // P3-A: 读 store 中 lastRunConfig（即用户在 Dashboard 选的真实配置）—— 不再硬编码 72h
@@ -314,14 +308,37 @@ export default function Workbench() {
         animate="animate"
         className="px-4 md:px-8 max-w-7xl mx-auto space-y-4"
       >
-        {/* ===== 推演说明（让用户知道我们在干什么） ===== */}
-        <motion.div variants={fadeUp}>
-          <SimulationExplainer
-            currentStage={stage}
-            progress={progress}
-            status={status}
-          />
-        </motion.div>
+        {/* ===== 未启动推演时的"就绪"首屏：避免一打开就看见一堆空区块 ===== */}
+        {!runId && (
+          <motion.div
+            variants={fadeUp}
+            className="card p-8 md:p-12 text-center bg-gradient-to-br from-brand-50/60 via-white to-accent-50/30 dark:from-brand-950/30 dark:via-ink-900 dark:to-accent-950/20"
+          >
+            <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 items-center justify-center text-white mb-4 shadow-soft">
+              <Rocket size={28} />
+            </div>
+            <h2 className="text-2xl font-bold text-ink-900 dark:text-white mb-2">
+              {WORKBENCH.idleTitle || '准备就绪'}
+            </h2>
+            <p className="text-sm text-ink-600 dark:text-ink-300 max-w-xl mx-auto mb-6">
+              {WORKBENCH.idleSubtitle || '请到首页上传种子文档并配置推演参数，启动后将自动回到本工作台进行实时监控。'}
+            </p>
+            <Link to={APP_ROUTES.home} className="btn-primary h-10 px-6">
+              <Upload size={14} /> {WORKBENCH.idleCta || '回到首页配置'}
+            </Link>
+          </motion.div>
+        )}
+
+        {/* ===== 有 runId 时, 推演说明仍展示（数据到之前可视） ===== */}
+        {runId && (
+          <motion.div variants={fadeUp}>
+            <SimulationExplainer
+              currentStage={stage}
+              progress={progress}
+              status={status}
+            />
+          </motion.div>
+        )}
 
         {/* ===== 顶部 7 步流水线 Dashboard ===== */}
         <motion.div variants={fadeUp}>
@@ -627,18 +644,30 @@ export default function Workbench() {
           {/* ---------- 右栏：7 步详情 + 实时事件流 ---------- */}
           <motion.div variants={fadeUp} className="lg:col-span-7 space-y-4">
             {/* 部门关系图（力导向） — PR-2 P1-2 锚点 #rel */}
-            {company && (
+            {company && company.departments.length > 0 && (
               <section id="rel" className="scroll-mt-28">
                 <DepartmentGraph company={company} height={400} />
               </section>
             )}
 
             {/* 知识图谱（参考 MiroFish GraphPanel） — PR-2 P1-2 锚点 #graph */}
-            {graphData.nodes.length > 0 && (
+            {graphData.nodes.length > 0 ? (
               <section id="graph" className="scroll-mt-28">
                 <KnowledgeGraph nodes={graphData.nodes} edges={graphData.edges} height={400} />
               </section>
-            )}
+            ) : runId ? (
+              <section id="graph" className="scroll-mt-28">
+                <div className="card p-8 flex flex-col items-center justify-center min-h-[320px] bg-gradient-to-br from-ink-50/30 to-white dark:from-ink-900/40 dark:to-ink-900/20">
+                  <Loader2 size={32} className="text-brand-500 animate-spin mb-3" />
+                  <div className="text-sm font-semibold text-ink-700 dark:text-ink-200">
+                    {WORKBENCH.loadingGraph}
+                  </div>
+                  <div className="text-[10px] text-ink-400 mt-1 font-mono">
+                    {stage} · {Math.round((progress || 0) * 100)}%
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             {/* 智能体采访 — PR-2 P1-2 锚点 #interview */}
             {companyId && (

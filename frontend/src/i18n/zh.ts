@@ -327,6 +327,13 @@ export const WORKBENCH = {
   startTitle: '准备开始推演',
   startDesc: '点击下方按钮启动 7 步全自动推演。推演过程中可暂停 / 继续 / 取消，结束后可查看完整战略报告。',
   start: '启动推演',
+  // Workbench "就绪"首屏（无 runId 时显示）
+  idleTitle: '推演工作台就绪',
+  idleSubtitle: '请到首页上传种子文档并配置年限/部门/外部因素等参数。点击"启动推演"后将自动回到本工作台，实时显示图谱、关系网、推演回合。',
+  idleCta: '回到首页配置',
+  // 起步等待时（runId 有但数据未到）的占位
+  loadingGraph: '正在从知识图谱中检索实体…',
+  loadingNetwork: '正在建立传播关系网…',
   timelineTitle: '实时博弈',
   timelineSubtitle: '实时博弈事件流',
   statMargin: '基准毛利率',
