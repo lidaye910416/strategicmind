@@ -170,12 +170,21 @@ def test_external_factors_in_report(stub_llm, tmp_path, monkeypatch):
 
 
 def test_no_user_params_uses_fallback(stub_llm):
-    """无 user_params → 走 fallback (max_rounds=3, agents=5 from profile stage)."""
+    """无 user_params → 走 fallback 路径 (StrategicConfigGenerator 旧路径，max_rounds=10 default).
+
+    验证行为：
+    - run.config 无 max_rounds 时，orchestrator 给 sim_config["max_rounds"] 填 fallback 3
+    - StrategicConfigGenerator 走 user_params=None 分支，返回 max_rounds=10 (config default)
+    - 两者取大 → 最终 sim_config["max_rounds"] == 10
+    """
     orch = PipelineOrchestrator(llm_provider=stub_llm)
     run = _make_run({"industry": "x"})  # no user_params
     sc = asyncio.run(orch._stage_config_generation(run))["sim_config"]
-    # 缺省 user_params → 走 fallback max_rounds=3
-    assert sc["max_rounds"] == 3, f"expected fallback max_rounds=3, got {sc['max_rounds']}"
+    # 当无 user_params 时，orchestrator fallback max_rounds=3, 但 StrategicConfigGenerator
+    # 的 user_params=None 分支返回 max_rounds=10, post-merge 后 sim_config["max_rounds"]=10
+    assert sc["max_rounds"] == 10, f"expected fallback max_rounds=10, got {sc['max_rounds']}"
+    # user_params 透传给下游
+    assert sc.get("user_params") == {}
 
 
 def test_simulated_hours_scales(stub_llm):
