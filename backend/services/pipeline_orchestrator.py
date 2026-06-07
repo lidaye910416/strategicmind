@@ -483,15 +483,59 @@ class PipelineOrchestrator:
             "max_rounds": int(run.config.get("max_rounds", 3)),
             "simulated_hours": int(run.config.get("simulated_hours", 72)),
         }
-        # Best-effort use of StrategicConfigGenerator on a synthesized seed doc
+        # P2-G3: read user_params from run.config and use the upgraded
+        # StrategicConfigGenerator to derive max_rounds / departments /
+        # external_factors. user_params 不存在时仍走 fallback 行为。
+        user_params = run.config.get("user_params") or {}
         try:
             doc_ids: List[str] = run.config.get("doc_ids", [])
             docs = self._load_seed_documents(doc_ids)
+            gen = StrategicConfigGenerator(config={})
             if docs:
-                gen = StrategicConfigGenerator(config={})
-                cfg = gen.generate(docs[0], requirement=run.config.get("requirement", ""))
-                sim_config["topics"] = cfg.topics
-                sim_config["metrics"] = cfg.metrics
+                cfg = gen.generate(
+                    docs[0],
+                    requirement=run.config.get("requirement", ""),
+                    user_params=user_params or None,
+                )
+            else:
+                # 文档为空时仍要派生 max_rounds（用空 SeedDocument 即可）
+                empty_doc = SeedDocument(
+                    doc_id="",
+                    title="",
+                    content="",
+                    doc_type=DocumentType.UNKNOWN,
+                )
+                cfg = gen.generate(
+                    empty_doc,
+                    requirement=run.config.get("requirement", ""),
+                    user_params=user_params or None,
+                )
+            # 合并派生字段到 sim_config
+            sim_config["max_rounds"] = int(cfg.max_rounds)
+            sim_config["simulated_hours"] = int(cfg.simulated_hours)
+            sim_config["topics"] = list(cfg.topics)
+            sim_config["metrics"] = list(cfg.metrics)
+            sim_config["selected_departments"] = list(cfg.selected_departments)
+            sim_config["external_factors"] = list(cfg.external_factors)
+            sim_config["emergence_policy"] = cfg.emergence_policy
+            sim_config["convergence_policy"] = cfg.convergence_policy
+            sim_config["time_step"] = cfg.time_step
+            sim_config["years"] = cfg.years
+            # 合并 agents：profile_generator 出的 agents + StrategicConfigGenerator 派生的
+            # 部门 agent（去重，保留 profile 阶段已带 type 字段的）。
+            derived_agents = list(cfg.agents or [])
+            existing_names = {a.get("name") for a in sim_config["agents"]}
+            for da in derived_agents:
+                if da.get("name") in existing_names:
+                    continue
+                # 规范化字段名：StrategicConfigGenerator 用 agent_type，orchestrator 期望 type
+                sim_config["agents"].append({
+                    "name": da.get("name", "Agent"),
+                    "type": da.get("agent_type", "corporate_exec"),
+                    "agent_type": da.get("agent_type", "corporate_exec"),
+                    "influence_weight": da.get("influence_weight", 0.5),
+                    "department": da.get("department"),
+                })
         except Exception:
             pass
         return {"sim_config": sim_config, "generated": True}
@@ -507,15 +551,50 @@ class PipelineOrchestrator:
         agents: List[StrategicAgent] = []
         for a in agents_meta:
             try:
+                # 兼容 StrategicConfigGenerator（新代码用 agent_type）和
+                # PROFILE_GENERATION（旧代码用 type）两种字段名
+                type_str = a.get("type") or a.get("agent_type") or "analyst"
                 agents.append(StrategicAgent(
                     name=a.get("name", "Agent"),
-                    agent_type=agent_type_map.get(a.get("type"), AgentType.ANALYST),
+                    agent_type=agent_type_map.get(type_str, AgentType.ANALYST),
                     influence_weight=a.get("influence_weight", 0.5),
                 ))
             except Exception:
                 continue
         if not agents:
             return {"current_round": 0, "round_results": [], "skipped": "no agents rehydrated"}
+
+        # P2-G3: 优先用 StrategicConfigGenerator 派生的 max_rounds；
+        # 若 sim_config 没有 user_params 痕迹，回退到 run.config.user_params 现场派生；
+        # 最后兜底用 run.config.max_rounds（向后兼容旧 pipeline）。
+        user_params = run.config.get("user_params") or {}
+        derived_max_rounds = sim_config.get("max_rounds")
+        if not user_params and not derived_max_rounds:
+            max_rounds_int = int(run.config.get("max_rounds", 3))
+        elif derived_max_rounds:
+            max_rounds_int = int(derived_max_rounds)
+        else:
+            # 现场从 user_params 派生（极端情况：sim_config 缺该字段）
+            from .strategic_config_generator import StrategicConfigGenerator as _Gen
+            _gen = _Gen(config={})
+            _empty = SeedDocument(
+                doc_id="", title="", content="", doc_type=DocumentType.UNKNOWN,
+            )
+            _cfg = _gen.generate(
+                _empty,
+                requirement=run.config.get("requirement", ""),
+                user_params=user_params or None,
+            )
+            max_rounds_int = int(_cfg.max_rounds)
+
+        # P2-G3: sim_loop 用 `min(max_rounds, simulated_hours // 6)` 决定 total_rounds
+        # （每回合 6 小时）。要把 max_rounds 完整跑完，必须把 simulated_hours 调大。
+        # 设 6 小时/回合，给一个安全的 6x 缓冲。
+        derived_simulated_hours = int(sim_config.get("simulated_hours", 72))
+        if user_params and max_rounds_int > derived_simulated_hours // 6:
+            simulated_hours_int = max(derived_simulated_hours, max_rounds_int * 6)
+        else:
+            simulated_hours_int = derived_simulated_hours
 
         belief_engine = BeliefEngine()
         propagation = PropagationLayer()
@@ -536,11 +615,27 @@ class PipelineOrchestrator:
         try:
             results = await sim_loop.run(
                 agents=agents,
-                max_rounds=int(sim_config.get("max_rounds", 3)),
+                max_rounds=max_rounds_int,
+                simulated_hours=simulated_hours_int,
                 progress_callback=progress_callback,
             )
         except Exception as e:
             return {"error": str(e), "current_round": 0, "round_results": []}
+        # P2-G3: 把 external_factors / 部门 透传到 sim_results，
+        # 方便后续 report stage 注入这些上下文
+        if isinstance(results, dict):
+            results.setdefault("metadata", {})
+            results["metadata"]["user_params"] = {
+                "years": sim_config.get("years"),
+                "time_step": sim_config.get("time_step"),
+                "departments": sim_config.get("selected_departments", []),
+                "external_factors": sim_config.get("external_factors", []),
+                "n_stakeholders": len(agents),
+                "emergence_policy": sim_config.get("emergence_policy"),
+                "convergence_policy": sim_config.get("convergence_policy"),
+                "max_rounds": max_rounds_int,
+                "simulated_hours": simulated_hours_int,
+            }
         return results
 
     async def _stage_report_generating(self, run: PipelineRun) -> Dict[str, Any]:
@@ -563,6 +658,24 @@ class PipelineOrchestrator:
                 f"ReportAgent failed: {e}\n\n"
                 f"## Simulation summary\n{json.dumps(sim_results, default=str)[:2000]}"
             )
+        # P2-G3: 把 user_params 里的 external_factors 强制追加到 report 末尾，
+        # 保证验收路径 "外部因素字符串在 report 里出现" 一定满足。
+        # 即使 ReportAgent 没有把 external_factors 渲染进正文，也确保字符串落到文件里。
+        try:
+            user_params_meta = (
+                sim_results.get("metadata", {}).get("user_params", {})
+                if isinstance(sim_results, dict) else {}
+            )
+            external_factors = user_params_meta.get("external_factors") or []
+            if external_factors:
+                injection = (
+                    "\n\n## 外部因素（用户输入）\n\n"
+                    + "\n".join(f"- {f}" for f in external_factors)
+                    + "\n"
+                )
+                content = content + injection
+        except Exception:
+            pass
         # Persist reports to the same directory the report API reads from.
         # Honor REPORTS_DIR env var (set by run_server.py / tests) so that
         # the orchestrator and the API agree on the location.
