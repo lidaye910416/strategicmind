@@ -22,7 +22,7 @@ import {
   Sun, Moon, CalendarDays, Archive,
 } from 'lucide-react'
 import api from '../services/api'
-import { APP_ROUTES, STAGE_LABELS, RECENT_RUNS } from '../i18n/zh'
+import { APP_ROUTES, RECENT_RUNS } from '../i18n/zh'
 import { formatErrorMessage } from '../lib/formatError'
 import { flags } from '../lib/featureFlags'
 
@@ -55,12 +55,6 @@ const STATUS_STYLES: Record<string, { dot: string; bar: string; bg: string; labe
   paused:    { dot: 'bg-amber-500', bar: 'bg-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/30', label: '已暂停', icon: Pause, color: 'text-amber-600' },
   failed:    { dot: 'bg-rose-500', bar: 'bg-rose-500', bg: 'bg-rose-50 dark:bg-rose-950/30', label: '失败', icon: AlertCircle, color: 'text-rose-600' },
   cancelled: { dot: 'bg-ink-400', bar: 'bg-ink-400', bg: 'bg-ink-50 dark:bg-ink-900/30', label: '已取消', icon: X, color: 'text-ink-500' },
-}
-
-const STYLE_BADGE_CLASS: Record<string, string> = {
-  executive: 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300',
-  technical: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  narrative: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
 }
 
 const MAX_COMPARE = 3
@@ -120,11 +114,6 @@ function groupRunsByDate(runs: Run[]): { key: string; label: string; icon: any; 
   return order
     .filter((k) => buckets[k].runs.length > 0)
     .map((k) => ({ key: k, ...buckets[k] }))
-}
-
-function styleLabel(run: Run): string {
-  const s = run.config_summary?.report_style ?? run.config?.report_style
-  return RECENT_RUNS.styleBadge(s)
 }
 
 export default function RecentRuns() {
@@ -334,16 +323,10 @@ export default function RecentRuns() {
                         <ul className="grid gap-2.5 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
                           {group.runs.map((r) => {
                       const s = STATUS_STYLES[r.status] || STATUS_STYLES.cancelled
-                      const done = r.status === 'completed'
-                      const running = r.status === 'running'
                       const isConfirming = deleteConfirm === r.run_id
                       const isSelected = selected.includes(r.run_id)
-                      const selectable = compareEnabled && done
+                      const selectable = compareEnabled && (r.status === 'completed')
                       const checkboxDisabled = !selectable || (!isSelected && selected.length >= MAX_COMPARE)
-                      const style = (r.config_summary?.report_style
-                        || r.config?.report_style
-                        || 'default') as string
-                      const styleClass = STYLE_BADGE_CLASS[style] || 'bg-ink-100 text-ink-600 dark:bg-ink-800 dark:text-ink-300'
                       const summary = summarizeConfig(r)
                       const relTime = formatRelative(r.updated_at)
 
@@ -379,14 +362,15 @@ export default function RecentRuns() {
                             />
                           )}
 
-                          {/* 状态色点 (左) */}
-                          <div className="flex flex-col items-center gap-1 pt-0.5 w-2 shrink-0">
-                            <span className={`w-2 h-2 rounded-full ${s.dot}`} />
-                            {running && <Activity size={9} className="text-blue-500 animate-pulse" />}
-                          </div>
+                          {/* 状态徽章 (唯一指示) — 文字 + 颜色, 无重复色点 / icon */}
+                          <span
+                            className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.bg} ${s.color}`}
+                          >
+                            {s.label}
+                          </span>
 
                           {/* 主信息 */}
-                          <div className="flex-1 min-w-0 flex flex-col gap-1">
+                          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                             {/* 第一行: 状态 label + 摘要 + 相对时间 */}
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${s.bg} ${s.color}`}>
@@ -402,39 +386,6 @@ export default function RecentRuns() {
                                 {relTime}
                               </span>
                             </div>
-                            {/* 第二行: 报告风格 + 短 id + 阶段 (仅 running) */}
-                            <div className="flex items-center gap-1.5 text-[10px] text-ink-500">
-                              <span className={`px-1.5 py-0.5 rounded font-medium ${styleClass}`}>
-                                {styleLabel(r)}
-                              </span>
-                              <span className="font-mono text-ink-400">
-                                #{r.run_id.replace(/^run_/, '').slice(0, 8)}
-                              </span>
-                              {running && r.current_stage && (
-                                <>
-                                  <span className="text-ink-300">·</span>
-                                  <span className="truncate">{STAGE_LABELS[r.current_stage] || r.current_stage}</span>
-                                  <span className="text-ink-300">·</span>
-                                  <span className="font-mono font-semibold text-blue-600">{Math.round((r.progress || 0) * 100)}%</span>
-                                </>
-                              )}
-                              {done && (
-                                <span className="ml-auto font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                                  ✓ 100%
-                                </span>
-                              )}
-                            </div>
-                            {/* 进度条 (running/done) */}
-                            {(running || done) && (
-                              <div className="h-0.5 bg-ink-100/80 dark:bg-ink-800/40 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-500 ${
-                                    done ? 'bg-emerald-500' : 'bg-blue-500'
-                                  }`}
-                                  style={{ width: `${Math.round((r.progress || 0) * 100)}%` }}
-                                />
-                              </div>
-                            )}
                           </div>
 
                           {/* 操作区: 报告 + 复制 + 删除 */}
