@@ -414,6 +414,32 @@ export const WORKBENCH = {
   advanceYearRunning: '再推 1 年中…',
   marketEventTitle: '市场事件',
   marketEventBadge: '市场',
+  // feature1 (feature/history-graph-and-viz): 涌现议题时间线
+  emTopicTitle: '涌现议题',
+  emTopicEmpty: '推演完成后将自动汇集涌现议题',
+  emTopicFilterAll: '全部',
+  emTopicFilterCompany: '公司',
+  emTopicFilterPerson: '人物',
+  emTopicFilterProduct: '产品',
+  emTopicFilterRisk: '风险因子',
+  emTopicJumpHint: '在图谱中查看该实体',
+  // feature2: 图谱轮次 diff
+  graphDiffTitle: '图谱轮次对比',
+  graphDiffEmpty: '完成至少 2 轮推演后查看图谱变化',
+  graphDiffLeft: '旧轮',
+  graphDiffRight: '新轮',
+  graphDiffSummary: (cur: number, prev: number, nodes: number, rels: number) =>
+    `+${nodes} 节点 / +${rels} 关系 · 第 ${cur} 轮 vs 第 ${prev} 轮`,
+  // feature3: 进一步推演 CTA
+  deeperSimTitle: '继续推演',
+  deeperSimSubtitle: (n_entities: number, n_shifts: number) =>
+    `基于本轮涌现的 ${n_entities} 个实体与 ${n_shifts} 次立场漂移，系统为你建议 3 个方向`,
+  deeperSimCtaApply: '应用',
+  deeperSimCtaCustomize: '前往配置页',
+  deeperSimFallback: '重试相同配置',
+  deeperSimRiskCard: '风险因子加强',
+  deeperSimFocusCard: '聚焦关键实体',
+  deeperSimIterateCard: '深化未收敛议题',
 }
 
 export const WORKBENCH_SUBNAV = {

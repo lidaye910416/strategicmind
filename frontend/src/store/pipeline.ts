@@ -148,6 +148,8 @@ interface PipelineState {
   graphProgress: GraphProgress
   /** 推演回合数组（按 round 升序）。SSE round_completed 追加；REST /network-frames 整批 seed */
   simRounds: SimRound[]
+  /** feature2 (GraphDiff): 每轮推演结束时的图谱快照 (round → { nodes, edges }) */
+  graphSnapshots: Record<number, { nodes: GraphNodeData[]; edges: GraphEdgeData[] }>
 
   // ---- SSE 内部句柄（不暴露在公共 state，但放到 store 里便于 dispose 协同） ----
   _sseRef: EventSource | null
@@ -187,6 +189,8 @@ interface PipelineState {
   appendSimRound: (round: SimRound) => void
   /** 重置图谱 + 推演数据（切 run 时调用） */
   resetGraphStream: () => void
+  /** feature2: 在指定 round 拍下当前图谱快照（去重：同 round 只存最早一次） */
+  snapshotGraphAtRound: (round: number) => void
 }
 
 // ---- 内部 SSE 工具（仍在模块作用域，但只通过 store 字段访问） ----
@@ -322,6 +326,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   graphEdges: [],
   graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
   simRounds: [],
+  graphSnapshots: {},
   _sseRef: null,
   _sseCloseTimer: null,
 
@@ -619,7 +624,12 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       // 去重（同一 round 不重复 push）
       if (s.simRounds.some((r) => r.round === round.round)) return s
       const next = [...s.simRounds, round].sort((a, b) => a.round - b.round)
-      return { simRounds: next }
+      // feature2: 同步给该 round 拍一张图谱快照（首次见到该 round 才存）
+      const snap = s.graphSnapshots
+      const newSnaps = snap[round.round]
+        ? snap
+        : { ...snap, [round.round]: { nodes: [...s.graphNodes], edges: [...s.graphEdges] } }
+      return { simRounds: next, graphSnapshots: newSnaps }
     })
   },
 
@@ -629,6 +639,20 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       graphEdges: [],
       graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
       simRounds: [],
+      graphSnapshots: {},
+    })
+  },
+
+  /** feature2: 在指定 round 拍下当前图谱快照（去重：同 round 只存最早一次） */
+  snapshotGraphAtRound: (round) => {
+    set((s) => {
+      if (s.graphSnapshots[round]) return s
+      return {
+        graphSnapshots: {
+          ...s.graphSnapshots,
+          [round]: { nodes: [...s.graphNodes], edges: [...s.graphEdges] },
+        },
+      }
     })
   },
 }))
@@ -657,6 +681,8 @@ export const useGraphProgress = () => usePipelineStore((s) => s.graphProgress)
 export const useSimRounds = () => usePipelineStore((s) => s.simRounds)
 /** 派生：图谱构建阶段（idle/starting/graph_building/completed） */
 export const useGraphPhase = () => usePipelineStore((s) => s.graphProgress.phase)
+// feature2: 图谱快照字典 + 单点查询
+export const useGraphSnapshots = () => usePipelineStore((s) => s.graphSnapshots)
 
 /** FE2 兼容：网络帧（推演回合 + 涌现节点的扁平化视图） */
 export interface NetworkFrameLive {
