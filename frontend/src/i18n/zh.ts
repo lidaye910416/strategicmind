@@ -482,6 +482,10 @@ export const WORKBENCH = {
   entityDanmakuEmpty: '尚无新涌现实体',
   entityTypeLegendTitle: '实体类型图例',
   entityTypeLegendEmpty: '尚无实体',
+  // mirofish-tier: 30s 轮询 toggle (SSE 兜底)
+  realtimeGraphPollingOn: '关闭轮询',
+  realtimeGraphPollingOff: '开启 30s 轮询',
+  realtimeGraphPollingBadge: (n: number) => `轮询 ${Math.round(n / 1000)}s`,
 }
 
 export const WORKBENCH_SUBNAV = {

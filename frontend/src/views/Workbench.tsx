@@ -14,7 +14,7 @@ import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
   GitBranch, Users, Database, BookOpen,
   Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
-  FastForward, Rocket, Upload, Eye,
+  FastForward, Rocket, Upload, Eye, RefreshCw,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
@@ -118,6 +118,10 @@ export default function Workbench() {
   const reportRisks = useReportRisks()
   // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+
+  // ---- mirofish-tier: 30s 轮询 toggle (SSE 断线兜底) ----
+  // 0 = 关闭 (默认), 30000 = 开启
+  const [graphRefreshIntervalMs, setGraphRefreshIntervalMs] = useState<number>(0)
 
   // ---- P1-14: URL ?prefill= 预填议题（由 Report 派生或 AgentInterview 跳转而来） ----
   useEffect(() => {
@@ -765,9 +769,45 @@ export default function Workbench() {
                   live
                   height={400}
                   title={WORKBENCH.realtimeGraphTitle}
+                  refreshIntervalMs={graphRefreshIntervalMs}
                 />
                 {/* mirofish-tier: 实体类型图例 (右上角 overlay) */}
                 <EntityTypeLegend overlay />
+                {/* mirofish-tier: 30s 轮询 toggle (SSE 兜底) */}
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    data-testid="realtime-kg-polling-toggle"
+                    onClick={() =>
+                      setGraphRefreshIntervalMs((v) => (v > 0 ? 0 : 30000))
+                    }
+                    className={`btn-ghost h-8 text-[11px] ${
+                      graphRefreshIntervalMs > 0
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-300/60'
+                        : ''
+                    }`}
+                    title={
+                      graphRefreshIntervalMs > 0
+                        ? '点击关闭 30s 轮询'
+                        : '点击开启 30s 轮询 (SSE 断线兜底)'
+                    }
+                  >
+                    <RefreshCw
+                      size={12}
+                      className={graphRefreshIntervalMs > 0 ? 'animate-spin-soft' : ''}
+                    />
+                    {graphRefreshIntervalMs > 0
+                      ? WORKBENCH.realtimeGraphPollingOn
+                      : WORKBENCH.realtimeGraphPollingOff}
+                  </button>
+                  {graphRefreshIntervalMs > 0 && (
+                    <span
+                      data-testid="realtime-kg-polling-badge"
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-mono font-semibold"
+                    >
+                      {WORKBENCH.realtimeGraphPollingBadge(graphRefreshIntervalMs)}
+                    </span>
+                  )}
+                </div>
               </section>
             ) : runId && !['completed', 'failed', 'cancelled'].includes(status) ? (
               /* 推演进行中: 展示 phase + 节点/边计数 */

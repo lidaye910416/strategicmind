@@ -77,10 +77,18 @@ interface Props {
   height?: number
   title?: string
   fallback?: { nodes: any[]; edges: any[] } | null
+  /**
+   * MiroFish 旧版 SSE 兜底轮询: 当 SSE 断线时, 每 N ms 重拉一次 graph-snapshot
+   * 重新 seedGraph 进 store. 默认 0 = 关闭.
+   * - 0: 不轮询 (仅靠 store SSE 增量推送)
+   * - > 0: 每 N ms 调一次 /api/pipeline/<runId>/graph-snapshot
+   */
+  refreshIntervalMs?: number
 }
 
 export default function RealtimeKnowledgeGraph({
   runId, live = true, height = 480, title = '实时知识图谱', fallback = null,
+  refreshIntervalMs = 0,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<SimNode[]>([])
@@ -149,6 +157,43 @@ export default function RealtimeKnowledgeGraph({
     })()
     return () => { cancelled = true }
   }, [runId, seedGraphAction])
+
+  // ---- MiroFish SSE 兜底轮询: refreshIntervalMs > 0 时, 周期性重新 seedGraph ----
+  // 适用场景: SSE 断线/重连中, 仍想拿到最新图谱. 不阻塞正常 SSE 增量推送.
+  // - 只在 runId 存在 + 间隔 > 0 时启动
+  // - 卸载/间隔变化时严格 clearInterval
+  // - 用 ref 缓存最新 seedGraphAction, 避免 effect 频繁重起
+  const seedGraphRef = useRef(seedGraphAction)
+  useEffect(() => { seedGraphRef.current = seedGraphAction }, [seedGraphAction])
+
+  useEffect(() => {
+    if (!runId) return
+    if (!refreshIntervalMs || refreshIntervalMs <= 0) return
+    let cancelled = false
+    const tick = () => {
+      if (cancelled) return
+      ;(async () => {
+        try {
+          const r = await api.get(`/pipeline/${runId}/graph-snapshot`)
+          if (cancelled) return
+          const data = r.data
+          const rawNodes: GraphNode[] = data.nodes || []
+          const rawEdges: GraphEdge[] = data.edges || []
+          // store: 让其他订阅者看到最新图谱
+          seedGraphRef.current(rawNodes, rawEdges)
+          // 本地: 重 seed SimNode 列表 (保留位置由 syncNodesToStore 处理, 这里直接重置)
+          setNodes(seedNodes(rawNodes))
+          setEdges(seedEdges(rawEdges))
+          setStageLabel(rawNodes.length > 0 ? '图谱就绪' : '等待图谱数据…')
+        } catch {/* ignore polling errors silently */}
+      })()
+    }
+    const id = setInterval(tick, refreshIntervalMs)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [runId, refreshIntervalMs])
 
   const hydrateFromSnapshot = (data: any) => {
     const rawNodes: GraphNode[] = data.nodes || []
