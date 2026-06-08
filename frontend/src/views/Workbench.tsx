@@ -40,6 +40,7 @@ import MarketEnvPulse from '../components/MarketEnvPulse'
 import ShockBanner from '../components/ShockBanner'
 import RoundStartedBanner from '../components/RoundStartedBanner'
 import BeliefShiftFeed from '../components/BeliefShiftFeed'
+import EntityDanmaku from '../components/EntityDanmaku'
 
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
@@ -324,6 +325,8 @@ export default function Workbench() {
       {/* should-tier v3: 红色高亮冲击横幅 + 顶部 round_started 闪现 */}
       <ShockBanner />
       <RoundStartedBanner />
+      {/* should-tier v3: 实体涌现弹幕 (右下角) */}
+      <EntityDanmaku />
 
       {/* Replay 模式横幅: 从 /history 跳进 /workbench/<已完成的 run> 时显示 */}
       {isReplayMode && runId && (

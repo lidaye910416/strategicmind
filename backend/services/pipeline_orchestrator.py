@@ -566,7 +566,21 @@ class PipelineOrchestrator:
             },
             stage=Stage.GRAPH_BUILDING.value,
         )
-        result = await builder.build(documents)
+        # should-tier v3: wire progress_callback so graph_builder_service
+        # can emit entity_emerged per new entity. Callback failure must not
+        # break the build pipeline, so wrap in try/except.
+        def _on_entity_emerged(payload: Dict[str, Any]) -> None:
+            try:
+                self.event_bus.emit(
+                    run.run_id,
+                    "entity_emerged",
+                    payload,
+                    stage=Stage.GRAPH_BUILDING.value,
+                )
+            except Exception:
+                # Swallow: callback failure must not break pipeline
+                pass
+        result = await builder.build(documents, progress_callback=_on_entity_emerged)
         # Emit graph_progress: completed
         self.event_bus.emit(
             run.run_id,

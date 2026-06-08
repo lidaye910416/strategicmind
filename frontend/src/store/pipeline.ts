@@ -954,6 +954,65 @@ export const useGraphPhase = () => usePipelineStore((s) => s.graphProgress.phase
 // feature2: 图谱快照字典 + 单点查询
 export const useGraphSnapshots = () => usePipelineStore((s) => s.graphSnapshots)
 
+// should-tier v3: 实体类型图例 (KnowledgeGraph 增强)
+// MiroFish GraphPanel.vue:285-299 风格 10 色 palette
+export const ENTITY_TYPE_PALETTE: ReadonlyArray<{ type: string; color: string; label: string }> = [
+  { type: 'COMPANY',    color: '#3b82f6', label: '公司' },
+  { type: 'PERSON',     color: '#ec4899', label: '人物' },
+  { type: 'PRODUCT',    color: '#8b5cf6', label: '产品' },
+  { type: 'BUSINESS',   color: '#f59e0b', label: '业务' },
+  { type: 'GOVERNMENT', color: '#ef4444', label: '政府' },
+  { type: 'REGULATION', color: '#64748b', label: '监管' },
+  { type: 'TECH',       color: '#06b6d4', label: '技术' },
+  { type: 'CAPITAL',    color: '#10b981', label: '资本' },
+  { type: 'MARKET',     color: '#f97316', label: '市场' },
+  { type: 'RISK',       color: '#a855f7', label: '风险' },
+] as const
+
+const _ENTITY_TYPE_COLOR_MAP: Record<string, string> = Object.fromEntries(
+  ENTITY_TYPE_PALETTE.map((p) => [p.type, p.color]),
+)
+
+/** 根据 entity type 查 color (未知 type 走 fallback) */
+export function getEntityTypeColor(type: string | undefined | null): string {
+  if (!type) return '#94a3b8'
+  return _ENTITY_TYPE_COLOR_MAP[type] ?? '#94a3b8'
+}
+
+/** 派生：聚合当前 graphNodes 中所有 type + count + color (按出现顺序, 未知 type 走 default) */
+export interface EntityTypeStat {
+  type: string
+  color: string
+  count: number
+}
+
+export const useEntityTypes = (): EntityTypeStat[] => {
+  const nodes = useGraphNodes()
+  const seen: Record<string, EntityTypeStat> = {}
+  // 先按 palette 顺序遍历 (保证图例顺序稳定)
+  for (const p of ENTITY_TYPE_PALETTE) {
+    seen[p.type] = { type: p.type, color: p.color, count: 0 }
+  }
+  for (const n of nodes) {
+    const t = String(n.type ?? 'UNKNOWN')
+    if (!seen[t]) {
+      // 未知 type: 走 default 灰
+      const k = 'UNKNOWN'
+      if (!seen[k]) seen[k] = { type: k, color: '#94a3b8', count: 0 }
+      seen[k].count += 1
+    } else {
+      seen[t].count += 1
+    }
+  }
+  // 过滤掉 count=0, 保留 palette 顺序; UNKNOWN 始终在最后
+  const result: EntityTypeStat[] = []
+  for (const p of ENTITY_TYPE_PALETTE) {
+    if (seen[p.type].count > 0) result.push(seen[p.type])
+  }
+  if (seen.UNKNOWN && seen.UNKNOWN.count > 0) result.push(seen.UNKNOWN)
+  return result
+}
+
 /** FE2 兼容：网络帧（推演回合 + 涌现节点的扁平化视图） */
 export interface NetworkFrameLive {
   round: number
