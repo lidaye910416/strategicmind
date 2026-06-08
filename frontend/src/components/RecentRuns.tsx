@@ -345,7 +345,25 @@ export default function RecentRuns() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -10, scale: 0.95 }}
                           transition={{ duration: 0.18 }}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`打开 ${summary} 的工作台（${s.label}）`}
+                          onClick={(e) => {
+                            // 右侧 action 按钮 / checkbox 触发时不要冒泡到导航
+                            const t = e.target as HTMLElement
+                            if (t.closest('button, a, input, [data-stop-nav]')) return
+                            navigate(APP_ROUTES.workbenchWithRun(r.run_id), { state: { replay: true } })
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              const t = e.target as HTMLElement
+                              if (t.closest('button, a, input, [data-stop-nav]')) return
+                              e.preventDefault()
+                              navigate(APP_ROUTES.workbenchWithRun(r.run_id), { state: { replay: true } })
+                            }
+                          }}
                           className={`group relative flex items-stretch gap-2 rounded-lg border px-2.5 py-2
+                                      cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60
                                       ${isSelected
                                         ? 'border-brand-400/70 bg-brand-50/40 dark:bg-brand-950/20'
                                         : 'border-ink-200/40 dark:border-ink-800/40 bg-white/30 dark:bg-ink-900/20'}

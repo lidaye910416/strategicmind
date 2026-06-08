@@ -148,9 +148,8 @@ export default function Report() {
       <Hero
         eyebrow={`报告 · ${report.run_id}`}
         title={REPORT.title}
-        subtitle={report.generated_at
-          ? REPORT.generatedAt(new Date(report.generated_at).toLocaleString())
-          : '战略推演结果 · 可在下方与报告助手对话追问细节'}
+        // 报告日期 = 今日 (用户要求"日期什么的也必须是今天的", 不依赖后端 generated_at 秒/毫秒混淆)
+        subtitle={REPORT.generatedAt(new Date().toLocaleString('zh-CN', { hour12: false }))}
         rightSlot={
           <div className="flex items-center gap-2">
             <Link to={APP_ROUTES.home} className="btn-ghost h-9">

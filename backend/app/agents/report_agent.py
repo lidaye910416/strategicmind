@@ -5,6 +5,8 @@ Implements US-035 (refactored to use ITool)
 """
 
 import json
+import os
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from backend.interfaces.tool import ITool, ToolResult
@@ -161,27 +163,32 @@ class ReportAgent:
         simulation_results: Dict[str, Any],
         user_params: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Build prompt for report generation"""
-        style_instructions = {
-            "executive": "Provide a concise summary with key recommendations",
-            "technical": "Provide detailed analysis with data supporting each point",
-            "narrative": "Tell a story about the strategic situation and outcomes",
+        """Build prompt for report generation (简体中文 + 今日日期注入)."""
+        style_instructions_zh = {
+            "executive": "高管风格：简洁、有决断力、聚焦战略选择题",
+            "technical": "技术风格：数据详实、逻辑严密、引用具体数字",
+            "narrative": "叙事风格：用故事化语言描绘战略情境与决策",
         }
+
+        # 注入今日日期（不依赖 LLM 自行生成 — 用环境变量允许测试覆盖）
+        _today_str = os.environ.get("STRATEGICMIND_REPORT_DATE_OVERRIDE") \
+                     or datetime.now().strftime("%Y 年 %m 月 %d 日")
 
         # Defensive: if the orchestrator passed nothing useful, fall back
         # to a generic "do your best" instruction so the LLM still
         # produces a meaningful report.
         if not context or context == "No context available":
             context = (
-                "No structured simulation data was available. Use your "
-                "general strategic-analysis knowledge to produce a "
-                "well-structured report for the user."
+                "未提供结构化推演数据。请用通用战略分析知识为用户撰写一份结构合理的报告。"
             )
 
         # P2-G3 remainder: surface user-supplied external_factors and
         # selected_departments so the LLM explicitly addresses them in
         # the report (and the generated .md contains those keywords).
         user_params = user_params or {}
+        company_name = (user_params.get("company_name") or
+                        (user_params.get("departments") and "目标公司") or
+                        "（未指定）")
         extra_blocks: List[str] = []
         external_factors = [
             str(x).strip() for x in (user_params.get("external_factors") or [])
@@ -190,10 +197,8 @@ class ReportAgent:
         if external_factors:
             factors_lines = "\n".join(f"- {f}" for f in external_factors)
             extra_blocks.append(
-                "## 外部因素 (user-specified)\n"
-                "The user explicitly called out the following external "
-                "factors. The report MUST reference each one and discuss "
-                "its impact on strategy, risk, and next steps.\n"
+                "## 外部因素 (用户指定)\n"
+                "用户显式列出了以下外部因素。报告必须逐一引用并讨论其对战略、风险和近期行动的影响。\n"
                 f"{factors_lines}"
             )
         selected_departments = [
@@ -203,33 +208,52 @@ class ReportAgent:
         if selected_departments:
             dept_lines = "\n".join(f"- {d}" for d in selected_departments)
             extra_blocks.append(
-                "## 部门覆盖范围 (user-specified)\n"
-                "The user scoped the analysis to the following departments; "
-                "make sure findings and recommendations cover each.\n"
+                "## 部门覆盖范围 (用户指定)\n"
+                "用户的分析范围限定在以下部门；请确保发现和建议覆盖每个部门。\n"
                 f"{dept_lines}"
             )
         extra_section = "\n\n".join(extra_blocks)
 
-        return f"""Generate a strategic report based on the following simulation results and context.
+        return f"""你是一位资深战略顾问。请基于以下推演数据，用**简体中文**撰写一份战略报告。
 
-Context:
+# 重要语言与格式约束
+- 全篇必须使用简体中文（标题、子标题、正文、列表项）。
+- 不得使用英文短语（如 "Executive Summary"、"Stakeholders"）。
+- 数字单位用中文习惯（如"12 个月"而非 "12 months"，"3-5 个"而非 "3-5"）。
+- 引用 stakeholders / rounds / actions 时使用其中文译名（如"利益相关方"、"推演回合"）。
+
+# 报告元信息
+- 报告日期：{_today_str}（这是报告生成的真实日期，不是推演启动日期，请直接引用）
+- 报告风格：{style_instructions_zh.get(style, style_instructions_zh['executive'])}
+- 公司名称：{company_name}
+
+# 报告结构（必须包含以下章节，使用中文标题）
+
+## 一、执行摘要
+2-3 句浓缩最重要的结论。
+
+## 二、关键发现
+基于推演数据的最重要观察 3-5 条。
+
+## 三、战略建议
+3-5 条具体可执行的建议。
+
+## 四、风险评估
+前 3-5 大风险 + 缓释措施。
+
+## 五、近期行动
+未来 30-90 天的可执行项。
+
+# 推演上下文
+
 {context}
 
 {extra_section}
 
-Style: {style_instructions.get(style, style_instructions['executive'])}
-
-Include the following sections (in markdown):
-1. Executive Summary - 2-3 sentence top-line takeaway
-2. Key Findings - the most important observations from the simulation
-3. Strategic Recommendations - 3-5 concrete recommendations
-4. Risk Assessment - top 3-5 risks with mitigations
-5. Next Steps - actionable items for the next 30-90 days
-
-Important: If the context above contains structured simulation data
-(stakeholders, rounds, actions), reference those specifically. If it
-does not, reason from your general strategic knowledge. In both
-cases, do not refuse to produce a report.
+# 重要提醒
+- 如果上文包含结构化推演数据（stakeholders, rounds, actions），请显式引用其中文译名。
+- 如果没有结构化数据，使用你的通用战略分析知识。
+- 任何情况下都不要拒绝输出报告。
 """
 
     async def chat(self, message: str, context: Dict[str, Any]) -> str:

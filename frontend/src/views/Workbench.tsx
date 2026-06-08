@@ -8,13 +8,13 @@
  * Implements: US-208 推演工作台
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
   GitBranch, Users, Database, BookOpen,
   Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
-  FastForward, Rocket, Upload,
+  FastForward, Rocket, Upload, Eye,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
@@ -53,6 +53,9 @@ export default function Workbench() {
 
   // ---- 状态 ----
   const navigate = useNavigate()
+  const { runId: urlRunId } = useParams<{ runId?: string }>()
+  const location = useLocation()
+  const isReplayIntent = (location.state as { replay?: boolean } | null)?.replay === true
   const [searchParams] = useSearchParams()
   const [company, setCompany] = useState<CompanyContext | null>(null)
   // P1-19: 阶段/进度/状态全部由 store 派生（SSE 自动推），不再用 local state + 2s 轮询
@@ -71,6 +74,13 @@ export default function Workbench() {
   const snapshot = useSnapshot()
   // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
   const lastRunConfig = useLastRunConfig()
+  // store: 加载指定 runId 的快照到 store (snapshot + graph + rounds)
+  const hydrateFromRunId = usePipelineStore((s) => s.hydrateFromRunId)
+  // ---- replay 模式检测: URL 有 :runId 且 status 是终态 ----
+  const isReplayMode = Boolean(
+    urlRunId && isReplayIntent &&
+    ['completed', 'failed', 'cancelled'].includes(status)
+  )
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [topicInput, setTopicInput] = useState<string>('是否加大 AI 研发投入')
   const [resolution, setResolution] = useState<TopicResolution | null>(null)
@@ -106,10 +116,24 @@ export default function Workbench() {
     }
   }, [])
 
+  // ---- replay 模式: URL 有 :runId → 拉快照到 store (hydrates 包含 snapshot + graph + rounds) ----
+  useEffect(() => {
+    if (!urlRunId) return
+    if (urlRunId === runId) return  // 已经在 store 里 (live run 或已 hydrate)
+    const controller = new AbortController()
+    hydrateFromRunId(urlRunId, controller.signal).catch((e) => {
+      if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
+      console.error('hydrate 失败', e)
+    })
+    return () => controller.abort()
+  }, [urlRunId, runId, hydrateFromRunId])
+
   // ---- 初始化：仅在有 runId 时才搭建默认公司（不预先加载 demo 假数据，避免一打开就显示一堆"示例"） ----
   // 来源：C3 P0 #7：用 AbortController 防止组件卸载后的 setState warning
   useEffect(() => {
     if (!runId) return  // 没 runId 不预创建，避免空 Workbench 看着像 demo
+    // replay 模式: 不创建新公司, 公司由 hydrate 路径 (snapshot) 填充
+    if (isReplayMode) return
     const controller = new AbortController()
     ;(async () => {
       try {
@@ -125,7 +149,7 @@ export default function Workbench() {
       }
     })()
     return () => controller.abort()
-  }, [runId])
+  }, [runId, isReplayMode])
 
   // ---- 启动推演（store 派生 + SSE 推流；不再需要本地 simState / 2s 轮询） ----
   // P3-A: 读 store 中 lastRunConfig（即用户在 Dashboard 选的真实配置）—— 不再硬编码 72h
@@ -254,6 +278,33 @@ export default function Workbench() {
             transition={{ duration: 0.4, ease: 'linear' }}
           />
         </div>
+      )}
+
+      {/* Replay 模式横幅: 从 /history 跳进 /workbench/<已完成的 run> 时显示 */}
+      {isReplayMode && runId && (
+        <motion.div
+          data-testid="replay-banner"
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="mx-4 md:mx-10 mt-4 card p-3 flex items-center gap-3
+                     bg-amber-50/70 dark:bg-amber-950/20
+                     border-amber-200/60 dark:border-amber-800/40"
+        >
+          <Eye size={16} className="text-amber-600 dark:text-amber-300 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+              复盘模式 · 只读视图
+            </div>
+            <div className="text-[10px] text-amber-700/80 dark:text-amber-300/70 mt-0.5">
+              正在查看历史任务 <code className="font-mono">{runId}</code> · 推演快照已加载, 控制面板已禁用
+            </div>
+          </div>
+          <Link to={APP_ROUTES.home} className="btn-ghost h-8 text-[11px]">
+            <Home size={12} /> 回到首页
+          </Link>
+          <Link to={APP_ROUTES.report(runId)} className="btn-primary h-8 text-[11px]">
+            <FileText size={12} /> 查看报告
+          </Link>
+        </motion.div>
       )}
 
       <Hero
