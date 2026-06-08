@@ -41,6 +41,7 @@ import ShockBanner from '../components/ShockBanner'
 import RoundStartedBanner from '../components/RoundStartedBanner'
 import BeliefShiftFeed from '../components/BeliefShiftFeed'
 import EntityDanmaku from '../components/EntityDanmaku'
+import EntityTypeLegend from '../components/EntityTypeLegend'
 
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
@@ -758,13 +759,15 @@ export default function Workbench() {
 
             {/* 实时知识图谱（must-tier v1: 替换旧 KnowledgeGraph）— PR-2 P1-2 锚点 #graph */}
             {graphNodes.length > 0 || runId ? (
-              <section id="graph" className="scroll-mt-28">
+              <section id="graph" className="scroll-mt-28 relative">
                 <RealtimeKnowledgeGraph
                   runId={runId}
                   live
                   height={400}
                   title={WORKBENCH.realtimeGraphTitle}
                 />
+                {/* mirofish-tier: 实体类型图例 (右上角 overlay) */}
+                <EntityTypeLegend overlay />
               </section>
             ) : runId && !['completed', 'failed', 'cancelled'].includes(status) ? (
               /* 推演进行中: 展示 phase + 节点/边计数 */

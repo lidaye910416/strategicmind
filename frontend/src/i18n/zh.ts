@@ -481,6 +481,7 @@ export const WORKBENCH = {
   entityDanmakuTitle: '新涌现实体',
   entityDanmakuEmpty: '尚无新涌现实体',
   entityTypeLegendTitle: '实体类型图例',
+  entityTypeLegendEmpty: '尚无实体',
 }
 
 export const WORKBENCH_SUBNAV = {
