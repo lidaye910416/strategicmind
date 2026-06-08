@@ -2,31 +2,30 @@
  * RoundTimeline - 每回合博弈事件流（MiroFish 风格 v2）
  *
  * 升级：
- *   1. 双层轮询：状态（/simulation/<id> 2s）+ 详情（/rounds 4s）
- *   2. 增量去重：用 actionIds Set，newActionsAdded 才 push（避免闪烁）
+ *   1. 数据源改为 useSimRounds() 派生（与全局 SSE 同步），不再走自有 simulationId 轮询
+ *   2. 顶部挂 RoundTimelineChart 双线趋势（行动数 vs 信念更新数）
  *   3. 18 种动作类型专属卡片（覆盖 StrategicAction 全量）
  *   4. 平台分解头：外部博弈（executor/external）/ 内部协同（department/internal）
- *   5. 实时事件横幅：本回合新增 N 条
+ *   5. 实时事件横幅：本回合新增 N 条（从 simRounds 增量推算）
  *   6. 5 种卡片视觉变体：纯文本/引用块/转发/数字/二元表态
  *
  * PR-3 P2 增强：
- *   - P2-2 顶部趋势线 LineChart（recharts，默认关闭 flags.timelineTrendline）
- *   - P2-3 底部 scrubber 重放控件（默认关闭 flags.timelineScrubber）
+ *   - P2-2 顶部趋势线 LineChart（recharts，flags.timelineTrendline 默认开）
+ *   - P2-3 底部 scrubber 重放控件（flags.timelineScrubber 默认关）
  *     拖到 R3 即显示 R1-R3 累计事件；拖动时禁用 SSE/轮询更新（避免抖动）
  */
 import { useEffect, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Users, ChevronRight, Clock, Zap, Loader2, AlertCircle, Activity,
+  Users, ChevronRight, Clock, Zap, Loader2, Activity,
   Globe, Building2, Sparkles,
   Play, Pause, RotateCcw, History,
 } from 'lucide-react'
-import api from '../services/api'
-import { formatErrorMessage } from '../lib/formatError'
 import { flags } from '../lib/featureFlags'
 import { actionMeta, classifyPlatform } from './roundTimelineMeta'
 import ActionCard, { type Action } from './ActionCard'
 import RoundTimelineChart, { buildRoundTimelineChartData } from './RoundTimelineChart'
+import { useSimRounds, useRunId } from '../store/pipeline'
 
 interface RoundData {
   round_num: number
@@ -37,22 +36,15 @@ interface RoundData {
   propagation_events: any[]
   start_time?: string
   end_time?: string
+  ts?: number
 }
 
-interface RoundsResponse {
-  run_id: string
-  total_rounds: number
-  current_round: number
-  rounds: RoundData[]
-  actor_names: Record<string, string>
-}
+interface Props { simulationId?: string }
 
-interface Props { simulationId: string }
-
-export default function RoundTimeline({ simulationId }: Props) {
-  const [data, setData] = useState<RoundsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export default function RoundTimeline({ simulationId: _simulationId }: Props = {}) {
+  // data source: useSimRounds() 派生 — 与全局 SSE / Dashboard / Workbench 同步
+  const simRoundsRaw = useSimRounds()
+  const runId = useRunId()
   const [selectedRound, setSelectedRound] = useState<number>(1)
   const [newCount, setNewCount] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -64,83 +56,42 @@ export default function RoundTimeline({ simulationId }: Props) {
   const [scrubTo, setScrubTo] = useState<number>(0)
   const [scrubbing, setScrubbing] = useState(false)
 
-  // 轻量轮询：状态（2s）
-  useEffect(() => {
-    if (!simulationId) return
-    const tick = async () => {
-      try {
-        await api.get(`/simulation/${simulationId}`)
-      } catch {/* ignore */}
+  // 把 SimRound 转换为本地 RoundData 形状（含 simulated_hour / 兼容旧 action 渲染）
+  const data = useMemo(() => {
+    if (!simRoundsRaw || simRoundsRaw.length === 0) return null
+    const rounds: RoundData[] = simRoundsRaw.map((r) => ({
+      round_num: r.round,
+      simulated_hour: r.round * 6,  // 默认 6h/round（与 SimulationLoop 一致）
+      active_agents: Array.isArray(r.active_agents) ? (r.active_agents as string[]) : [],
+      actions: (r.actions as Action[]) ?? [],
+      belief_updates: r.belief_updates ?? [],
+      propagation_events: r.propagation_events ?? [],
+      ts: r.ts,
+    }))
+    const total_rounds = rounds.length
+    return {
+      run_id: runId ?? 'preview',
+      total_rounds,
+      current_round: total_rounds,
+      rounds,
+      actor_names: {},
     }
-    tick()
-    const t = setInterval(tick, 2000)
-    return () => clearInterval(t)
-  }, [simulationId])
+  }, [simRoundsRaw, runId])
 
-  // 详情轮询：回合+动作（4s）+ 增量去重
-  const load = async () => {
-    try {
-      const fresh = (await api.get(`/simulation/${simulationId}/rounds`)).data
-      setError(null)
-      // 增量去重：基于 action.uniqueId（来自 metadata.id 或组合键）
-      let added = 0
-      if (fresh.rounds && data?.rounds) {
-        const prevIds = new Set<string>()
-        data.rounds.forEach((rd: RoundData) =>
-          rd.actions.forEach((a: Action) => {
-            const id = a.metadata?.id || `${a.actor_id}-${a.action_type}-${a.timestamp}`
-            prevIds.add(id)
-          })
-        )
-        fresh.rounds.forEach((rd: RoundData) =>
-          rd.actions.forEach((a: Action) => {
-            const id = a.metadata?.id || `${a.actor_id}-${a.action_type}-${a.timestamp}`
-            if (!prevIds.has(id)) added++
-          })
-        )
-      }
-      if (added > 0 && !paused && !scrubbing) {
-        setNewCount((c) => c + added)
-        // 3s 后自动归零
-        setTimeout(() => setNewCount(0), 3000)
-      }
-      setData(fresh)
-      if (fresh.rounds?.length > 0 && selectedRound > fresh.rounds.length) {
-        setSelectedRound(fresh.rounds.length)
-      }
-    } catch (e: any) {
-      if (e?.response?.status !== 404) {
-        setError(formatErrorMessage(e))
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  // 推算"新增 N 条" banner：simRounds 数量变化即触发 +N
   useEffect(() => {
-    load()
-    const t = setInterval(load, 4000)
-    return () => clearInterval(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [simulationId, paused, scrubbing])
+    if (!data) return
+    if (paused || scrubbing) return
+    const newActionsCount = data.rounds[data.rounds.length - 1]?.actions.length ?? 0
+    if (newActionsCount > 0) {
+      setNewCount((c) => c + 1)
+      const t = setTimeout(() => setNewCount(0), 3000)
+      return () => clearTimeout(t)
+    }
+    return undefined
+  }, [simRoundsRaw?.length, data, paused, scrubbing])
 
-  if (loading && !data) {
-    return (
-      <div className="card p-6 flex items-center gap-2 text-ink-500 dark:text-ink-400">
-        <Loader2 size={16} className="animate-spin" /> 加载博弈时间线…
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="card p-6 flex items-center gap-2 text-rose-600 dark:text-rose-400">
-        <AlertCircle size={16} /> {error}
-      </div>
-    )
-  }
-
-  if (!data || data.rounds.length === 0) {
+  if (!data) {
     return (
       <div className="card p-8 text-center">
         <div className="w-12 h-12 rounded-xl bg-ink-100 dark:bg-ink-800
@@ -185,7 +136,7 @@ export default function RoundTimeline({ simulationId }: Props) {
     return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5)
   }, [data])
 
-  // P2-2 趋势线数据
+  // P2-2 趋势线数据 (从 useSimRounds 派生)
   const trendData = useMemo(() => buildRoundTimelineChartData(data.rounds), [data.rounds])
 
   const maxScrubRound = data.rounds.length

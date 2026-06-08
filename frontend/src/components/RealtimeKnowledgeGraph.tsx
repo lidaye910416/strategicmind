@@ -51,7 +51,7 @@ const NODE_COLORS: Record<string, string> = {
 interface GraphNode extends GraphNodeLive {}
 interface GraphEdge extends GraphEdgeLive {}
 
-interface SimNode extends GraphNode {
+export interface SimNode extends GraphNode {
   x: number
   y: number
   vx: number
@@ -65,7 +65,7 @@ interface SimNode extends GraphNode {
   type: string
 }
 
-interface SimEdge extends GraphEdge {
+export interface SimEdge extends GraphEdge {
   drawProgress: number
   isNew: boolean
   type: string
@@ -77,10 +77,18 @@ interface Props {
   height?: number
   title?: string
   fallback?: { nodes: any[]; edges: any[] } | null
+  /**
+   * MiroFish 旧版 SSE 兜底轮询: 当 SSE 断线时, 每 N ms 重拉一次 graph-snapshot
+   * 重新 seedGraph 进 store. 默认 0 = 关闭.
+   * - 0: 不轮询 (仅靠 store SSE 增量推送)
+   * - > 0: 每 N ms 调一次 /api/pipeline/<runId>/graph-snapshot
+   */
+  refreshIntervalMs?: number
 }
 
 export default function RealtimeKnowledgeGraph({
   runId, live = true, height = 480, title = '实时知识图谱', fallback = null,
+  refreshIntervalMs = 0,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<SimNode[]>([])
@@ -149,6 +157,43 @@ export default function RealtimeKnowledgeGraph({
     })()
     return () => { cancelled = true }
   }, [runId, seedGraphAction])
+
+  // ---- MiroFish SSE 兜底轮询: refreshIntervalMs > 0 时, 周期性重新 seedGraph ----
+  // 适用场景: SSE 断线/重连中, 仍想拿到最新图谱. 不阻塞正常 SSE 增量推送.
+  // - 只在 runId 存在 + 间隔 > 0 时启动
+  // - 卸载/间隔变化时严格 clearInterval
+  // - 用 ref 缓存最新 seedGraphAction, 避免 effect 频繁重起
+  const seedGraphRef = useRef(seedGraphAction)
+  useEffect(() => { seedGraphRef.current = seedGraphAction }, [seedGraphAction])
+
+  useEffect(() => {
+    if (!runId) return
+    if (!refreshIntervalMs || refreshIntervalMs <= 0) return
+    let cancelled = false
+    const tick = () => {
+      if (cancelled) return
+      ;(async () => {
+        try {
+          const r = await api.get(`/pipeline/${runId}/graph-snapshot`)
+          if (cancelled) return
+          const data = r.data
+          const rawNodes: GraphNode[] = data.nodes || []
+          const rawEdges: GraphEdge[] = data.edges || []
+          // store: 让其他订阅者看到最新图谱
+          seedGraphRef.current(rawNodes, rawEdges)
+          // 本地: 重 seed SimNode 列表 (保留位置由 syncNodesToStore 处理, 这里直接重置)
+          setNodes(seedNodes(rawNodes))
+          setEdges(seedEdges(rawEdges))
+          setStageLabel(rawNodes.length > 0 ? '图谱就绪' : '等待图谱数据…')
+        } catch {/* ignore polling errors silently */}
+      })()
+    }
+    const id = setInterval(tick, refreshIntervalMs)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [runId, refreshIntervalMs])
 
   const hydrateFromSnapshot = (data: any) => {
     const rawNodes: GraphNode[] = data.nodes || []
@@ -347,37 +392,15 @@ export default function RealtimeKnowledgeGraph({
               const a = nodes.find((n) => n.id === edge.source)
               const b = nodes.find((n) => n.id === edge.target)
               if (!a || !b) return null
-              const isHighlighted = hovered === edge.source || hovered === edge.target
-              const dx = b.x - a.x, dy = b.y - a.y
-              const len = Math.sqrt(dx*dx + dy*dy)
-              return (
-                <g key={edge.id} opacity={edge.drawProgress}>
-                  <line
-                    x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                    stroke={isHighlighted ? '#E91E63' : '#94A3B8'}
-                    strokeWidth={isHighlighted ? 2 : 1.2}
-                    strokeOpacity={hovered && !isHighlighted ? 0.12 : 0.65}
-                    strokeDasharray={edge.isNew ? `${len * edge.drawProgress} ${len}` : undefined}
-                  />
-                  {isHighlighted && showLabels && (
-                    <text
-                      x={(a.x + b.x) / 2}
-                      y={(a.y + b.y) / 2 - 6}
-                      textAnchor="middle"
-                      className="fill-ink-700 dark:fill-ink-200"
-                      style={{ fontSize: 10, fontWeight: 600 }}
-                    >
-                      {edge.type}
-                    </text>
-                  )}
-                </g>
-              )
+              return renderEdge(edge, a, b, hovered, showLabels)
             })}
 
             {nodes.map((node) => {
               const isHighlighted = hovered === node.id
               const color = NODE_COLORS[node.type] || NODE_COLORS.DEFAULT
               const r = node.size * node.birth
+              // self-loop 数 (MiroFish v-bind badge)
+              const selfLoopCount = countSelfLoops(edges, node.id)
               return (
                 <g
                   key={node.id}
@@ -397,6 +420,8 @@ export default function RealtimeKnowledgeGraph({
                     stroke={isHighlighted ? '#E91E63' : '#fff'}
                     strokeWidth={isHighlighted ? 3 : 2}
                   />
+                  {/* mirofish-tier: self-loop 数 badge (节点右上角) */}
+                  {renderSelfLoopBadge(r, selfLoopCount)}
                   {showLabels && (
                     <text
                       x={r + 4} y={4}
@@ -483,6 +508,97 @@ export default function RealtimeKnowledgeGraph({
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+/**
+ * 纯函数: 渲染单条边 (MiroFish v-bind 范式)
+ *  - self-loop (source === target) → 节点上方圆环
+ *  - 普通边 → 直线
+ * 导出供测试直接调用, 避免触发 rAF force-simulation
+ */
+export function renderEdge(
+  edge: SimEdge,
+  a: SimNode,
+  b: SimNode,
+  hovered: string | null,
+  showLabels: boolean,
+): JSX.Element {
+  const isSelfLoop = edge.source === edge.target
+  const isHighlighted = hovered === edge.source || hovered === edge.target
+  if (isSelfLoop) {
+    const r = 10
+    return (
+      <g key={edge.id} opacity={edge.drawProgress}>
+        <circle
+          cx={a.x} cy={a.y - (a.size + r + 2)}
+          r={r}
+          fill="none"
+          stroke={isHighlighted ? '#E91E63' : '#94A3B8'}
+          strokeWidth={isHighlighted ? 2 : 1.2}
+          strokeOpacity={0.85}
+          strokeDasharray={edge.isNew ? `${2 * Math.PI * r * edge.drawProgress} ${2 * Math.PI * r}` : undefined}
+        />
+        {isHighlighted && showLabels && (
+          <text
+            x={a.x} y={a.y - (a.size + r + 2) - 4}
+            textAnchor="middle"
+            className="fill-ink-700 dark:fill-ink-200"
+            style={{ fontSize: 9, fontWeight: 600 }}
+          >
+            {edge.type}
+          </text>
+        )}
+      </g>
+    )
+  }
+  const dx = b.x - a.x, dy = b.y - a.y
+  const len = Math.sqrt(dx * dx + dy * dy)
+  return (
+    <g key={edge.id} opacity={edge.drawProgress}>
+      <line
+        x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+        stroke={isHighlighted ? '#E91E63' : '#94A3B8'}
+        strokeWidth={isHighlighted ? 2 : 1.2}
+        strokeOpacity={hovered && !isHighlighted ? 0.12 : 0.65}
+        strokeDasharray={edge.isNew ? `${len * edge.drawProgress} ${len}` : undefined}
+      />
+      {isHighlighted && showLabels && (
+        <text
+          x={(a.x + b.x) / 2}
+          y={(a.y + b.y) / 2 - 6}
+          textAnchor="middle"
+          className="fill-ink-700 dark:fill-ink-200"
+          style={{ fontSize: 10, fontWeight: 600 }}
+        >
+          {edge.type}
+        </text>
+      )}
+    </g>
+  )
+}
+
+/** 纯函数: 计算某节点的自环数 (MiroFish v-bind badge) */
+export function countSelfLoops(edges: { source: string; target: string }[], nodeId: string): number {
+  return edges.filter((e) => e.source === nodeId && e.target === nodeId).length
+}
+
+/** 纯函数: 渲染自环数 badge (节点右上角, count=0 返回 null) */
+export function renderSelfLoopBadge(r: number, selfLoopCount: number): JSX.Element | null {
+  if (selfLoopCount <= 0) return null
+  return (
+    <g transform={`translate(${r - 4} ${-r - 2})`} data-testid="self-loop-badge">
+      <circle r={6} fill="#E91E63" data-testid="self-loop-badge-dot" />
+      <text
+        x={0} y={3}
+        textAnchor="middle"
+        className="fill-white"
+        style={{ fontSize: 8, fontWeight: 700, pointerEvents: 'none' }}
+        data-testid="self-loop-badge-text"
+      >
+        {selfLoopCount}
+      </text>
+    </g>
   )
 }
 

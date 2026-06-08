@@ -22,7 +22,7 @@ import time
 import traceback
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 def _get_upload_folder():
@@ -87,6 +87,122 @@ STAGE_ORDER: List[Stage] = [
     Stage.SIMULATION_RUNNING,
     Stage.REPORT_GENERATING,
 ]
+
+
+# ---------------------------------------------------------------------------
+# should-tier: belief_shift 聚合 + 节流 emit
+# ---------------------------------------------------------------------------
+# 立场漂移阈值: |new_value - old_value| 大于该值才算 "shift" (而非微小波动)
+BELIEF_SHIFT_THRESHOLD: float = 0.10
+# belief_shift 事件 emit 节流窗口 (秒): 同一 (round, agent) 在窗口内重复时跳过
+BELIEF_SHIFT_THROTTLE_SEC: float = 0.5
+# 进程内最近 emit 时刻字典: key=(round, agent_id) → ts
+_belief_shift_last_emit: Dict[Tuple[int, str], float] = {}
+
+
+def _classify_belief_shift(update: Dict[str, Any]) -> float:
+    """从 belief_update dict 中提取 magnitude (|new_value - old_value|) — 用于 shift 判定.
+
+    兼容多种字段名 (旧版 BeliefUpdate / 新版 简化 dict / 浮点 position 字段):
+      - 优先取 position_delta / delta / shift
+      - 否则尝试从 old_position / new_position 计算
+      - 都没有则返回 0 (视为非 shift)
+    """
+    try:
+        for key in ("position_delta", "delta", "shift"):
+            v = update.get(key)
+            if isinstance(v, (int, float)):
+                return abs(float(v))
+        old_v = update.get("old_position")
+        new_v = update.get("new_position")
+        if isinstance(old_v, (int, float)) and isinstance(new_v, (int, float)):
+            return abs(float(new_v) - float(old_v))
+    except Exception:
+        return 0.0
+    return 0.0
+
+
+def _aggregate_belief_shift_count(belief_updates: List[Any]) -> int:
+    """统计本轮 belief_updates 中 magnitude > 阈值的数量 — 填入 SimRound.belief_shift_count."""
+    if not belief_updates:
+        return 0
+    n = 0
+    for u in belief_updates:
+        if not isinstance(u, dict):
+            continue
+        if _classify_belief_shift(u) > BELIEF_SHIFT_THRESHOLD:
+            n += 1
+    return n
+
+
+def _emit_belief_shifts(
+    event_bus: EventBus,
+    run_id: str,
+    round_num: int,
+    belief_updates: List[Any],
+    now: Optional[float] = None,
+) -> int:
+    """Emit belief_shift 事件 — 同一 (round, agent_id) 在节流窗口内最多 1 条.
+
+    Returns: 实际 emit 的事件数.
+    """
+    if not belief_updates:
+        return 0
+    cur = now if now is not None else time.time()
+    n_emitted = 0
+    for u in belief_updates:
+        if not isinstance(u, dict):
+            continue
+        magnitude = _classify_belief_shift(u)
+        if magnitude <= BELIEF_SHIFT_THRESHOLD:
+            continue
+        agent_id = str(
+            u.get("agent_id")
+            or u.get("target_id")
+            or u.get("entity_id")
+            or ""
+        )
+        if not agent_id:
+            continue
+        # 节流: 同一 (round, agent) 在窗口内已发过则跳过
+        key = (round_num, agent_id)
+        last_ts = _belief_shift_last_emit.get(key, 0.0)
+        if cur - last_ts < BELIEF_SHIFT_THROTTLE_SEC:
+            continue
+        _belief_shift_last_emit[key] = cur
+        try:
+            old_v = u.get("old_position")
+            new_v = u.get("new_position")
+            topic = u.get("topic") or u.get("update_source") or "belief"
+            event_bus.emit(
+                run_id, "belief_shift", {
+                    "round": round_num,
+                    "agent_id": agent_id,
+                    "topic": topic,
+                    "old_value": old_v if isinstance(old_v, (int, float)) else None,
+                    "new_value": new_v if isinstance(new_v, (int, float)) else None,
+                    "delta": magnitude,
+                    "magnitude": magnitude,
+                    "ts": cur,
+                },
+                stage=Stage.SIMULATION_RUNNING.value,
+            )
+            n_emitted += 1
+        except Exception:
+            # 单条失败不影响其他 shift
+            pass
+    # 定期清理过期的 throttle 记录 (避免内存泄漏)
+    if len(_belief_shift_last_emit) > 1000:
+        cutoff = cur - 60.0
+        stale = [k for k, v in _belief_shift_last_emit.items() if v < cutoff]
+        for k in stale:
+            _belief_shift_last_emit.pop(k, None)
+    return n_emitted
+
+
+def reset_belief_shift_throttle() -> None:
+    """测试用: 清空节流记录."""
+    _belief_shift_last_emit.clear()
 
 
 @dataclass
@@ -450,7 +566,21 @@ class PipelineOrchestrator:
             },
             stage=Stage.GRAPH_BUILDING.value,
         )
-        result = await builder.build(documents)
+        # should-tier v3: wire progress_callback so graph_builder_service
+        # can emit entity_emerged per new entity. Callback failure must not
+        # break the build pipeline, so wrap in try/except.
+        def _on_entity_emerged(payload: Dict[str, Any]) -> None:
+            try:
+                self.event_bus.emit(
+                    run.run_id,
+                    "entity_emerged",
+                    payload,
+                    stage=Stage.GRAPH_BUILDING.value,
+                )
+            except Exception:
+                # Swallow: callback failure must not break pipeline
+                pass
+        result = await builder.build(documents, progress_callback=_on_entity_emerged)
         # Emit graph_progress: completed
         self.event_bus.emit(
             run.run_id,
@@ -692,16 +822,74 @@ class PipelineOrchestrator:
 
         def _on_progress(evt: Dict[str, Any]) -> None:
             """progress_callback: emit round_progress + per-N-round market/shock side effects."""
-            # 1) Always emit round_progress (back-compat)
-            self.event_bus.emit(
-                run_id, "round_progress", evt,
-                stage=Stage.SIMULATION_RUNNING.value,
-            )
-            # 2) P4 LOOP: 每 4 轮演化一次市场（季度）
             try:
                 round_num = int(evt.get("round") or 0)
             except Exception:
                 round_num = 0
+            # 0) Emit round_started (新事件) — 每轮开始时让前端 banner 闪现
+            # 注意: progress_callback 在每轮 done 后才触发, 故此事件在每轮结束时发送
+            # 用于驱动"Round N 完成"提示 (区别于 round_completed 的"快照"语义)
+            # 1) Always emit round_progress (back-compat — 含 progress 字段)
+            try:
+                self.event_bus.emit(
+                    run_id, "round_progress", evt,
+                    stage=Stage.SIMULATION_RUNNING.value,
+                )
+            except Exception:
+                pass  # never let SSE emit failure break simulation
+
+            # 2) Emit round_completed (新事件 — 不带 progress 字段, 仅快照)
+            # payload: {round, total_rounds, actions_count, belief_updates_count,
+            #           belief_shift_count, propagation_events_count, new_entities, new_relations, ts}
+            belief_updates_list = evt.get("belief_updates") or []
+            belief_shift_count = _aggregate_belief_shift_count(belief_updates_list)
+            try:
+                rc_payload: Dict[str, Any] = {
+                    "round": round_num,
+                    "total_rounds": evt.get("total_rounds"),
+                    "actions_count": len(evt.get("actions") or []),
+                    "belief_updates_count": len(belief_updates_list),
+                    "belief_shift_count": belief_shift_count,
+                    "propagation_events_count": len(evt.get("propagation_events") or []),
+                    "actions": evt.get("actions"),
+                    "belief_updates": belief_updates_list,
+                    "propagation_events": evt.get("propagation_events"),
+                    "new_entities": evt.get("new_entities"),
+                    "new_relations": evt.get("new_relations"),
+                    "ts": time.time(),
+                }
+                self.event_bus.emit(
+                    run_id, "round_completed", rc_payload,
+                    stage=Stage.SIMULATION_RUNNING.value,
+                )
+            except Exception:
+                pass  # never let SSE emit failure break simulation
+
+            # 2.5) Emit belief_shift (新事件 — 每条 belief shift 一帧, 节流到 500ms 内最多 1 条)
+            # 前端 BeliefShiftFeed 消费; SimRound.belief_shift_count 字段填充靠上方聚合
+            try:
+                _emit_belief_shifts(
+                    self.event_bus, run_id, round_num, belief_updates_list,
+                )
+            except Exception:
+                pass
+
+            # 3) Emit round_started (新事件 — 用于下一轮的 banner 闪现)
+            # 与 round_completed 配对 — 一个回合"开始/完成"双通知
+            try:
+                if round_num > 0:
+                    self.event_bus.emit(
+                        run_id, "round_started", {
+                            "round": round_num,
+                            "total_rounds": evt.get("total_rounds"),
+                            "ts": time.time(),
+                        },
+                        stage=Stage.SIMULATION_RUNNING.value,
+                    )
+            except Exception:
+                pass
+
+            # 4) P4 LOOP: 每 4 轮演化一次市场（季度）
             if round_num > 0 and round_num % 4 == 0:
                 try:
                     market_env.evolve_quarter()
@@ -710,7 +898,7 @@ class PipelineOrchestrator:
                 except Exception:
                     # Never let a market-evolution failure break the simulation
                     pass
-            # 3) P4 LOOP: 每 3 轮 + 外部因素非空 → 注入 shock
+            # 5) P4 LOOP: 每 3 轮 + 外部因素非空 → 注入 shock
             if (
                 round_num > 0
                 and round_num % 3 == 0
@@ -941,10 +1129,58 @@ class PipelineOrchestrator:
                 global_round = start_round + max(0, local_n - 1)
                 evt2 = dict(evt)
                 evt2["round"] = global_round
-                self.event_bus.emit(
-                    run_id, "round_progress", evt2,
-                    stage=Stage.SIMULATION_RUNNING.value,
-                )
+                # 1) round_progress (back-compat)
+                try:
+                    self.event_bus.emit(
+                        run_id, "round_progress", evt2,
+                        stage=Stage.SIMULATION_RUNNING.value,
+                    )
+                except Exception:
+                    pass
+                # 2) round_completed (新事件)
+                try:
+                    belief_updates_list = evt2.get("belief_updates") or []
+                    rc_payload: Dict[str, Any] = {
+                        "round": global_round,
+                        "total_rounds": evt2.get("total_rounds"),
+                        "actions_count": len(evt2.get("actions") or []),
+                        "belief_updates_count": len(belief_updates_list),
+                        "belief_shift_count": _aggregate_belief_shift_count(belief_updates_list),
+                        "propagation_events_count": len(evt2.get("propagation_events") or []),
+                        "actions": evt2.get("actions"),
+                        "belief_updates": belief_updates_list,
+                        "propagation_events": evt2.get("propagation_events"),
+                        "new_entities": evt2.get("new_entities"),
+                        "new_relations": evt2.get("new_relations"),
+                        "ts": time.time(),
+                    }
+                    self.event_bus.emit(
+                        run_id, "round_completed", rc_payload,
+                        stage=Stage.SIMULATION_RUNNING.value,
+                    )
+                except Exception:
+                    pass
+                # 2.5) belief_shift (新事件 — 节流)
+                try:
+                    _emit_belief_shifts(
+                        self.event_bus, run_id, global_round,
+                        evt2.get("belief_updates") or [],
+                    )
+                except Exception:
+                    pass
+                # 3) round_started (新事件)
+                try:
+                    if global_round > 0:
+                        self.event_bus.emit(
+                            run_id, "round_started", {
+                                "round": global_round,
+                                "total_rounds": evt2.get("total_rounds"),
+                                "ts": time.time(),
+                            },
+                            stage=Stage.SIMULATION_RUNNING.value,
+                        )
+                except Exception:
+                    pass
                 if local_n > 0 and local_n % 4 == 0:
                     try:
                         market_env.evolve_quarter()

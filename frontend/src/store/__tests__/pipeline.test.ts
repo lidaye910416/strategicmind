@@ -40,6 +40,11 @@ function reset() {
     graphEdges: [],
     graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
     simRounds: [],
+    // must-tier v2: 重置实时事件队列
+    marketEvents: [],
+    recentShocks: [],
+    yearAdvanced: null,
+    reportRisks: [],
     _sseRef: null,
     _sseCloseTimer: null,
   } as any)
@@ -170,5 +175,81 @@ describe('usePipelineStore', () => {
     expect(rounds).toHaveLength(1)
     expect(rounds[0].round).toBe(1)
     expect(rounds[0].actions_count).toBe(7)
+  })
+
+  // ---- must-tier v2: 新 SSE 事件 handler 测试 ----
+
+  it('appendMarketEvent 推入队列, 保持最新 30 条 + 倒序 (新→旧)', () => {
+    const { appendMarketEvent } = usePipelineStore.getState()
+    // 推 35 条
+    for (let i = 0; i < 35; i++) {
+      appendMarketEvent({ type: 'M', description: `e${i}`, ts: 1000 + i })
+    }
+    const st = usePipelineStore.getState()
+    expect(st.marketEvents).toHaveLength(30)  // 截断到 30
+    expect(st.marketEvents[0].description).toBe('e34')  // 最新在前
+    expect(st.marketEvents[29].description).toBe('e5')   // 最旧保留
+  })
+
+  it('appendShock 推入队列, 保持最新 5 条', () => {
+    const { appendShock } = usePipelineStore.getState()
+    for (let i = 0; i < 8; i++) {
+      appendShock({ factor_name: `shock${i}`, severity: 0.5, ts: 1000 + i })
+    }
+    const st = usePipelineStore.getState()
+    expect(st.recentShocks).toHaveLength(5)
+    expect(st.recentShocks[0].factor_name).toBe('shock7')  // 最新
+  })
+
+  it('setYearAdvanced / clearYearAdvanced banner 显隐', () => {
+    const { setYearAdvanced, clearYearAdvanced } = usePipelineStore.getState()
+    expect(usePipelineStore.getState().yearAdvanced).toBeNull()
+    setYearAdvanced({ year: 1, rounds_added: 12, ts: 1000 })
+    expect(usePipelineStore.getState().yearAdvanced).toMatchObject({ year: 1, rounds_added: 12 })
+    clearYearAdvanced()
+    expect(usePipelineStore.getState().yearAdvanced).toBeNull()
+  })
+
+  it('SSE 收到 market_event → appendMarketEvent 触发', () => {
+    usePipelineStore.getState().setRunId('r-sse-me')
+    const es: any = (usePipelineStore.getState() as any)._sseRef
+    es.onmessage({
+      data: JSON.stringify({
+        type: 'live_event',
+        event: { type: 'market_event', data: { type: 'MARKET_UP', industry: 'tech', gdp_growth: 0.8, description: '上涨' } },
+      }),
+    })
+    const evs = usePipelineStore.getState().marketEvents
+    expect(evs).toHaveLength(1)
+    expect(evs[0]).toMatchObject({ type: 'MARKET_UP', industry: 'tech', gdp_growth: 0.8 })
+  })
+
+  it('SSE 收到 shock_injected → appendShock 触发', () => {
+    usePipelineStore.getState().setRunId('r-sse-sh')
+    const es: any = (usePipelineStore.getState() as any)._sseRef
+    es.onmessage({
+      data: JSON.stringify({
+        type: 'live_event',
+        event: { type: 'shock_injected', data: { factor_name: '汇率', severity: 0.9 } },
+      }),
+    })
+    const sh = usePipelineStore.getState().recentShocks
+    expect(sh).toHaveLength(1)
+    expect(sh[0]).toMatchObject({ factor_name: '汇率', severity: 0.9 })
+  })
+
+  it('SSE 收到 year_advanced → setYearAdvanced + status 切回 completed', () => {
+    usePipelineStore.setState({ status: 'running' } as any)
+    usePipelineStore.getState().setRunId('r-sse-ya')
+    const es: any = (usePipelineStore.getState() as any)._sseRef
+    es.onmessage({
+      data: JSON.stringify({
+        type: 'live_event',
+        event: { type: 'year_advanced', data: { year: 2, rounds_added: 12, status: 'completed' } },
+      }),
+    })
+    const st = usePipelineStore.getState()
+    expect(st.yearAdvanced).toMatchObject({ year: 2, rounds_added: 12 })
+    expect(st.status).toBe('completed')
   })
 })

@@ -14,7 +14,7 @@ import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
   GitBranch, Users, Database, BookOpen,
   Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
-  FastForward, Rocket, Upload, Eye,
+  FastForward, Rocket, Upload, Eye, RefreshCw,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
@@ -22,7 +22,10 @@ import PipelineDashboard from '../components/PipelineDashboard'
 import RoundTimeline from '../components/RoundTimeline'
 import DepartmentGraph from '../components/DepartmentGraph'
 import SimulationExplainer from '../components/SimulationExplainer'
-import KnowledgeGraph from '../components/KnowledgeGraph'
+import RealtimeKnowledgeGraph from '../components/RealtimeKnowledgeGraph'
+import BeliefEvolutionChart from '../components/BeliefEvolutionChart'
+import SimulationNetworkGraph from '../components/SimulationNetworkGraph'
+import RiskMatrixHeatmap from '../components/RiskMatrixHeatmap'
 import AgentInterview from '../components/AgentInterview'
 import WorkbenchSubnav from '../components/WorkbenchSubnav'
 import Stat from '../components/Workbench/Stat'
@@ -30,6 +33,15 @@ import DeptMini from '../components/Workbench/DeptMini'
 import EmergedTopicsTimeline from '../components/Workbench/EmergedTopicsTimeline'
 import GraphRoundDiff from '../components/Workbench/GraphRoundDiff'
 import DeeperSimCta from '../components/Workbench/DeeperSimCta'
+import MarketEventTicker from '../components/MarketEventTicker'
+import ShockToast from '../components/ShockToast'
+import YearAdvancedBanner from '../components/YearAdvancedBanner'
+import MarketEnvPulse from '../components/MarketEnvPulse'
+import ShockBanner from '../components/ShockBanner'
+import RoundStartedBanner from '../components/RoundStartedBanner'
+import BeliefShiftFeed from '../components/BeliefShiftFeed'
+import EntityDanmaku from '../components/EntityDanmaku'
+import EntityTypeLegend from '../components/EntityTypeLegend'
 
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
@@ -39,7 +51,9 @@ import {
 import { fadeUp, stagger } from '../lib/motion'
 import {
   usePipelineStore, useRunId, useStatus, useStage, useProgress, useSnapshot, useLastRunConfig,
-  useGraphNodes, useGraphEdges, useGraphProgress,
+  useGraphNodes, useGraphProgress, useSimRounds, useNetworkFrames,
+  useMarketEvents, useRecentShocks, useYearAdvanced,
+  useReportRisks,
 } from '../store/pipeline'
 
 // ---- 7 步流水线定义 ----
@@ -93,10 +107,21 @@ export default function Workbench() {
   const [simResult, setSimResult] = useState<any>(null)
   // ---- P3: 实时图谱数据直接从 store 派生（与 hydrateFromRunId / SSE 增量共用同一数据源） ----
   const graphNodes = useGraphNodes()
-  const graphEdges = useGraphEdges()
   const graphProgress = useGraphProgress()
+  const simRounds = useSimRounds()
+  const networkFrames = useNetworkFrames()
+  // must-tier v2: 三个 SSE 事件队列（market_event / shock_injected / year_advanced）
+  const marketEvents = useMarketEvents()
+  const recentShocks = useRecentShocks()
+  const yearAdvanced = useYearAdvanced()
+  // must-tier v1: 风险矩阵派生
+  const reportRisks = useReportRisks()
   // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+
+  // ---- mirofish-tier: 30s 轮询 toggle (SSE 断线兜底) ----
+  // 0 = 关闭 (默认), 30000 = 开启
+  const [graphRefreshIntervalMs, setGraphRefreshIntervalMs] = useState<number>(0)
 
   // ---- P1-14: URL ?prefill= 预填议题（由 Report 派生或 AgentInterview 跳转而来） ----
   useEffect(() => {
@@ -124,15 +149,26 @@ export default function Workbench() {
   }, [])
 
   // ---- replay 模式: URL 有 :runId → 拉快照到 store (hydrates 包含 snapshot + graph + rounds) ----
+  // F2: 用 active flag 替代 AbortController。React 18 dev StrictMode 双挂载 race 中：
+  //   - 第一次 effect 创建 controller#1, 立即被 unmount abort, axios 抛 CanceledError 被 try/catch 吞
+  //   - 第二次 effect 走 controller#2 但 [urlRunId, runId, hydrateFromRunId] 依赖稳定, 短路 (line 129)
+  //     加上请求未完成时第二次 effect 又走相同路径, hydrate 后半状态写入 store 产生幽灵节点
+  // 修复: 1) 去掉 AbortController, 改用 let active = true; cleanup=()=>{active=false}
+  //       2) hydrateFromRunId 接收 active 参数, 只在 active=true 时写 store
+  //       3) 依赖简化为 [urlRunId, hydrateFromRunId], effect 内 if(urlRunId===get().runId) return
+  //       4) 顶部早返回 if(!active) return false 跳过第一次 mount 的请求
   useEffect(() => {
     if (!urlRunId) return
     if (urlRunId === runId) return  // 已经在 store 里 (live run 或已 hydrate)
-    const controller = new AbortController()
-    hydrateFromRunId(urlRunId, controller.signal).catch((e) => {
+    let active = true
+    hydrateFromRunId(urlRunId, undefined, active).catch((e) => {
       if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
+      if (!active) return
       console.error('hydrate 失败', e)
     })
-    return () => controller.abort()
+    return () => {
+      active = false
+    }
   }, [urlRunId, runId, hydrateFromRunId])
 
   // ---- 初始化：仅在有 runId 时才搭建默认公司（不预先加载 demo 假数据，避免一打开就显示一堆"示例"） ----
@@ -287,6 +323,16 @@ export default function Workbench() {
         </div>
       )}
 
+      {/* must-tier v2: 三种实时事件 banner (市场/冲击/跨年) */}
+      <MarketEventTicker events={marketEvents} />
+      <ShockToast shocks={recentShocks} />
+      <YearAdvancedBanner yearAdvanced={yearAdvanced} />
+      {/* should-tier v3: 红色高亮冲击横幅 + 顶部 round_started 闪现 */}
+      <ShockBanner />
+      <RoundStartedBanner />
+      {/* should-tier v3: 实体涌现弹幕 (右下角) */}
+      <EntityDanmaku />
+
       {/* Replay 模式横幅: 从 /history 跳进 /workbench/<已完成的 run> 时显示 */}
       {isReplayMode && runId && (
         <motion.div
@@ -425,6 +471,13 @@ export default function Workbench() {
               activeAgents={snapshot?.active_agents || 0}
               startedAt={snapshot?.started_at ?? runStartedAt ?? undefined}
             />
+          </motion.div>
+        )}
+
+        {/* should-tier v3: 市场环境脉搏仪表盘 (在 PlatformStatusCards 旁边) */}
+        {runId && (
+          <motion.div variants={fadeUp}>
+            <MarketEnvPulse />
           </motion.div>
         )}
 
@@ -708,23 +761,53 @@ export default function Workbench() {
               </section>
             )}
 
-            {/* 知识图谱（参考 MiroFish GraphPanel） — PR-2 P1-2 锚点 #graph */}
-            {graphNodes.length > 0 ? (
-              <section id="graph" className="scroll-mt-28">
-                <KnowledgeGraph
-                  nodes={graphNodes.map((n) => ({
-                    id: String(n.id),
-                    label: n.label ?? n.name ?? String(n.id),
-                    type: n.type ?? n.entity_type ?? 'RELATED_TO',
-                    summary: (n as any).properties?.summary,
-                  }))}
-                  edges={graphEdges.map((e) => ({
-                    source: String(e.source),
-                    target: String(e.target),
-                    type: e.type ?? (e as any).relation ?? 'RELATED_TO',
-                  }))}
+            {/* 实时知识图谱（must-tier v1: 替换旧 KnowledgeGraph）— PR-2 P1-2 锚点 #graph */}
+            {graphNodes.length > 0 || runId ? (
+              <section id="graph" className="scroll-mt-28 relative">
+                <RealtimeKnowledgeGraph
+                  runId={runId}
+                  live
                   height={400}
+                  title={WORKBENCH.realtimeGraphTitle}
+                  refreshIntervalMs={graphRefreshIntervalMs}
                 />
+                {/* mirofish-tier: 实体类型图例 (右上角 overlay) */}
+                <EntityTypeLegend overlay />
+                {/* mirofish-tier: 30s 轮询 toggle (SSE 兜底) */}
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    data-testid="realtime-kg-polling-toggle"
+                    onClick={() =>
+                      setGraphRefreshIntervalMs((v) => (v > 0 ? 0 : 30000))
+                    }
+                    className={`btn-ghost h-8 text-[11px] ${
+                      graphRefreshIntervalMs > 0
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-300/60'
+                        : ''
+                    }`}
+                    title={
+                      graphRefreshIntervalMs > 0
+                        ? '点击关闭 30s 轮询'
+                        : '点击开启 30s 轮询 (SSE 断线兜底)'
+                    }
+                  >
+                    <RefreshCw
+                      size={12}
+                      className={graphRefreshIntervalMs > 0 ? 'animate-spin-soft' : ''}
+                    />
+                    {graphRefreshIntervalMs > 0
+                      ? WORKBENCH.realtimeGraphPollingOn
+                      : WORKBENCH.realtimeGraphPollingOff}
+                  </button>
+                  {graphRefreshIntervalMs > 0 && (
+                    <span
+                      data-testid="realtime-kg-polling-badge"
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-mono font-semibold"
+                    >
+                      {WORKBENCH.realtimeGraphPollingBadge(graphRefreshIntervalMs)}
+                    </span>
+                  )}
+                </div>
               </section>
             ) : runId && !['completed', 'failed', 'cancelled'].includes(status) ? (
               /* 推演进行中: 展示 phase + 节点/边计数 */
@@ -749,8 +832,97 @@ export default function Workbench() {
               </section>
             ) : null}
 
+            {/* must-tier v1: 信念演化多线 LineChart（#belief 锚点） */}
+            {simRounds.length > 0 && (() => {
+              // BeliefData = { round: number; [agent: string]: number }
+              // 把 simRounds[].belief_updates 摊平为每个 round 一行
+              const beliefByRound = new Map<number, Record<string, number>>()
+              const agentSet = new Set<string>()
+              for (const r of simRounds) {
+                const updates = Array.isArray(r.belief_updates) ? r.belief_updates : []
+                const row = beliefByRound.get(r.round) ?? { round: r.round }
+                for (const u of updates) {
+                  const aId = String((u as any).agent_id ?? (u as any).agentId ?? (u as any).agent ?? 'unknown')
+                  const v = typeof (u as any).value === 'number' ? (u as any).value
+                    : typeof (u as any).belief === 'number' ? (u as any).belief
+                    : 0
+                  row[aId] = v
+                  agentSet.add(aId)
+                }
+                beliefByRound.set(r.round, row)
+              }
+              const data = Array.from(beliefByRound.values()).sort((a, b) => (a.round as number) - (b.round as number)) as Array<{ round: number; [agent: string]: number }>
+              const agents = Array.from(agentSet)
+              if (data.length === 0 || agents.length === 0) return null
+              return (
+                <section id="belief" className="card p-5 scroll-mt-28">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500/20 to-accent-500/20 inline-flex items-center justify-center text-brand-600">
+                      <Activity size={16} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
+                        {WORKBENCH.beliefTitle}
+                      </div>
+                      <div className="text-sm font-semibold text-ink-900 dark:text-white">
+                        {WORKBENCH.beliefSubtitle}
+                      </div>
+                    </div>
+                  </div>
+                  <BeliefEvolutionChart data={data} agents={agents} />
+                </section>
+              )
+            })()}
+
+            {/* must-tier v1: 迭代关系网时序图（#net 锚点） */}
+            {networkFrames.length > 0 && (
+              <section id="net" className="card p-5 scroll-mt-28">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-500/20 to-brand-500/20 inline-flex items-center justify-center text-accent-600">
+                    <Network size={16} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
+                      {WORKBENCH.networkTitle}
+                    </div>
+                    <div className="text-sm font-semibold text-ink-900 dark:text-white">
+                      {WORKBENCH.networkSubtitle}
+                    </div>
+                  </div>
+                </div>
+                <SimulationNetworkGraph
+                  runId={runId}
+                  height={400}
+                  title={WORKBENCH.networkTitle}
+                />
+              </section>
+            )}
+
+            {/* must-tier v1: 风险矩阵热力图（#risks 锚点） */}
+            {reportRisks.length > 0 && (
+              <section id="risks" className="card p-5 scroll-mt-28">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-rose-500/20 to-amber-500/20 inline-flex items-center justify-center text-rose-600">
+                    <Zap size={16} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
+                      {WORKBENCH.riskTitle}
+                    </div>
+                    <div className="text-sm font-semibold text-ink-900 dark:text-white">
+                      {WORKBENCH.riskSubtitle}
+                    </div>
+                  </div>
+                </div>
+                <RiskMatrixHeatmap risks={reportRisks} />
+              </section>
+            )}
+
             {/* feature1 (feature/history-graph-and-viz): 涌现议题时间线 */}
             <EmergedTopicsTimeline />
+
+            {/* should-tier v3: 信念漂移事件流 (放在 EmTopics 之后, 主题相关) */}
+            <BeliefShiftFeed />
 
             {/* feature2: 图谱轮次 diff 对比 */}
             <GraphRoundDiff />
