@@ -27,6 +27,9 @@ import AgentInterview from '../components/AgentInterview'
 import WorkbenchSubnav from '../components/WorkbenchSubnav'
 import Stat from '../components/Workbench/Stat'
 import DeptMini from '../components/Workbench/DeptMini'
+import EmergedTopicsTimeline from '../components/Workbench/EmergedTopicsTimeline'
+import GraphRoundDiff from '../components/Workbench/GraphRoundDiff'
+import DeeperSimCta from '../components/Workbench/DeeperSimCta'
 
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
@@ -36,6 +39,7 @@ import {
 import { fadeUp, stagger } from '../lib/motion'
 import {
   usePipelineStore, useRunId, useStatus, useStage, useProgress, useSnapshot, useLastRunConfig,
+  useGraphNodes, useGraphEdges, useGraphProgress,
 } from '../store/pipeline'
 
 // ---- 7 步流水线定义 ----
@@ -87,7 +91,10 @@ export default function Workbench() {
   const [resolving, setResolving] = useState(false)
   const [simulating, setSimulating] = useState(false)
   const [simResult, setSimResult] = useState<any>(null)
-  const [graphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] })
+  // ---- P3: 实时图谱数据直接从 store 派生（与 hydrateFromRunId / SSE 增量共用同一数据源） ----
+  const graphNodes = useGraphNodes()
+  const graphEdges = useGraphEdges()
+  const graphProgress = useGraphProgress()
   // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
 
@@ -702,11 +709,25 @@ export default function Workbench() {
             )}
 
             {/* 知识图谱（参考 MiroFish GraphPanel） — PR-2 P1-2 锚点 #graph */}
-            {graphData.nodes.length > 0 ? (
+            {graphNodes.length > 0 ? (
               <section id="graph" className="scroll-mt-28">
-                <KnowledgeGraph nodes={graphData.nodes} edges={graphData.edges} height={400} />
+                <KnowledgeGraph
+                  nodes={graphNodes.map((n) => ({
+                    id: String(n.id),
+                    label: n.label ?? n.name ?? String(n.id),
+                    type: n.type ?? n.entity_type ?? 'RELATED_TO',
+                    summary: (n as any).properties?.summary,
+                  }))}
+                  edges={graphEdges.map((e) => ({
+                    source: String(e.source),
+                    target: String(e.target),
+                    type: e.type ?? (e as any).relation ?? 'RELATED_TO',
+                  }))}
+                  height={400}
+                />
               </section>
-            ) : runId ? (
+            ) : runId && !['completed', 'failed', 'cancelled'].includes(status) ? (
+              /* 推演进行中: 展示 phase + 节点/边计数 */
               <section id="graph" className="scroll-mt-28">
                 <div className="card p-8 flex flex-col items-center justify-center min-h-[320px] bg-gradient-to-br from-ink-50/30 to-white dark:from-ink-900/40 dark:to-ink-900/20">
                   <Loader2 size={32} className="text-brand-500 animate-spin mb-3" />
@@ -714,11 +735,28 @@ export default function Workbench() {
                     {WORKBENCH.loadingGraph}
                   </div>
                   <div className="text-[10px] text-ink-400 mt-1 font-mono">
-                    {stage} · {Math.round((progress || 0) * 100)}%
+                    {graphProgress.phase} · {graphProgress.nodes} 节点 / {graphProgress.edges} 边
                   </div>
                 </div>
               </section>
+            ) : runId ? (
+              /* replay 模式但 hydrate 仍未拿到 entity（如后端图谱文件丢失）的兜底 */
+              <section id="graph" className="scroll-mt-28">
+                <div className="card p-8 text-center min-h-[320px] flex flex-col items-center justify-center">
+                  <Network size={28} className="text-ink-300 mb-2" />
+                  <div className="text-sm text-ink-500">未找到该 run 的知识图谱快照</div>
+                </div>
+              </section>
             ) : null}
+
+            {/* feature1 (feature/history-graph-and-viz): 涌现议题时间线 */}
+            <EmergedTopicsTimeline />
+
+            {/* feature2: 图谱轮次 diff 对比 */}
+            <GraphRoundDiff />
+
+            {/* feature3: 进一步推演 CTA — 仅 completed/failed 显示 */}
+            <DeeperSimCta />
 
             {/* 智能体采访 — PR-2 P1-2 锚点 #interview */}
             {companyId && (
