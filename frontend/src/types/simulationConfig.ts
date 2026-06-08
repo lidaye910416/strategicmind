@@ -80,7 +80,8 @@ export interface SimulationUserParams {
   n_stakeholders: number        // 6-24
   emergence_policy: EmergencePolicy
   convergence_policy: ConvergencePolicy
-  // 阶段二: 3 类可编辑结构化参数 (默认空 / 用户手动填)
+  // 阶段二: 3 类可编辑结构化参数 (默认空 / 用户手动填 / LLM 预填)
+  company_name?: string         // 公司/组织名, AI 预填可填, 报告 / 工作台显示
   org_structure: OrgNode[]
   financials: Financials
   market: MarketContext
@@ -94,6 +95,7 @@ export const DEFAULT_USER_PARAMS: SimulationUserParams = {
   n_stakeholders: 12,
   emergence_policy: 'moderate',
   convergence_policy: 'auto_extend',
+  company_name: '',
   org_structure: [],
   financials: {},
   market: {

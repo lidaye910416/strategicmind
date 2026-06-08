@@ -13,7 +13,7 @@ import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Settings, AlertCircle, Copy, Info, Sparkles, Building2,
-  TrendingUp, Globe2, Plus, Trash2, Users,
+  TrendingUp, Globe2, Plus, Trash2, Users, Loader2,
 } from 'lucide-react'
 import { DASHBOARD, DASHBOARD_ACTIONS, REPORT_STYLE_LABELS } from '../../i18n/zh'
 import {
@@ -54,6 +54,10 @@ interface Props {
   // ---- 复制配置 banner ----
   clonedFrom: string | null
   onDismissClone: () => void
+
+  // ---- P3-A Phase 2: AI 一键预填 (P3) ----
+  isPrefilling: boolean
+  onPrefillFromLLM: () => void
 }
 
 export default function ConfigCard({
@@ -61,6 +65,7 @@ export default function ConfigCard({
   hours, style, onChangeHours, onChangeStyle,
   params, onChangeParams,
   clonedFrom, onDismissClone,
+  isPrefilling, onPrefillFromLLM,
 }: Props) {
   const ready = uploadsCount > 0
   const [tab, setTab] = useState<TabKey>('basic')
@@ -410,6 +415,38 @@ export default function ConfigCard({
                     transition={{ duration: 0.15 }}
                     className="p-4 rounded-lg bg-ink-50/60 dark:bg-ink-900/40 space-y-5"
                   >
+                    {/* 公司名称 + AI 一键提取 (P3-A Phase 2) */}
+                    <div className="flex items-end gap-3">
+                      <div className="flex-1">
+                        <label className="label !mb-1 flex items-center gap-1.5">
+                          <Building2 size={13} /> {DASHBOARD.companyName}
+                        </label>
+                        <input
+                          type="text"
+                          value={params.company_name || ''}
+                          placeholder="例: 湖北某科技股份公司"
+                          onChange={(e) => onChangeParams({ ...params, company_name: e.target.value })}
+                          className="input"
+                        />
+                        <p className="text-xs text-ink-500 dark:text-ink-400 mt-1">{DASHBOARD.companyNameHint}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={uploadsCount === 0 || isPrefilling}
+                        onClick={onPrefillFromLLM}
+                        title={uploadsCount === 0 ? DASHBOARD.prefillEmpty : DASHBOARD.prefillButtonTitle}
+                        className="h-9 px-3 rounded-xl text-xs font-semibold border
+                                   bg-gradient-to-r from-brand-500 to-accent-500
+                                   hover:from-brand-600 hover:to-accent-600
+                                   text-white border-transparent
+                                   disabled:opacity-40 disabled:cursor-not-allowed
+                                   flex items-center gap-1.5 shrink-0"
+                      >
+                        {isPrefilling ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        {DASHBOARD.prefillButton}
+                      </button>
+                    </div>
+
                     {/* Org Structure */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">

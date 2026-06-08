@@ -186,9 +186,12 @@ class ReportAgent:
         # selected_departments so the LLM explicitly addresses them in
         # the report (and the generated .md contains those keywords).
         user_params = user_params or {}
-        company_name = (user_params.get("company_name") or
-                        (user_params.get("departments") and "目标公司") or
-                        "（未指定）")
+        # 公司名: 优先用 user_params.company_name (LLM 预填或用户手填)
+        # 若没有, 退回 "（未指定）" — 不再瞎填 "目标公司" 假名
+        company_name = (user_params.get("company_name")
+                        if isinstance(user_params.get("company_name"), str)
+                        and user_params["company_name"].strip()
+                        else "（未指定）")
         extra_blocks: List[str] = []
         external_factors = [
             str(x).strip() for x in (user_params.get("external_factors") or [])

@@ -13,8 +13,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { AlertCircle, Copy } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { usePipelineStore, type PipelineStatus } from '../store/pipeline'
-import api from '../services/api'
+import api, { seedApi } from '../services/api'
 import { DASHBOARD, DASHBOARD_ACTIONS, APP_ROUTES } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 import { flags } from '../lib/featureFlags'
@@ -41,6 +42,8 @@ export default function Dashboard() {
   const [showPicker, setShowPicker] = useState(false)
   const [currentProvider, setCurrentProvider] = useState<CurrentProvider | null>(null)
   const [clonedFrom, setClonedFrom] = useState<string | null>(null)
+  // P3-A Phase 2: AI 一键预填状态
+  const [isPrefilling, setIsPrefilling] = useState(false)
 
   const loadProvider = () => api.get('/provider/current').then((r) => setCurrentProvider(r.data)).catch(() => {})
 
@@ -109,6 +112,66 @@ export default function Dashboard() {
     const t = setInterval(tick, 5000)
     return () => clearInterval(t)
   }, [runId])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // P3-A Phase 2: AI 一键预填 — 调后端 LLM 抽 4 类参数
+  const handlePrefillFromLLM = async () => {
+    const docIds = uploads.map((u) => u.docId).filter((id): id is string => !!id)
+    if (docIds.length === 0) return
+    setIsPrefilling(true)
+    try {
+      const r = await seedApi.analyze(docIds)
+      const patch = r.data
+      // 合并: 任何非空的字段才覆盖
+      setParams((prev) => {
+        const next: SimulationUserParams = { ...prev }
+        if (patch.company_name) {
+          next.company_name = patch.company_name
+        }
+        if (patch.org_structure && patch.org_structure.length > 0) {
+          // 补 id (后端可能没返)
+          next.org_structure = patch.org_structure.map((n, i) => ({
+            id: n.id || `org_${Date.now()}_${i}`,
+            name: n.name,
+            reports_to: n.reports_to,
+            headcount: n.headcount,
+            kpi_focus: n.kpi_focus,
+          }))
+        }
+        if (patch.financials && Object.keys(patch.financials).length > 0) {
+          next.financials = { ...prev.financials, ...patch.financials }
+        }
+        if (patch.market) {
+          const m = patch.market
+          const cur = prev.market
+          next.market = {
+            ...cur,
+            ...(m.tam_yi != null && { tam_yi: m.tam_yi }),
+            ...(m.market_growth_pct != null && { market_growth_pct: m.market_growth_pct }),
+            ...(m.stance && m.stance !== 'neutral' && { stance: m.stance }),
+            ...(m.competitors && m.competitors.length > 0 && { competitors: m.competitors }),
+            ...(m.regulation && m.regulation.length > 0 && { regulation: m.regulation }),
+          }
+        }
+        return next
+      })
+      // 计算填充项数
+      const filledCount =
+        (patch.company_name ? 1 : 0) +
+        (patch.org_structure?.length || 0) +
+        (patch.financials ? Object.keys(patch.financials).length : 0) +
+        (patch.market?.competitors?.length || 0) +
+        (patch.market?.regulation?.length || 0) +
+        (patch.market?.tam_yi ? 1 : 0) +
+        (patch.market?.market_growth_pct ? 1 : 0) +
+        (patch.market?.stance && patch.market.stance !== 'neutral' ? 1 : 0)
+      toast.success(filledCount > 0 ? DASHBOARD.prefillSuccess(filledCount) : DASHBOARD.prefillNoData)
+    } catch (e) {
+      console.error('prefill 失败', e)
+      toast.error(DASHBOARD.prefillFailed)
+    } finally {
+      setIsPrefilling(false)
+    }
+  }
 
   const handleStart = async () => {
     const newRunId = await startPipeline({
@@ -179,6 +242,7 @@ export default function Dashboard() {
             hours={hours} style={style} onChangeHours={setHours} onChangeStyle={setStyle}
             params={params} onChangeParams={setParams}
             clonedFrom={clonedFrom} onDismissClone={() => setClonedFrom(null)}
+            isPrefilling={isPrefilling} onPrefillFromLLM={handlePrefillFromLLM}
           />
         </motion.div>
         <motion.div variants={fadeUp} className="card p-6 -mt-3">

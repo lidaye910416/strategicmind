@@ -210,6 +210,16 @@ export const DASHBOARD = {
   latestGraphLoading: '正在拉取图谱数据…',
   latestGraphNoHistory: '启动一次推演后，知识图谱将自动展示在这里',
   latestGraphFailed: (id: string) => `拉取图谱失败（run: ${id}）`,
+  // P3-A Phase 2: 3-tab ConfigCard AI 预填
+  prefillButton: 'AI 一键提取',
+  prefillButtonTitle: '从已上传的种子文档中提取公司名 / 部门 / 经营数据 / 市场环境',
+  prefillLoading: '正在分析种子文件…',
+  prefillEmpty: '请先上传至少一个文档',
+  prefillSuccess: (n: number) => `已自动预填 ${n} 项，请检查后调整`,
+  prefillFailed: '预填失败, 请手动填写',
+  prefillNoData: '文档中未提取到信息',
+  companyName: '公司名称',
+  companyNameHint: 'AI 预填, 或手动输入, 会显示在工作台和报告标题中',
   // P3-A: 多维度参数化
   years: '模拟年限',
   yearsUnit: (n: number) => `${n} 年`,
