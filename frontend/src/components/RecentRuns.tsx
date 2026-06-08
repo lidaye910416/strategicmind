@@ -202,13 +202,16 @@ export default function RecentRuns() {
 
   return (
     <div className="card overflow-hidden">
-      {/* 头部 - 可折叠 */}
-      <button
-        onClick={() => setCollapsed((c) => !c)}
-        className="w-full px-3 py-2.5 flex items-center justify-between
-                   hover:bg-ink-50/60 dark:hover:bg-ink-900/40 transition-colors"
-      >
-        <div className="flex items-center gap-2">
+      {/* 头部 - chevron+title 区域可点击折叠, 操作按钮独立 (避免嵌套 button 触发 React 报警) */}
+      <div className="w-full px-3 py-2.5 flex items-center justify-between
+                      hover:bg-ink-50/60 dark:hover:bg-ink-900/40 transition-colors">
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? '展开历史任务列表' : '折叠历史任务列表'}
+          className="flex items-center gap-2 cursor-pointer text-left"
+        >
           <ChevronRight
             size={12}
             className={`text-ink-400 transition-transform ${collapsed ? '' : 'rotate-90'}`}
@@ -231,10 +234,11 @@ export default function RecentRuns() {
               {RECENT_RUNS.compareSelected(selected.length)}
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        </button>
+        <div className="flex items-center gap-1">
           {compareEnabled && (
             <button
+              type="button"
               onClick={goCompare}
               disabled={!canCompare}
               className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5 transition-colors
@@ -261,23 +265,26 @@ export default function RecentRuns() {
           )}
           {completedCount > 0 && !collapsed && (
             <button
+              type="button"
               onClick={clearCompleted}
               className="text-[10px] text-ink-400 hover:text-rose-500 px-1.5 py-0.5
-                         rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                         rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors
+                         cursor-pointer"
               title={`清空 ${completedCount} 条已完成任务`}
             >
               清空已完成
             </button>
           )}
           <button
+            type="button"
             onClick={load}
-            className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-200 p-0.5"
+            className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-200 p-0.5 cursor-pointer"
             title="刷新"
           >
             <RefreshCcw size={11} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
-      </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {!collapsed && (

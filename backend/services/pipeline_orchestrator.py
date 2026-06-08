@@ -263,6 +263,41 @@ class PipelineOrchestrator:
             q.put_nowait(("cancel", None))
         return True
 
+    def delete_run(self, run_id: str) -> bool:
+        """Delete a run completely: in-memory state + on-disk checkpoint.
+
+        - 不能删正在跑的 (status in {running, paused}) — 返回 False
+        - 取消控制队列 + 取消 task (如果存在)
+        - 删 self._runs[run_id] + 删 <run_id>.json
+        """
+        run = self._runs.get(run_id)
+        if run and run.status in ("running", "paused"):
+            return False  # 正在跑的不能直接删, 需先 cancel
+
+        # 取消 task (best-effort, 防止后台线程还在写 checkpoint)
+        task = self._tasks.pop(run_id, None)
+        if task and not task.done():
+            try:
+                task.cancel()
+            except Exception:
+                pass
+
+        # 清 control queue
+        self._control.pop(run_id, None)
+
+        # 删内存状态
+        self._runs.pop(run_id, None)
+
+        # 删磁盘 checkpoint
+        try:
+            path = os.path.join(self.checkpoint_dir, f"{run_id}.json")
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass  # 磁盘已删就当成功
+
+        return True
+
     # ---------- Core pipeline execution ----------
 
     async def _run_pipeline(self, run_id: str) -> None:

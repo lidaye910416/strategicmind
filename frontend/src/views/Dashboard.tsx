@@ -24,7 +24,6 @@ import ConfigCard, { type ReportStyle } from '../components/dashboard/ConfigCard
 import RunControlBar from '../components/dashboard/RunControlBar'
 import LiveSnapshotSection from '../components/dashboard/LiveSnapshotSection'
 import LatestRunGraph from '../components/dashboard/LatestRunGraph'
-import RecentRuns from '../components/RecentRuns'
 import ProviderPicker from '../components/ProviderPicker'
 import {
   DEFAULT_USER_PARAMS, type SimulationUserParams,
@@ -190,7 +189,7 @@ export default function Dashboard() {
             onCancel={cancel} onReset={() => { reset(); setUploads([]) }}
           />
         </motion.div>
-        <motion.div variants={fadeUp}><RecentRuns /></motion.div>
+        {/* 历史任务不在工作台显示 (仅在 /history 页面查看) */}
         {/* 无活跃 runId 时挂"上次完成的图谱"; 有 runId 时 LiveSnapshotSection 接管实时态 */}
         {!runId && (
           <motion.div variants={fadeUp}><LatestRunGraph /></motion.div>

@@ -350,6 +350,24 @@ def cancel_pipeline(run_id: str):
     return jsonify({"error": "Cannot cancel"}), 400
 
 
+@pipeline_bp.route('/<run_id>', methods=['DELETE'])
+def delete_pipeline(run_id: str):
+    """Delete a run completely (in-memory + on-disk checkpoint).
+
+    - 200: 已删除 (返回 {"deleted": run_id})
+    - 400: run 正在跑/暂停, 需先 cancel
+    - 404: run 不存在
+    """
+    orch = get_orchestrator()
+    in_mem = run_id in [r.get("run_id") for r in orch.list_runs()]
+    on_disk = os.path.isfile(os.path.join(orch.checkpoint_dir, f"{run_id}.json"))
+    if not in_mem and not on_disk:
+        return jsonify({"error": f"Run {run_id} not found"}), 404
+    if not orch.delete_run(run_id):
+        return jsonify({"error": "Cannot delete running/paused run; cancel first"}), 400
+    return jsonify({"deleted": run_id}), 200
+
+
 @pipeline_bp.route('/<run_id>/advance-year', methods=['POST'])
 def advance_year(run_id: str):
     """
