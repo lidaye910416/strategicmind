@@ -120,6 +120,46 @@ export interface SimRound {
   new_relations?: GraphEdgeData[]
 }
 
+// ============================================================================
+// must-tier v2: 实时事件类型（市场/冲击/跨年）
+// ============================================================================
+
+/** 市场事件（ExternalShockSimulator emit） */
+export interface MarketEvent {
+  type: string             // e.g. "MARKET_DOWN", "INDUSTRY_BOOM"
+  industry?: string        // 行业
+  gdp_growth?: number      // GDP 增长率 (%)
+  cycle_label?: string     // 周期阶段 (e.g. "EXPANSION")
+  ts: number               // 时间戳 (ms)
+  /** 事件描述（中文友好） */
+  description?: string
+}
+
+/** 外部冲击（shock_injected） */
+export interface ShockEvent {
+  factor_name: string      // 因素名
+  severity: number         // 严重度 (0-1)
+  ts: number               // 时间戳 (ms)
+  description?: string
+}
+
+/** 跨年推演完成（year_advanced） */
+export interface YearAdvancedEvent {
+  year: number             // 推进到的年份
+  rounds_added: number     // 本轮新增回合数
+  entities_count?: number  // 新涌现实体数
+  ts: number
+}
+
+/** 风险条目（必须 v1 风险矩阵热力图） */
+export interface RiskItem {
+  name: string
+  probability: number      // 0-1
+  impact: number           // 0-1
+  category: string
+  mitigation_strategies?: string[]
+}
+
 interface PipelineState {
   // 核心 run 状态
   runId: string | null
@@ -151,6 +191,16 @@ interface PipelineState {
   /** feature2 (GraphDiff): 每轮推演结束时的图谱快照 (round → { nodes, edges }) */
   graphSnapshots: Record<number, { nodes: GraphNodeData[]; edges: GraphEdgeData[] }>
 
+  // ---- must-tier v2: 实时事件队列（市场/冲击/跨年） ----
+  /** 市场事件流（最多 30 条） */
+  marketEvents: MarketEvent[]
+  /** 最近的外部冲击（最多 5 条） */
+  recentShocks: ShockEvent[]
+  /** 跨年推演完成信息（null = 未触发） */
+  yearAdvanced: YearAdvancedEvent | null
+  /** must-tier v1: 报告风险矩阵（从 snapshot.artifacts.REPORT_GENERATING.risks 派生） */
+  reportRisks: RiskItem[]
+
   // ---- SSE 内部句柄（不暴露在公共 state，但放到 store 里便于 dispose 协同） ----
   _sseRef: EventSource | null
   _sseCloseTimer: number | null
@@ -167,7 +217,7 @@ interface PipelineState {
   setStatus: (status: PipelineStatus) => void
   setRunId: (runId: string | null) => void
   setSnapshot: (snap: RunSnapshot) => void
-  hydrateFromRunId: (runId: string, signal?: AbortSignal) => Promise<boolean>  // 加载历史 run
+  hydrateFromRunId: (runId: string, signal?: AbortSignal, active?: boolean) => Promise<boolean>  // 加载历史 run (F2: active flag 防止 StrictMode 双挂载幽灵写入)
   addUploadedDoc: (docId: string) => void
   addUpload: (item: UploadItem) => void
   removeUpload: (id: string) => void
@@ -191,6 +241,16 @@ interface PipelineState {
   resetGraphStream: () => void
   /** feature2: 在指定 round 拍下当前图谱快照（去重：同 round 只存最早一次） */
   snapshotGraphAtRound: (round: number) => void
+
+  // ---- must-tier v2: SSE 事件 append actions ----
+  /** 追加市场事件（保持最新 30 条） */
+  appendMarketEvent: (event: MarketEvent) => void
+  /** 追加外部冲击（保持最新 5 条） */
+  appendShock: (shock: ShockEvent) => void
+  /** 触发跨年完成 banner */
+  setYearAdvanced: (event: YearAdvancedEvent) => void
+  /** 清空跨年 banner（用户关闭后） */
+  clearYearAdvanced: () => void
 }
 
 // ---- 内部 SSE 工具（仍在模块作用域，但只通过 store 字段访问） ----
@@ -209,6 +269,9 @@ function _openSSE(
       const data = JSON.parse(ev.data)
       // 完整快照（含 artifacts）
       if (data.run_id && data.artifacts !== undefined) {
+        // must-tier v1: 派生报告风险（从 REPORT_GENERATING.risks）
+        const reportArt = data.artifacts?.REPORT_GENERATING
+        const risks: RiskItem[] = Array.isArray(reportArt?.risks) ? reportArt.risks : []
         set({
           snapshot: data,
           runId: data.run_id,
@@ -216,6 +279,7 @@ function _openSSE(
           currentStage: data.current_stage || get().currentStage,
           progress: typeof data.progress === 'number' ? data.progress : get().progress,
           lastEventAt: Date.now(),
+          reportRisks: risks,
         })
       }
       // 增量事件
@@ -286,6 +350,36 @@ function _openSSE(
             new_relations: evtData.new_relations,
             ts: Date.now(),
           } as SimRound)
+        } else if (evtType === 'market_event') {
+          // must-tier v2: 市场事件 → 队列 (max 30)
+          get().appendMarketEvent({
+            type: evtData.type || 'UNKNOWN',
+            industry: evtData.industry,
+            gdp_growth: typeof evtData.gdp_growth === 'number' ? evtData.gdp_growth : undefined,
+            cycle_label: evtData.cycle_label,
+            description: evtData.description,
+            ts: evtData.ts ?? Date.now(),
+          } as MarketEvent)
+        } else if (evtType === 'shock_injected') {
+          // must-tier v2: 外部冲击 → 队列 (max 5)
+          get().appendShock({
+            factor_name: evtData.factor_name || '未知因素',
+            severity: typeof evtData.severity === 'number' ? evtData.severity : 0.5,
+            description: evtData.description,
+            ts: evtData.ts ?? Date.now(),
+          } as ShockEvent)
+        } else if (evtType === 'year_advanced') {
+          // must-tier v2: 跨年完成 → banner
+          get().setYearAdvanced({
+            year: evtData.year ?? 1,
+            rounds_added: evtData.rounds_added ?? 0,
+            entities_count: evtData.entities_count,
+            ts: evtData.ts ?? Date.now(),
+          } as YearAdvancedEvent)
+          // 同时把 status 切回 completed, 让前端 advance-year 按钮的 loading 状态正确切回
+          if (evtData.status === 'completed' || evtData.status === 'failed') {
+            set({ status: evtData.status as PipelineStatus })
+          }
         }
       }
     } catch { /* ignore malformed events */ }
@@ -327,6 +421,12 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
   simRounds: [],
   graphSnapshots: {},
+  // must-tier v2: 实时事件初始值
+  marketEvents: [],
+  recentShocks: [],
+  yearAdvanced: null,
+  // must-tier v1: 风险矩阵初始值
+  reportRisks: [],
   _sseRef: null,
   _sseCloseTimer: null,
 
@@ -439,8 +539,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
    *
    * 任意外部 AbortSignal 触发会立即取消所有等待并返回 false。
    */
-  hydrateFromRunId: async (runId, signal) => {
+  hydrateFromRunId: async (runId, signal, active = true) => {
     if (!runId) return false
+    // F2: StrictMode 早期退出, 跳过第一次 mount 期间的写操作
+    if (!active) return false
 
     // Helper: 包裹一个 timeout 的 sleep，监听外部 signal
     const sleep = (ms: number) => new Promise<void>((resolve) => {
@@ -451,7 +553,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
         else signal.addEventListener('abort', onAbort, { once: true })
       }
     })
-    const isAborted = () => !!signal?.aborted
+    const isAborted = () => !!signal?.aborted || !active
 
     // ---- Step 1: GET /pipeline/<id> 重试 ----
     const RETRY_DELAYS_MS = [1000, 2000, 4000]  // 3 attempts total
@@ -480,6 +582,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       console.warn('[hydrateFromRunId] 3 次 retry 后仍失败', lastErr)
       return false
     }
+    if (!active) return false  // 等待期间被 unmount/重 hydrate
 
     // ---- Step 2: 写入 snapshot 字段 ----
     set({
@@ -503,6 +606,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
         const nodes = Array.isArray(data.nodes) ? data.nodes as GraphNodeData[] : []
         const edges = Array.isArray(data.edges) ? data.edges as GraphEdgeData[] : []
         if (nodes.length || edges.length) {
+          if (!active) return  // 写入前再 check 一次
           get().setGraphSnapshot(nodes, edges, {
             phase: 'completed',
             nodes: nodes.length,
@@ -521,6 +625,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
         const data = r.data || {}
         const frames = Array.isArray(data.frames) ? data.frames as any[] : []
         if (frames.length) {
+          if (!active) return  // 写入前再 check 一次
           // 把后端的 round_result frame 映射到 simRounds（用 SimRound 形状）
           // 注：appendSimRound 有 round 去重，所以多次 hydrate 不会重复 push
           for (const f of frames) {
@@ -640,6 +745,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
       simRounds: [],
       graphSnapshots: {},
+      // must-tier: 切 run 时清空事件队列
+      marketEvents: [],
+      recentShocks: [],
+      yearAdvanced: null,
+      reportRisks: [],
     })
   },
 
@@ -655,6 +765,24 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       }
     })
   },
+
+  // ---- must-tier v2: 实时事件 actions ----
+  appendMarketEvent: (event) => {
+    set((s) => {
+      const next = [event, ...s.marketEvents].slice(0, 30)  // 保持最新 30 条, 倒序 (新→旧)
+      return { marketEvents: next }
+    })
+  },
+  appendShock: (shock) => {
+    set((s) => {
+      const next = [shock, ...s.recentShocks].slice(0, 5)  // 保持最新 5 条
+      return { recentShocks: next }
+    })
+  },
+  setYearAdvanced: (event) => {
+    set({ yearAdvanced: event })
+  },
+  clearYearAdvanced: () => set({ yearAdvanced: null }),
 }))
 
 // ============================================================
@@ -725,3 +853,11 @@ export const useNetworkFrames = (): NetworkFrameLive[] => {
     ts: r.ts,
   }))
 }
+
+// ---- must-tier v2: 实时事件 atomic selectors ----
+export const useMarketEvents = () => usePipelineStore((s) => s.marketEvents)
+export const useRecentShocks = () => usePipelineStore((s) => s.recentShocks)
+export const useYearAdvanced = () => usePipelineStore((s) => s.yearAdvanced)
+
+// ---- must-tier v1: 报告风险矩阵 selector (live) ----
+export const useReportRisks = () => usePipelineStore((s) => s.reportRisks)
