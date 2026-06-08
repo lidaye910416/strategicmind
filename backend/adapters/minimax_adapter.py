@@ -1,14 +1,14 @@
 """
 MiniMaxAdapter - ILLMProvider implementation for MiniMax (M3) API
 
-This adapter wraps the MiniMax M3 highspeed API. The endpoint accepts
+This adapter wraps the MiniMax M3 API. The endpoint accepts
 the Anthropic Messages API format, so we use httpx directly rather
 than the official Anthropic SDK to keep the dependency surface small.
 
 Configuration via environment (any of these will work):
     - MINIMAX_API_KEY / MiniMax_API_KEY / LLM_API_KEY (any one)
     - ANTHROPIC_BASE_URL  (default: https://api.minimaxi.com/anthropic)
-    - MiniMax_MODEL_NAME / LLM_MODEL_NAME (default: MiniMax-M3-highspeed)
+    - MiniMax_MODEL_NAME / LLM_MODEL_NAME (default: MiniMax-M3)
 
 The class is drop-in compatible with BailianAdapter / OllamaAdapter and
 can be selected via LLM_PROVIDER=minimax or MINIMAX_API_KEY env var.
@@ -48,7 +48,7 @@ class MiniMaxAdapter(ILLMProvider):
     """
 
     DEFAULT_BASE_URL = "https://api.minimaxi.com/anthropic"
-    DEFAULT_MODEL = "MiniMax-M3-highspeed"
+    DEFAULT_MODEL = "MiniMax-M3"
     DEFAULT_TIMEOUT = 120
     ANTHROPIC_VERSION = "2023-06-01"
 

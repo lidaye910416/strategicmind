@@ -103,7 +103,7 @@ def describe_provider(provider_name: Optional[str] = None) -> dict:
     elif name == "minimax":
         info["model"] = os.environ.get(
             "MiniMax_MODEL_NAME"
-        ) or os.environ.get("LLM_MODEL_NAME", "MiniMax-M3-highspeed")
+        ) or os.environ.get("LLM_MODEL_NAME", "MiniMax-M3")
         info["base_url"] = os.environ.get(
             "ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic"
         )

@@ -84,12 +84,12 @@ def _provider_available(name: str) -> dict:
             "requires_api_key": True,
             "model": os.environ.get(
                 "MiniMax_MODEL_NAME"
-            ) or os.environ.get("LLM_MODEL_NAME", "MiniMax-M3-highspeed"),
+            ) or os.environ.get("LLM_MODEL_NAME", "MiniMax-M3"),
             "base_url": os.environ.get(
                 "ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic"
             ),
-            "label": "MiniMax M3 highspeed",
-            "description": "MiniMax M3 highspeed 模型，Anthropic Messages API 兼容。",
+            "label": "MiniMax M3",
+            "description": "MiniMax M3 模型，Anthropic Messages API 兼容。",
         }
     if name == "mock":
         return {
