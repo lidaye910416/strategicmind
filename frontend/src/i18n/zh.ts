@@ -463,6 +463,24 @@ export const WORKBENCH = {
   deeperSimRiskCard: '风险因子加强',
   deeperSimFocusCard: '聚焦关键实体',
   deeperSimIterateCard: '深化未收敛议题',
+  // should-tier v3: MarketEnvPulse / ShockBanner / RoundStartedBanner / BeliefShiftFeed
+  marketEnvTitle: '市场环境脉搏',
+  marketEnvEmpty: '等待 Q1 市场快照…',
+  marketEnvPolicyPressure: '政策压力',
+  marketEnvCapital: '资金可得性',
+  marketEnvSentiment: '消费情绪',
+  marketEnvCycle: '周期阶段',
+  marketEnvIndustry: '行业',
+  shockBannerTitle: '外部冲击',
+  shockBannerHint: '冲击将自动注入部门决策',
+  shockBannerSeverity: (s: number) => `严重度 ${(s * 100).toFixed(0)}%`,
+  roundStartedBannerHint: (n: number) => `Round ${n} 开始`,
+  beliefShiftFeedTitle: '信念漂移',
+  beliefShiftFeedEmpty: '尚无显著立场漂移（|Δ| > 0.10）',
+  beliefShiftFeedSubtitle: (n: number) => `${n} 次显著漂移`,
+  entityDanmakuTitle: '新涌现实体',
+  entityDanmakuEmpty: '尚无新涌现实体',
+  entityTypeLegendTitle: '实体类型图例',
 }
 
 export const WORKBENCH_SUBNAV = {

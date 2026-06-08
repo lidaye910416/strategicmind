@@ -36,6 +36,10 @@ import DeeperSimCta from '../components/Workbench/DeeperSimCta'
 import MarketEventTicker from '../components/MarketEventTicker'
 import ShockToast from '../components/ShockToast'
 import YearAdvancedBanner from '../components/YearAdvancedBanner'
+import MarketEnvPulse from '../components/MarketEnvPulse'
+import ShockBanner from '../components/ShockBanner'
+import RoundStartedBanner from '../components/RoundStartedBanner'
+import BeliefShiftFeed from '../components/BeliefShiftFeed'
 
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
@@ -317,6 +321,9 @@ export default function Workbench() {
       <MarketEventTicker events={marketEvents} />
       <ShockToast shocks={recentShocks} />
       <YearAdvancedBanner yearAdvanced={yearAdvanced} />
+      {/* should-tier v3: 红色高亮冲击横幅 + 顶部 round_started 闪现 */}
+      <ShockBanner />
+      <RoundStartedBanner />
 
       {/* Replay 模式横幅: 从 /history 跳进 /workbench/<已完成的 run> 时显示 */}
       {isReplayMode && runId && (
@@ -456,6 +463,13 @@ export default function Workbench() {
               activeAgents={snapshot?.active_agents || 0}
               startedAt={snapshot?.started_at ?? runStartedAt ?? undefined}
             />
+          </motion.div>
+        )}
+
+        {/* should-tier v3: 市场环境脉搏仪表盘 (在 PlatformStatusCards 旁边) */}
+        {runId && (
+          <motion.div variants={fadeUp}>
+            <MarketEnvPulse />
           </motion.div>
         )}
 
@@ -860,6 +874,9 @@ export default function Workbench() {
 
             {/* feature1 (feature/history-graph-and-viz): 涌现议题时间线 */}
             <EmergedTopicsTimeline />
+
+            {/* should-tier v3: 信念漂移事件流 (放在 EmTopics 之后, 主题相关) */}
+            <BeliefShiftFeed />
 
             {/* feature2: 图谱轮次 diff 对比 */}
             <GraphRoundDiff />

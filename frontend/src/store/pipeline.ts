@@ -151,6 +151,18 @@ export interface YearAdvancedEvent {
   ts: number
 }
 
+/** 信念漂移事件（belief_shift） */
+export interface BeliefShiftEvent {
+  round: number
+  agent_id: string
+  topic?: string
+  old_value?: number | null
+  new_value?: number | null
+  delta: number            // magnitude
+  magnitude?: number
+  ts: number
+}
+
 /** 风险条目（必须 v1 风险矩阵热力图） */
 export interface RiskItem {
   name: string
@@ -198,6 +210,14 @@ interface PipelineState {
   recentShocks: ShockEvent[]
   /** 跨年推演完成信息（null = 未触发） */
   yearAdvanced: YearAdvancedEvent | null
+  /** should-tier: 最近一条市场事件的完整 payload (供 MarketEnvPulse 仪表盘展示) */
+  latestMarketEvent: MarketEvent | null
+  /** should-tier: 当前活动冲击（3s 后自动消失, 区别于 recentShocks 长队列） */
+  activeShock: ShockEvent | null
+  /** should-tier: 信念漂移流（最近 30 条, BeliefShiftFeed 消费） */
+  beliefShifts: BeliefShiftEvent[]
+  /** should-tier: 最近一次 round_started 横幅 (1s 后自动清空) */
+  roundStartedBanner: { round: number; total_rounds?: number; ts: number } | null
   /** must-tier v1: 报告风险矩阵（从 snapshot.artifacts.REPORT_GENERATING.risks 派生） */
   reportRisks: RiskItem[]
 
@@ -251,6 +271,20 @@ interface PipelineState {
   setYearAdvanced: (event: YearAdvancedEvent) => void
   /** 清空跨年 banner（用户关闭后） */
   clearYearAdvanced: () => void
+
+  // ---- should-tier v3: 实时事件 actions (新增 market_event / shock / round_started / belief_shift) ----
+  /** 设置最近一条市场事件（供 MarketEnvPulse 仪表盘） */
+  setLatestMarketEvent: (event: MarketEvent | null) => void
+  /** 设置当前活动冲击（ShockBanner 3s 后自动清除） */
+  setActiveShock: (shock: ShockEvent | null) => void
+  /** 清空活动冲击（用户关闭或定时器触发） */
+  clearActiveShock: () => void
+  /** 追加信念漂移（保持最新 30 条） */
+  appendBeliefShift: (shift: BeliefShiftEvent) => void
+  /** 设置 round_started 横幅（1s 后自动清空） */
+  setRoundStartedBanner: (banner: { round: number; total_rounds?: number; ts: number } | null) => void
+  /** 清空 round_started 横幅 */
+  clearRoundStartedBanner: () => void
 }
 
 // ---- 内部 SSE 工具（仍在模块作用域，但只通过 store 字段访问） ----
@@ -341,6 +375,7 @@ function _openSSE(
             progress: evtData.progress,
             actions_count: evtData.actions?.length ?? evtData.actions_count,
             belief_updates_count: evtData.belief_updates?.length ?? evtData.belief_updates_count,
+            belief_shift_count: evtData.belief_shift_count ?? 0,
             propagation_events_count: evtData.propagation_events?.length ?? evtData.propagation_events_count,
             active_agents: evtData.active_agents,
             actions: evtData.actions,
@@ -360,6 +395,21 @@ function _openSSE(
             description: evtData.description,
             ts: evtData.ts ?? Date.now(),
           } as MarketEvent)
+          // should-tier v3: 同步到 latest_market_event (供 MarketEnvPulse 仪表盘)
+          // 这里把 sector_growth_rate / policy_pressure / capital_availability / cycle_label_cn 等
+          // 额外字段合并到 MarketEvent 上 (MarketEvent 形状基础 + 扩展字段)
+          try {
+            get().setLatestMarketEvent({
+              type: evtData.type || 'UNKNOWN',
+              industry: evtData.industry,
+              gdp_growth: typeof evtData.gdp_growth === 'number' ? evtData.gdp_growth : undefined,
+              cycle_label: evtData.cycle_label,
+              description: evtData.description,
+              ts: evtData.ts ?? Date.now(),
+              // 扩展字段 (MarketEnvPulse 消费)
+              ...(evtData as any),
+            } as any)
+          } catch {/* ignore */}
         } else if (evtType === 'shock_injected') {
           // must-tier v2: 外部冲击 → 队列 (max 5)
           get().appendShock({
@@ -368,6 +418,17 @@ function _openSSE(
             description: evtData.description,
             ts: evtData.ts ?? Date.now(),
           } as ShockEvent)
+          // should-tier v3: 同步到 active_shock (ShockBanner 3s 高亮, 用户也能手动关)
+          try {
+            get().setActiveShock({
+              factor_name: evtData.factor_name || '未知因素',
+              severity: typeof evtData.severity === 'number' ? evtData.severity : 0.5,
+              description: evtData.description,
+              ts: evtData.ts ?? Date.now(),
+              // 扩展字段 (ShockBanner 消费)
+              ...(evtData as any),
+            } as any)
+          } catch {/* ignore */}
         } else if (evtType === 'year_advanced') {
           // must-tier v2: 跨年完成 → banner
           get().setYearAdvanced({
@@ -380,6 +441,32 @@ function _openSSE(
           if (evtData.status === 'completed' || evtData.status === 'failed') {
             set({ status: evtData.status as PipelineStatus })
           }
+        } else if (evtType === 'belief_shift') {
+          // should-tier v3: 信念漂移事件 → beliefShifts[] 队列
+          try {
+            get().appendBeliefShift({
+              round: evtData.round ?? 0,
+              agent_id: String(evtData.agent_id ?? 'unknown'),
+              topic: evtData.topic,
+              old_value: evtData.old_value,
+              new_value: evtData.new_value,
+              delta: typeof evtData.delta === 'number' ? evtData.delta : 0,
+              magnitude: evtData.magnitude,
+              ts: evtData.ts ?? Date.now(),
+            } as BeliefShiftEvent)
+          } catch {/* ignore */}
+        } else if (evtType === 'round_started') {
+          // should-tier v3: 回合开始横幅 (1s 闪现)
+          try {
+            get().setRoundStartedBanner({
+              round: evtData.round ?? 0,
+              total_rounds: evtData.total_rounds,
+              ts: evtData.ts ?? Date.now(),
+            })
+          } catch {/* ignore */}
+        } else if (evtType === 'round_completed') {
+          // should-tier v3: 回合完成 (与 round_progress 区分 — 不带 progress 字段, 纯快照)
+          // 已在上面分支处理 (round_completed / round_progress 合并)
         }
       }
     } catch { /* ignore malformed events */ }
@@ -425,6 +512,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   marketEvents: [],
   recentShocks: [],
   yearAdvanced: null,
+  // should-tier v3: 新增
+  latestMarketEvent: null,
+  activeShock: null,
+  beliefShifts: [],
+  roundStartedBanner: null,
   // must-tier v1: 风险矩阵初始值
   reportRisks: [],
   _sseRef: null,
@@ -749,6 +841,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       marketEvents: [],
       recentShocks: [],
       yearAdvanced: null,
+      // should-tier v3: 切 run 时清空
+      latestMarketEvent: null,
+      activeShock: null,
+      beliefShifts: [],
+      roundStartedBanner: null,
       reportRisks: [],
     })
   },
@@ -783,6 +880,51 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     set({ yearAdvanced: event })
   },
   clearYearAdvanced: () => set({ yearAdvanced: null }),
+
+  // ---- should-tier v3: 实时事件 actions ----
+  setLatestMarketEvent: (event) => set({ latestMarketEvent: event }),
+  setActiveShock: (shock) => {
+    set({ activeShock: shock })
+    // 3s 后自动清除 (与用户手动 close 互斥: 多次设置会重置)
+    if (shock && typeof window !== 'undefined') {
+      const t = setTimeout(() => {
+        try {
+          const cur = get().activeShock
+          if (cur && cur.ts === shock.ts) {
+            set({ activeShock: null })
+          }
+        } catch {/* ignore */}
+      }, 3000)
+      // 清理上一个未触发的 timer
+      const prev = (get() as any)._activeShockTimer
+      if (prev) clearTimeout(prev)
+      ;(set as any)({ _activeShockTimer: t } as any)
+    }
+  },
+  clearActiveShock: () => set({ activeShock: null }),
+  appendBeliefShift: (shift) => {
+    set((s) => {
+      const next = [shift, ...(s.beliefShifts ?? [])].slice(0, 30)
+      return { beliefShifts: next }
+    })
+  },
+  setRoundStartedBanner: (banner) => {
+    set({ roundStartedBanner: banner })
+    if (banner && typeof window !== 'undefined') {
+      const t = setTimeout(() => {
+        try {
+          const cur = get().roundStartedBanner
+          if (cur && cur.ts === banner.ts) {
+            set({ roundStartedBanner: null })
+          }
+        } catch {/* ignore */}
+      }, 1000)
+      const prev = (get() as any)._roundStartedTimer
+      if (prev) clearTimeout(prev)
+      ;(set as any)({ _roundStartedTimer: t } as any)
+    }
+  },
+  clearRoundStartedBanner: () => set({ roundStartedBanner: null }),
 }))
 
 // ============================================================
@@ -858,6 +1000,12 @@ export const useNetworkFrames = (): NetworkFrameLive[] => {
 export const useMarketEvents = () => usePipelineStore((s) => s.marketEvents)
 export const useRecentShocks = () => usePipelineStore((s) => s.recentShocks)
 export const useYearAdvanced = () => usePipelineStore((s) => s.yearAdvanced)
+
+// ---- should-tier v3: 新增 atomic selectors ----
+export const useLatestMarketEvent = () => usePipelineStore((s) => s.latestMarketEvent)
+export const useActiveShock = () => usePipelineStore((s) => s.activeShock)
+export const useBeliefShifts = () => usePipelineStore((s) => s.beliefShifts)
+export const useRoundStartedBanner = () => usePipelineStore((s) => s.roundStartedBanner)
 
 // ---- must-tier v1: 报告风险矩阵 selector (live) ----
 export const useReportRisks = () => usePipelineStore((s) => s.reportRisks)
