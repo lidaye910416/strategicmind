@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Terminal, Trash2, Pause, Play, ChevronDown, TrendingUp, Zap, X } from 'lucide-react'
+import { Terminal, Trash2, Pause, Play, ChevronDown, ChevronUp, TrendingUp, Zap, X } from 'lucide-react'
 import { usePipelineEvent, useStageProgress } from '../store/pipeline'
 import StageProgressPills from './Workbench/StageProgressPills'
 
@@ -82,6 +82,24 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
   const [marketBanners, setMarketBanners] = useState<MarketBanner[]>([])
   const [shockBanners, setShockBanners] = useState<ShockBanner[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
+  // 默认折叠, 减少空白高度占用 (CLAUDE.md 17→<8 placeholders)
+  // localStorage 存储: "1" = 折叠, "0" = 展开; 默认 "1" (折叠)
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem('systemLogsCollapsed')
+      // 第一次访问 (v === null) 或 v === '1' → 折叠
+      return v !== '0'
+    } catch {
+      return true
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('systemLogsCollapsed', isCollapsed ? '1' : '0')
+    } catch {
+      /* localStorage 不可用 (隐私模式/SSR) — 静默忽略 */
+    }
+  }, [isCollapsed])
 
   // 客户端推入的日志（合并到日志流）
   useEffect(() => {
@@ -223,9 +241,14 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
   }, [push])
 
   return (
-    <div className="rounded-xl bg-ink-950 border border-ink-800 overflow-hidden flex flex-col" style={{ height }}>
-      {/* P4 LOOP (G5): 醒目市场事件 + 外部冲击横幅区（amber-500/20 + rose-500/20） */}
-      {(marketBanners.length > 0 || shockBanners.length > 0) && (
+    <div
+      data-testid="system-logs"
+      data-collapsed={isCollapsed ? '1' : '0'}
+      className="rounded-xl bg-ink-950 border border-ink-800 overflow-hidden flex flex-col"
+      style={{ height: isCollapsed ? undefined : height }}
+    >
+      {/* P4 LOOP (G5): 醒目市场事件 + 外部冲击横幅区（amber-500/20 + rose-500/20） — 仅展开时显示 */}
+      {!isCollapsed && (marketBanners.length > 0 || shockBanners.length > 0) && (
         <div className="flex-shrink-0 max-h-[40%] overflow-y-auto border-b border-ink-800 bg-ink-900/40">
           <AnimatePresence initial={false}>
             {shockBanners.slice().reverse().map((b) => (
@@ -285,77 +308,92 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
           />
         </div>
         <div className="flex items-center gap-1">
+          {!isCollapsed && (
+            <>
+              <button
+                onClick={() => setPaused((p) => !p)}
+                className="text-ink-400 hover:text-white transition-colors p-1"
+                title={paused ? '继续' : '暂停'}
+              >
+                {paused ? <Play size={10} /> : <Pause size={10} />}
+              </button>
+              <button
+                onClick={() => setLogs([])}
+                className="text-ink-400 hover:text-white transition-colors p-1"
+                title="清空"
+              >
+                <Trash2 size={10} />
+              </button>
+              <button
+                onClick={() => {
+                  setAutoScroll(true)
+                  if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
+                }}
+                className="text-ink-400 hover:text-white transition-colors p-1"
+                title="滚到底部"
+              >
+                <ChevronDown size={10} />
+              </button>
+            </>
+          )}
           <button
-            onClick={() => setPaused((p) => !p)}
+            data-testid="system-logs-toggle"
+            onClick={() => setIsCollapsed((c) => !c)}
             className="text-ink-400 hover:text-white transition-colors p-1"
-            title={paused ? '继续' : '暂停'}
+            title={isCollapsed ? '展开日志' : '折叠日志'}
+            aria-label={isCollapsed ? '展开日志' : '折叠日志'}
           >
-            {paused ? <Play size={10} /> : <Pause size={10} />}
-          </button>
-          <button
-            onClick={() => setLogs([])}
-            className="text-ink-400 hover:text-white transition-colors p-1"
-            title="清空"
-          >
-            <Trash2 size={10} />
-          </button>
-          <button
-            onClick={() => {
-              setAutoScroll(true)
-              if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
-            }}
-            className="text-ink-400 hover:text-white transition-colors p-1"
-            title="滚到底部"
-          >
-            <ChevronDown size={10} />
+            {isCollapsed ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
           </button>
         </div>
       </div>
 
-      {/* Log content */}
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[11px] leading-5"
-      >
-        <AnimatePresence initial={false}>
-          {logs.length === 0 ? (
-            <div className="text-ink-600 italic">No log entries yet. Start a simulation to see live events…</div>
-          ) : logs.map((line) => {
-            const src = SOURCE_STYLES[line.source] || SOURCE_STYLES.System
-            const levelColor =
-              line.level === 'error' ? 'text-rose-400' :
-              line.level === 'warn' ? 'text-amber-400' :
-              line.level === 'success' ? 'text-emerald-400' :
-              'text-ink-200'
-            return (
-              <motion.div
-                key={line.id}
-                initial={{ opacity: 0, x: -4 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex items-start gap-2 hover:bg-ink-900/40 -mx-1 px-1 rounded"
+      {/* Log content — 仅展开时渲染 */}
+      {!isCollapsed && (
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[11px] leading-5"
+        >
+          <AnimatePresence initial={false}>
+            {logs.length === 0 ? (
+              <div className="text-ink-600 italic">No log entries yet. Start a simulation to see live events…</div>
+            ) : logs.map((line) => {
+              const src = SOURCE_STYLES[line.source] || SOURCE_STYLES.System
+              const levelColor =
+                line.level === 'error' ? 'text-rose-400' :
+                line.level === 'warn' ? 'text-amber-400' :
+                line.level === 'success' ? 'text-emerald-400' :
+                'text-ink-200'
+              return (
+                <motion.div
+                  key={line.id}
+                  initial={{ opacity: 0, x: -4 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex items-start gap-2 hover:bg-ink-900/40 -mx-1 px-1 rounded"
+                >
+                  <span className="text-ink-500 flex-shrink-0">{formatTs(line.ts)}</span>
+                  <span className={`flex-shrink-0 font-semibold ${src.color}`}>{src.prefix}</span>
+                  <span className={`flex-1 break-all ${levelColor}`}>{line.msg}</span>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+          {!autoScroll && logs.length > 5 && (
+            <div className="sticky bottom-0 left-0 right-0 text-center py-1">
+              <button
+                onClick={() => {
+                  setAutoScroll(true)
+                  if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
+                }}
+                className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500 text-white shadow-soft hover:bg-brand-600"
               >
-                <span className="text-ink-500 flex-shrink-0">{formatTs(line.ts)}</span>
-                <span className={`flex-shrink-0 font-semibold ${src.color}`}>{src.prefix}</span>
-                <span className={`flex-1 break-all ${levelColor}`}>{line.msg}</span>
-              </motion.div>
-            )
-          })}
-        </AnimatePresence>
-        {!autoScroll && logs.length > 5 && (
-          <div className="sticky bottom-0 left-0 right-0 text-center py-1">
-            <button
-              onClick={() => {
-                setAutoScroll(true)
-                if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
-              }}
-              className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500 text-white shadow-soft hover:bg-brand-600"
-            >
-              ↓ 跳到最新
-            </button>
-          </div>
-        )}
-      </div>
+                ↓ 跳到最新
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

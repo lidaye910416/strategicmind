@@ -126,7 +126,7 @@ function WorkbenchLayoutShell({
           data-testid={`${dataTestId}-canvas`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex-1 min-w-0 min-h-[480px] rounded-xl overflow-hidden
+          className="flex-1 min-w-0 min-h-[400px] rounded-xl overflow-hidden
                      bg-white/40 dark:bg-ink-900/30
                      border border-ink-200/60 dark:border-ink-800/60"
           style={{ flex: '1 1 60%' }}

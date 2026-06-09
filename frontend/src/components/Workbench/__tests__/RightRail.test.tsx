@@ -2,13 +2,12 @@
  * RightRail — Workbench redesign (T2.4) test
  *
  * Coverage per spec:
- *   - 4 sections render in the right order: controls / summary / emerging / next
- *   - An entity_emerged SSE event prepends a row in the "emerging" section
- *     with the first 80 chars of the entity label
+ *   - 4 sections render in the right order: controls / summary / active-agents / department
  *   - The status badge reflects the current pipeline status
  *   - Pause / Resume / Cancel buttons appear / hide based on status
+ *   - Active Agents + Department Activity aggregate from simRounds actions
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 
 class StubEventSource {
@@ -27,32 +26,6 @@ describe('Workbench/RightRail (T2.4)', () => {
   beforeEach(() => {
     usePipelineStore.getState().reset()
     usePipelineStore.getState().resetGraphStream()
-  })
-
-  it('entity_emerged event prepends a row <= 40px with the first 80 chars', () => {
-    usePipelineStore.setState({ runId: 'run_x', status: 'running' })
-    render(<RightRail />)
-    // Simulate the SSE delta: append an emergence-sourced node
-    act(() => {
-      usePipelineStore.getState().appendGraphNode({
-        id: 'e1',
-        label: 'X'.repeat(120),  // 120 chars
-        entity_type: 'COMPANY',
-        type: 'COMPANY',
-        source: 'emergence',
-        round: 5,
-      } as any)
-    })
-    // Re-query (act already flushed)
-    const items = screen.getAllByTestId('wb-rail-emerging-item')
-    expect(items.length).toBeGreaterThan(0)
-    const first = items[0]
-    // First 80 chars
-    expect(first.textContent).toContain('X'.repeat(80))
-    expect(first.textContent).toContain('…')
-    // Style maxHeight <= 40px (per CLAUDE.md "list-item <= 40px 高")
-    const style = first.getAttribute('style') ?? ''
-    expect(style).toContain('max-height: 40px')
   })
 
   it('shows pause / cancel when status=running', () => {
@@ -85,17 +58,15 @@ describe('Workbench/RightRail (T2.4)', () => {
     expect(screen.getByTestId('wb-rail-status-badge').textContent).toBe('完成')
   })
 
-  it('renders 6 sections including new Active Agents + Department Activity', () => {
+  it('renders 4 sections in fixed order (controls / summary / active-agents / department)', () => {
     usePipelineStore.setState({ runId: 'run_x', status: 'running' })
     const { container } = render(<RightRail />)
     const sections = container.querySelectorAll('section')
-    expect(sections).toHaveLength(6)
+    expect(sections).toHaveLength(4)
     const ids = Array.from(sections).map((s) => s.getAttribute('data-testid'))
     expect(ids).toEqual([
       'wb-rail-controls',
       'wb-rail-summary',
-      'wb-rail-emerging',
-      'wb-rail-next',
       'wb-rail-active-agents',
       'wb-rail-department',
     ])

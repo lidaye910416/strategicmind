@@ -15,14 +15,13 @@
  * Implements: loop-engine-v2-implementation.md §Phase 2 / T2.4
  */
 import { memo, useMemo, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Play, Pause, X, FastForward, Activity, Sparkles, ChevronRight, Clock,
+  Play, Pause, X, FastForward, Activity,
   Users, Building2,
 } from 'lucide-react'
 import {
-  useRunId, useStatus, useSnapshot, useSimRounds, useGraphNodes,
-  useMarketEvents, usePipelineStore,
+  useRunId, useStatus, useSnapshot, useSimRounds,
+  usePipelineStore,
 } from '../../store/pipeline'
 import { WORKBENCH } from '../../i18n/zh'
 
@@ -51,8 +50,6 @@ function RightRailImpl({
   const status = useStatus()
   const snapshot = useSnapshot()
   const simRounds = useSimRounds()
-  const graphNodes = useGraphNodes()
-  const marketEvents = useMarketEvents()
 
   const pause = usePipelineStore((s) => s.pause)
   const resume = usePipelineStore((s) => s.resume)
@@ -97,24 +94,6 @@ function RightRailImpl({
     }
     return null
   }, [lastRound, simRounds, currentRound])
-
-  // ---- Emerging entities (prepend on entity_emerged) ----
-  // The store is the single source of truth; we filter to emergence-sourced nodes,
-  // sort descending by round, and take the latest 8.
-  const emerging = useMemo(() => {
-    return graphNodes
-      .filter((n) => n.source === 'emergence' || (n.round != null && n.round > 0))
-      .sort((a, b) => (b.round ?? 0) - (a.round ?? 0))
-      .slice(0, 8)
-  }, [graphNodes])
-
-  // ---- Next event preview ----
-  // Heuristic: the next market_event in queue, or a calendar/quarter-boundary hint
-  const nextEvent = useMemo(() => {
-    if (marketEvents.length === 0) return null
-    const last = marketEvents[marketEvents.length - 1]
-    return last
-  }, [marketEvents])
 
   // ---- 活跃 Agent 聚合 (从 simRounds.actions) ----
   const activeAgents = useMemo(() => {
@@ -305,93 +284,7 @@ function RightRailImpl({
         )}
       </section>
 
-      {/* ===== Section 3: Emerging entities ===== */}
-      <section
-        data-testid="wb-rail-emerging"
-        className="card p-3"
-        aria-label={WORKBENCH.railSectionEmerging}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-ink-500">
-            {WORKBENCH.railSectionEmerging}
-          </div>
-          <Sparkles size={11} className="text-brand-500" />
-        </div>
-        {emerging.length === 0 ? (
-          <div data-testid="wb-rail-emerging-empty" className="text-[11px] text-ink-400 py-2 text-center">
-            {WORKBENCH.railEmergingEmpty}
-          </div>
-        ) : (
-          <ul className="space-y-1">
-            <AnimatePresence initial={false}>
-              {emerging.map((e) => {
-                const label = e.label ?? e.name ?? e.id
-                const truncated = label.length > 80 ? `${label.slice(0, 80)}…` : label
-                return (
-                  <motion.li
-                    key={e.id}
-                    layout
-                    initial={{ opacity: 0, y: -4, height: 0 }}
-                    animate={{ opacity: 1, y: 0, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18 }}
-                    data-testid="wb-rail-emerging-item"
-                    data-entity-id={e.id}
-                    className="flex items-center gap-2 px-2 h-9 rounded-md
-                               bg-ink-50/70 dark:bg-ink-900/50
-                               border border-ink-200/40 dark:border-ink-800/40"
-                    style={{ maxHeight: 40 }}
-                    title={label}
-                  >
-                    <Activity size={10} className="text-emerald-500 flex-shrink-0" />
-                    <div className="flex-1 min-w-0 text-[11px] text-ink-700 dark:text-ink-200 truncate">
-                      {truncated}
-                    </div>
-                    {e.round != null && (
-                      <span className="text-[9px] font-mono font-bold text-ink-500 flex-shrink-0">
-                        R{e.round}
-                      </span>
-                    )}
-                  </motion.li>
-                )
-              })}
-            </AnimatePresence>
-          </ul>
-        )}
-      </section>
-
-      {/* ===== Section 4: Next event preview ===== */}
-      <section
-        data-testid="wb-rail-next"
-        className="card p-3"
-        aria-label={WORKBENCH.railSectionNext}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-ink-500">
-            {WORKBENCH.railSectionNext}
-          </div>
-          <ChevronRight size={11} className="text-ink-400" />
-        </div>
-        {nextEvent ? (
-          <div className="text-[11px] text-ink-700 dark:text-ink-200 leading-snug">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Clock size={10} className="text-ink-400" />
-              <span className="font-mono text-[10px] text-ink-500">
-                {new Date(nextEvent.ts).toLocaleTimeString()}
-              </span>
-            </div>
-            <div className="truncate-2">
-              {nextEvent.description ?? nextEvent.type}
-            </div>
-          </div>
-        ) : (
-          <div className="text-[11px] text-ink-400 py-1 text-center">
-            {WORKBENCH.railNextEventEmpty}
-          </div>
-        )}
-      </section>
-
-      {/* ===== Section 5: 活跃 Agent (P5 增强) ===== */}
+      {/* ===== Section 3: 活跃 Agent (P5 增强) ===== */}
       <section
         data-testid="wb-rail-active-agents"
         className="card p-3"
@@ -432,7 +325,7 @@ function RightRailImpl({
         )}
       </section>
 
-      {/* ===== Section 6: 部门动作分布 (P5 增强) ===== */}
+      {/* ===== Section 4: 部门动作分布 (P5 增强) ===== */}
       <section
         data-testid="wb-rail-department"
         className="card p-3"

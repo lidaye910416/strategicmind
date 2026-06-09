@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Link, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
+  Play, Pause, FileText, Loader2, ArrowUpRight,
   Home, FastForward, Rocket, Upload, Eye,
 } from 'lucide-react'
 import api from '../services/api'
@@ -23,19 +23,17 @@ import InnerWorkbenchContent from '../components/Workbench/InnerWorkbenchContent
 import MarketEventTicker from '../components/MarketEventTicker'
 import ShockToast from '../components/ShockToast'
 import YearAdvancedBanner from '../components/YearAdvancedBanner'
-import MarketEnvPulse from '../components/MarketEnvPulse'
 import ShockBanner from '../components/ShockBanner'
 import RoundStartedBanner from '../components/RoundStartedBanner'
 import EntityDanmaku from '../components/EntityDanmaku'
 
-import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
 import {
   WORKBENCH, STATUS_LABELS,  COMMON, APP_ROUTES,
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 import {
-  usePipelineStore, useRunId, useStatus, useStage, useSnapshot, useLastRunConfig,
+  usePipelineStore, useRunId, useStatus, useStage, useLastRunConfig,
   useGraphNodes, useGraphProgress, useSimRounds, useNetworkFrames,
   useMarketEvents, useRecentShocks, useYearAdvanced,
   useReportRisks,
@@ -62,8 +60,6 @@ export default function Workbench() {
   // P4 LOOP (G5): 跨年推演 — 仅 completed/failed 可点
   const advanceYear = usePipelineStore((s) => s.advanceYear)
   const [advancingYear, setAdvancingYear] = useState(false)
-  // P1-8 / P1-11: 快照供 PlatformStatusCards 取 current_round / total_rounds / active_agents
-  const snapshot = useSnapshot()
   // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
   const lastRunConfig = useLastRunConfig()
   // store: 加载指定 runId 的快照到 store (snapshot + graph + rounds)
@@ -90,8 +86,6 @@ export default function Workbench() {
   const yearAdvanced = useYearAdvanced()
   // must-tier v1: 风险矩阵派生
   const reportRisks = useReportRisks()
-  // P1-8: 记录推演开始时间（用于 PlatformStatusCards 的 ETA 估算）
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
 
   // ---- mirofish-tier: 30s 轮询 toggle (SSE 断线兜底) ----
   // 0 = 关闭 (默认), 30000 = 开启
@@ -176,8 +170,6 @@ export default function Workbench() {
         ? lastRunConfig
         : { simulation_hours: 72, report_style: 'executive' as const }
       await startPipeline(cfg)
-      // P1-8: 记录开始时间用于 ETA（store 的 started_at 由后端推流，前端先用本地兜底）
-      setRunStartedAt(Math.floor(Date.now() / 1000))
     } catch (e) {
       console.error('启动失败', e)
     }
@@ -411,30 +403,11 @@ export default function Workbench() {
           <WorkbenchSubnav />
         </motion.div>
 
-        {/* P1-8: 平台进度双卡（外部推演 + 内部推演，跨双卡 ETA 自动显示）
-            取代原 240-245 死代码空 fragment；P1-9 已从 LiveRunPanel 内嵌副本中上提 */}
+        {/* ===== 主体：3-region 布局 (WorkbenchLayout 替代旧 2-col body) =====
+            注: PlatformStatusCards + MarketEnvPulse + 推演状态/就绪 banner 已删除,
+            因为 7 步流水线 (StageProgressStrip, WorkbenchLayout 内部) + StateHero
+            已覆盖同一信息 (阶段/轮次/状态), 删除消除 17→<8 占位。 */}
         {runId && (
-          <motion.div variants={fadeUp}>
-            <PlatformStatusCards
-              status={status}
-              currentStage={stage}
-              currentRound={snapshot?.current_round || 0}
-              totalRounds={snapshot?.total_rounds || 0}
-              activeAgents={snapshot?.active_agents || 0}
-              startedAt={snapshot?.started_at ?? runStartedAt ?? undefined}
-            />
-          </motion.div>
-        )}
-
-        {/* should-tier v3: 市场环境脉搏仪表盘 (在 PlatformStatusCards 旁边) */}
-        {runId && (
-          <motion.div variants={fadeUp}>
-            <MarketEnvPulse />
-          </motion.div>
-        )}
-
-        {/* ===== 主体：3-region 布局 (WorkbenchLayout 替代旧 2-col body) ===== */}
-        {runId ? (
           <motion.div variants={fadeUp} className="px-0 md:px-2">
             <WorkbenchLayout>
               <InnerWorkbenchContent
@@ -464,22 +437,6 @@ export default function Workbench() {
                 setGraphRefreshIntervalMs={setGraphRefreshIntervalMs}
               />
             </WorkbenchLayout>
-          </motion.div>
-        ) : (
-          /* 无 runId: 仅显示启动 CTA */
-          <motion.div variants={fadeUp} className="card p-8 text-center bg-gradient-to-br from-brand-50/50 to-accent-50/30 dark:from-brand-950/20 dark:to-accent-950/10">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 mx-auto inline-flex items-center justify-center text-white shadow-glow mb-3">
-              <Sparkles size={24} />
-            </div>
-            <h3 className="text-base font-semibold text-ink-900 dark:text-white mb-1">
-              {WORKBENCH.startTitle}
-            </h3>
-            <p className="text-xs text-ink-500 dark:text-ink-400 mb-4 max-w-md mx-auto">
-              {WORKBENCH.startDesc}
-            </p>
-            <button onClick={handleStartPipeline} className="btn-primary">
-              <Play size={16} /> {WORKBENCH.start}
-            </button>
           </motion.div>
         )}
 
