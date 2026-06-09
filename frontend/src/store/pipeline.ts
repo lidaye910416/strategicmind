@@ -16,12 +16,23 @@
  * Implements: US-061, US-062
  */
 import { create } from 'zustand'
+import { shallow } from 'zustand/shallow'
 import http from '../services/http'
 import { formatErrorMessage } from '../lib/formatError'
+import { computeStageStatuses, type StageInfo as StageInfoType } from '../components/Workbench/stageProgress'
 // Re-export usePipelineEvent (定义在 lib/hooks) 供业务组件统一从 store 导入
 export { usePipelineEvent, type PipelineEvent } from '../lib/hooks/usePipelineEvent'
 
 export type PipelineStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
+
+/**
+ * Hard caps to keep the realtime graph renderable.
+ * - MAX_GRAPH_NODES: d3-force 官方推荐实时布局 < 1000 节点。超出后静默丢弃，
+ *   避免 (a) store 内存爆掉 (b) SSE 风暴 (c) React/D3 每帧二次方 render 卡死。
+ * - MAX_GRAPH_SNAPSHOTS: 保留最近 12 轮 (1 年 × month) 的快照用于回放。
+ */
+export const MAX_GRAPH_NODES = 1000
+export const MAX_GRAPH_SNAPSHOTS = 12
 
 export interface RunSnapshot {
   run_id: string
@@ -800,6 +811,16 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     set((s) => {
       // 已存在则跳过（保留先来位置）
       if (s.graphNodes.some((n) => String(n.id) === id)) return s
+      // Hard cap: 静默丢弃超出 MAX_GRAPH_NODES 的节点，避免浏览器崩溃。
+      // UI 层可读 s.graphProgress.overflow / s.graphProgress.total_seen 显示提示。
+      if (s.graphNodes.length >= MAX_GRAPH_NODES) {
+        return {
+          graphProgress: {
+            ...s.graphProgress,
+            overflow: ((s.graphProgress as any).overflow ?? 0) + 1,
+          },
+        }
+      }
       const next = [...s.graphNodes, node]
       return { graphNodes: next, graphProgress: { ...s.graphProgress, nodes: next.length } }
     })
@@ -822,10 +843,19 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       if (s.simRounds.some((r) => r.round === round.round)) return s
       const next = [...s.simRounds, round].sort((a, b) => a.round - b.round)
       // feature2: 同步给该 round 拍一张图谱快照（首次见到该 round 才存）
+      // cap: 保留最近 MAX_GRAPH_SNAPSHOTS 轮的快照（FIFO, 淘汰最早 key）
       const snap = s.graphSnapshots
-      const newSnaps = snap[round.round]
-        ? snap
-        : { ...snap, [round.round]: { nodes: [...s.graphNodes], edges: [...s.graphEdges] } }
+      let newSnaps = snap
+      if (!snap[round.round]) {
+        newSnaps = { ...snap, [round.round]: { nodes: [...s.graphNodes], edges: [...s.graphEdges] } }
+        const keys = Object.keys(newSnaps).map(Number).sort((a, b) => a - b)
+        while (keys.length > MAX_GRAPH_SNAPSHOTS) {
+          const oldKey = keys.shift()!
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [oldKey]: _dropped, ...rest } = newSnaps
+          newSnaps = rest
+        }
+      }
       return { simRounds: next, graphSnapshots: newSnaps }
     })
   },
@@ -854,12 +884,19 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   snapshotGraphAtRound: (round) => {
     set((s) => {
       if (s.graphSnapshots[round]) return s
-      return {
-        graphSnapshots: {
-          ...s.graphSnapshots,
-          [round]: { nodes: [...s.graphNodes], edges: [...s.graphEdges] },
-        },
+      let next = {
+        ...s.graphSnapshots,
+        [round]: { nodes: [...s.graphNodes], edges: [...s.graphEdges] },
       }
+      // 同 appendSimRound: 保留最近 MAX_GRAPH_SNAPSHOTS 轮 (FIFO)
+      const keys = Object.keys(next).map(Number).sort((a, b) => a - b)
+      while (keys.length > MAX_GRAPH_SNAPSHOTS) {
+        const oldKey = keys.shift()!
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [oldKey]: _dropped, ...rest } = next
+        next = rest
+      }
+      return { graphSnapshots: next }
     })
   },
 
@@ -935,6 +972,56 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 export const useRunId = () => usePipelineStore((s) => s.runId)
 export const useStatus = () => usePipelineStore((s) => s.status)
 export const useStage = () => usePipelineStore((s) => s.currentStage)
+
+export interface StageProgress {
+  stages: StageInfoType[]
+  currentStage: string
+  completedStages: string[]
+  /** SIMULATION_RUNNING 阶段子进度 (其它阶段为 null) */
+  sub: {
+    round: number
+    totalRounds: number
+    activeAgents: number
+  } | null
+  /** 跨年回环第几年 (1 表示首次, 2+ 表示回环) */
+  yearOffset: number
+  isLooping: boolean
+}
+
+export const useStageProgress = (): StageProgress => usePipelineStore((s) => {
+  const completed = s.snapshot?.completed_stages ?? []
+  const current = s.snapshot?.current_stage ?? s.currentStage ?? 'IDLE'
+  const yearOffset = s.yearAdvanced?.year ?? 0
+  // yearOffset >= 2 表示已经走过至少 1 次跨年, 重新进入 GRAPH/ENTITY/PROFILE 时算回环
+  const isLooping = yearOffset >= 2 && (
+    current === 'GRAPH_BUILDING' ||
+    current === 'ENTITY_EXTRACTION' ||
+    current === 'PROFILE_GENERATION' ||
+    current === 'CONFIG_GENERATION'
+  )
+  const sub = current === 'SIMULATION_RUNNING' && s.simRounds.length > 0
+    ? {
+        round: s.simRounds[s.simRounds.length - 1].round,
+        totalRounds: s.snapshot?.total_rounds ?? s.simRounds.length,
+        activeAgents: (s.snapshot?.active_agents as number | undefined) ??
+          (s.simRounds[s.simRounds.length - 1].active_agents as number | undefined) ??
+          0,
+      }
+    : null
+  return {
+    stages: computeStageStatuses({
+      currentStage: current,
+      completedStages: completed,
+      isLooping,
+      runStatus: s.status,
+    }),
+    currentStage: current,
+    completedStages: completed,
+    sub,
+    yearOffset,
+    isLooping,
+  }
+}, shallow)
 export const useProgress = () => usePipelineStore((s) => s.progress)
 export const useSnapshot = () => usePipelineStore((s) => s.snapshot)
 export const useError = () => usePipelineStore((s) => s.error)
