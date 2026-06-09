@@ -16,7 +16,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Terminal, Trash2, Pause, Play, ChevronDown, TrendingUp, Zap, X } from 'lucide-react'
-import { usePipelineEvent } from '../store/pipeline'
+import { usePipelineEvent, useStageProgress } from '../store/pipeline'
+import StageProgressPills from './Workbench/StageProgressPills'
 
 const SOURCE_STYLES: Record<string, { color: string; prefix: string }> = {
   Pipeline:  { color: 'text-cyan-400',   prefix: '[Pipeline]' },
@@ -77,6 +78,7 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
   const [logs, setLogs] = useState<LogLine[]>([])
   const [paused, setPaused] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const stageProgress = useStageProgress()
   const [marketBanners, setMarketBanners] = useState<MarketBanner[]>([])
   const [shockBanners, setShockBanners] = useState<ShockBanner[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
@@ -275,6 +277,12 @@ export default function SystemLogs({ runId, height = 220, externalLogs = [] }: P
           <Terminal size={12} className="text-emerald-400" />
           <span className="text-[10px] font-bold text-emerald-400 tracking-widest uppercase">System Dashboard</span>
           <span className="text-[9px] text-ink-500 font-mono">{logs.length} lines</span>
+          {/* NEW (P5): compact 7-pill 状态条 */}
+          <StageProgressPills
+            stages={stageProgress.stages}
+            sub={stageProgress.sub}
+            currentStage={stageProgress.currentStage}
+          />
         </div>
         <div className="flex items-center gap-1">
           <button
