@@ -17,7 +17,7 @@ export const STAGE_ORDER = [
 
 export type StageId = typeof STAGE_ORDER[number]
 
-export type StageStatus = 'done' | 'active' | 'pending' | 'looping-active'
+export type StageStatus = 'done' | 'active' | 'pending' | 'looping-active' | 'failed' | 'cancelled'
 
 export interface StageInfo {
   id: StageId
@@ -30,17 +30,21 @@ export interface ComputeInput {
   completedStages: string[]
   /** 跨年回环标志: orchestrator 重新跑 GRAPH/ENTITY/PROFILE 时为 true */
   isLooping?: boolean
+  /** 推演整体状态: 失败/取消时 current stage 需显示对应徽章 */
+  runStatus?: 'failed' | 'cancelled' | 'idle' | 'paused' | 'running' | 'completed'
 }
 
 export function computeStageStatuses(input: ComputeInput): StageInfo[] {
-  const { currentStage, completedStages, isLooping } = input
+  const { currentStage, completedStages, isLooping, runStatus } = input
   const completedSet = new Set(completedStages)
   return STAGE_ORDER.map((id, index) => {
     let status: StageStatus
     if (completedSet.has(id) && !(isLooping && id === currentStage)) {
       status = 'done'
     } else if (id === currentStage) {
-      status = isLooping ? 'looping-active' : 'active'
+      if (runStatus === 'failed') status = 'failed'
+      else if (runStatus === 'cancelled') status = 'cancelled'
+      else status = isLooping ? 'looping-active' : 'active'
     } else {
       status = 'pending'
     }

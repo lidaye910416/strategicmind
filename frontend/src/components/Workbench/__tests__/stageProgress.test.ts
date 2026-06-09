@@ -66,4 +66,22 @@ describe('stageProgress', () => {
     })
     expect(result).toHaveLength(7)
   })
+
+  it('marks current stage as failed when runStatus=failed', () => {
+    const result = computeStageStatuses({
+      currentStage: 'GRAPH_BUILDING',
+      completedStages: ['SEED_PARSING'],
+      runStatus: 'failed',
+    })
+    expect(result.find((s) => s.id === 'GRAPH_BUILDING')?.status).toBe('failed')
+  })
+
+  it('marks current stage as cancelled when runStatus=cancelled', () => {
+    const result = computeStageStatuses({
+      currentStage: 'SIMULATION_RUNNING',
+      completedStages: ['SEED_PARSING', 'GRAPH_BUILDING', 'ENTITY_EXTRACTION', 'PROFILE_GENERATION', 'CONFIG_GENERATION'],
+      runStatus: 'cancelled',
+    })
+    expect(result.find((s) => s.id === 'SIMULATION_RUNNING')?.status).toBe('cancelled')
+  })
 })

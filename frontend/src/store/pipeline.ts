@@ -16,8 +16,10 @@
  * Implements: US-061, US-062
  */
 import { create } from 'zustand'
+import { shallow } from 'zustand/shallow'
 import http from '../services/http'
 import { formatErrorMessage } from '../lib/formatError'
+import { computeStageStatuses, type StageInfo as StageInfoType } from '../components/Workbench/stageProgress'
 // Re-export usePipelineEvent (定义在 lib/hooks) 供业务组件统一从 store 导入
 export { usePipelineEvent, type PipelineEvent } from '../lib/hooks/usePipelineEvent'
 
@@ -972,11 +974,7 @@ export const useStatus = () => usePipelineStore((s) => s.status)
 export const useStage = () => usePipelineStore((s) => s.currentStage)
 
 export interface StageProgress {
-  stages: Array<{
-    id: string
-    index: number
-    status: 'done' | 'active' | 'pending' | 'looping-active'
-  }>
+  stages: StageInfoType[]
   currentStage: string
   completedStages: string[]
   /** SIMULATION_RUNNING 阶段子进度 (其它阶段为 null) */
@@ -1011,38 +1009,19 @@ export const useStageProgress = (): StageProgress => usePipelineStore((s) => {
       }
     : null
   return {
-    stages: computeStageStatusesLocal(current, completed, isLooping),
+    stages: computeStageStatuses({
+      currentStage: current,
+      completedStages: completed,
+      isLooping,
+      runStatus: s.status,
+    }),
     currentStage: current,
     completedStages: completed,
     sub,
     yearOffset,
     isLooping,
   }
-})
-
-/** 内联工具避免循环依赖: 与 stageProgress.computeStageStatuses 行为一致 */
-function computeStageStatusesLocal(
-  currentStage: string,
-  completedStages: string[],
-  isLooping: boolean,
-) {
-  const STAGE_ORDER_LOCAL = [
-    'SEED_PARSING', 'GRAPH_BUILDING', 'ENTITY_EXTRACTION', 'PROFILE_GENERATION',
-    'CONFIG_GENERATION', 'SIMULATION_RUNNING', 'REPORT_GENERATING',
-  ] as const
-  const completedSet = new Set(completedStages)
-  return STAGE_ORDER_LOCAL.map((id, index) => {
-    let status: 'done' | 'active' | 'pending' | 'looping-active'
-    if (completedSet.has(id) && !(isLooping && id === currentStage)) {
-      status = 'done'
-    } else if (id === currentStage) {
-      status = isLooping ? 'looping-active' : 'active'
-    } else {
-      status = 'pending'
-    }
-    return { id, index, status }
-  })
-}
+}, shallow)
 export const useProgress = () => usePipelineStore((s) => s.progress)
 export const useSnapshot = () => usePipelineStore((s) => s.snapshot)
 export const useError = () => usePipelineStore((s) => s.error)
