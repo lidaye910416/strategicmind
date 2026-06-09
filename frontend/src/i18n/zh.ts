@@ -390,6 +390,11 @@ export const WORKBENCH = {
   stageProgressSubSimulation: (round: number, total: number, agents: number) =>
     `R${round}/${total} · ${agents} 部门活跃`,
   stageProgressSubLoop: (year: number) => `回环至第 ${year} 年`,
+  // P5 增强: 回环上下文信息
+  stageProgressLoopInfo: (year: number, fromStage: string, toStage: string) =>
+    `回环第 ${year} 年: ${fromStage} → ${toStage}`,
+  stageProgressLoopFromSim: () => '本年仿真完成, 回环至 R2 重建图谱',
+  stageProgressLoopBadgeSmall: '回',
   stageProgressNoData: '尚无阶段数据',
   // 部门动作分布 (P5 增强)
   railSectionActiveAgents: '活跃 Agent',

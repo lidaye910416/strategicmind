@@ -8,38 +8,25 @@
  * Implements: US-208 推演工作台
  */
 import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { Link, useParams, useLocation, useSearchParams } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
-  Activity, Zap, Home, Network, FileDown, Lightbulb,
-  FastForward, Rocket, Upload, Eye, RefreshCw,
+  Home, FastForward, Rocket, Upload, Eye,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
-import RoundTimeline from '../components/RoundTimeline'
-import DepartmentGraph from '../components/DepartmentGraph'
-import RealtimeKnowledgeGraph from '../components/RealtimeKnowledgeGraph'
-import BeliefEvolutionChart from '../components/BeliefEvolutionChart'
-import SimulationNetworkGraph from '../components/SimulationNetworkGraph'
-import RiskMatrixHeatmap from '../components/RiskMatrixHeatmap'
-import AgentInterview from '../components/AgentInterview'
 import WorkbenchSubnav from '../components/WorkbenchSubnav'
-import StageProgressStrip from '../components/Workbench/StageProgressStrip'
-import Stat from '../components/Workbench/Stat'
-import DeptMini from '../components/Workbench/DeptMini'
-import EmergedTopicsTimeline from '../components/Workbench/EmergedTopicsTimeline'
-import GraphRoundDiff from '../components/Workbench/GraphRoundDiff'
-import DeeperSimCta from '../components/Workbench/DeeperSimCta'
+import WorkbenchLayout from '../components/Workbench/WorkbenchLayout'
+import SystemLogs from '../components/SystemLogs'
+import InnerWorkbenchContent from '../components/Workbench/InnerWorkbenchContent'
 import MarketEventTicker from '../components/MarketEventTicker'
 import ShockToast from '../components/ShockToast'
 import YearAdvancedBanner from '../components/YearAdvancedBanner'
 import MarketEnvPulse from '../components/MarketEnvPulse'
 import ShockBanner from '../components/ShockBanner'
 import RoundStartedBanner from '../components/RoundStartedBanner'
-import BeliefShiftFeed from '../components/BeliefShiftFeed'
 import EntityDanmaku from '../components/EntityDanmaku'
-import EntityTypeLegend from '../components/EntityTypeLegend'
 
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
@@ -51,7 +38,7 @@ import {
   usePipelineStore, useRunId, useStatus, useStage, useSnapshot, useLastRunConfig,
   useGraphNodes, useGraphProgress, useSimRounds, useNetworkFrames,
   useMarketEvents, useRecentShocks, useYearAdvanced,
-  useReportRisks, useStageProgress,
+  useReportRisks,
 } from '../store/pipeline'
 
 // ---- P5: 7 步流水线定义已迁至 components/Workbench/StageProgressStrip.tsx 与 store/pipeline.ts ----
@@ -59,7 +46,6 @@ import {
 export default function Workbench() {
 
   // ---- 状态 ----
-  const navigate = useNavigate()
   const { runId: urlRunId } = useParams<{ runId?: string }>()
   const location = useLocation()
   const isReplayIntent = (location.state as { replay?: boolean } | null)?.replay === true
@@ -80,8 +66,6 @@ export default function Workbench() {
   const snapshot = useSnapshot()
   // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
   const lastRunConfig = useLastRunConfig()
-  // P5: 7 步流水线状态条 (StageProgressStrip) 数据
-  const stageProgress = useStageProgress()
   // store: 加载指定 runId 的快照到 store (snapshot + graph + rounds)
   const hydrateFromRunId = usePipelineStore((s) => s.hydrateFromRunId)
   // ---- replay 模式检测: URL 有 :runId 且 status 是终态 ----
@@ -420,18 +404,7 @@ export default function Workbench() {
           </motion.div>
         )}
 
-        {/* ===== P5: 7 步流水线状态条 (取代旧 PipelineDashboard + 底部 7 步详细卡) ===== */}
-        {runId && (
-          <motion.div variants={fadeUp} className="px-4 md:px-8 max-w-[1800px] mx-auto">
-            <StageProgressStrip
-              stages={stageProgress.stages}
-              sub={stageProgress.sub}
-              currentStage={stageProgress.currentStage}
-              isLooping={stageProgress.isLooping}
-              yearOffset={stageProgress.yearOffset}
-            />
-          </motion.div>
-        )}
+        {/* ===== P5: 7 步流水线状态条由 WorkbenchLayout 内部渲染 (T2.2) ===== */}
 
         {/* ===== sticky 子导航（4 锚点 + scroll-spy + 心跳） PR-2 P1-1/2 ===== */}
         <motion.div variants={fadeUp}>
@@ -460,503 +433,62 @@ export default function Workbench() {
           </motion.div>
         )}
 
-        {/* ===== 主体：左右分栏 ===== */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* ---------- 左栏：公司态势 + 议题推演 ---------- */}
-          <motion.div variants={fadeUp} className="lg:col-span-5 space-y-4">
-            {/* 公司画像卡 */}
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500/20 to-accent-500/20 inline-flex items-center justify-center text-brand-600">
-                  <Network size={16} />
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                    {WORKBENCH.companySection}
-                  </div>
-                  <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                    {company?.company_name || '加载中…'}
-                  </div>
-                </div>
-                {company && (
-                  <span className="ml-auto text-[10px] px-2 py-1 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-semibold">
-                    {company.business_model.model_name_cn}
-                  </span>
-                )}
-              </div>
-
-              {company && (
-                <>
-                  {/* 经营模式关键参数 */}
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <Stat label={WORKBENCH.statMargin} value={`${(company.business_model.margin_baseline * 100).toFixed(0)}%`} />
-                    <Stat label={WORKBENCH.statShock} value={company.business_model.shock_resilience.toFixed(2)} />
-                    <Stat label={WORKBENCH.statCycle} value={company.market_env.cycle_label_cn} />
-                  </div>
-
-                  {/* 部门列表 */}
-                  <div className="mt-4">
-                    <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold mb-2">
-                      {WORKBENCH.departments} ({company.departments.length})
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {company.departments.map((d) => (
-                        <DeptMini key={d.agent_id} dept={d} />
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
+        {/* ===== 主体：3-region 布局 (WorkbenchLayout 替代旧 2-col body) ===== */}
+        {runId ? (
+          <motion.div variants={fadeUp} className="px-0 md:px-2">
+            <WorkbenchLayout>
+              <InnerWorkbenchContent
+                company={company}
+                companyId={companyId}
+                runId={runId}
+                status={status}
+                stage={stage}
+                topicInput={topicInput}
+                setTopicInput={setTopicInput}
+                resolution={resolution}
+                resolving={resolving}
+                resolveTopic={resolveTopic}
+                runCompanySimulation={runCompanySimulation}
+                simResult={simResult}
+                simulating={simulating}
+                simulatingRound={simulatingRound}
+                simulatingPct={simulatingPct}
+                downloadCompanyReport={downloadCompanyReport}
+                handleStartPipeline={handleStartPipeline}
+                graphNodes={graphNodes}
+                graphProgress={graphProgress}
+                simRounds={simRounds}
+                networkFrames={networkFrames}
+                reportRisks={reportRisks}
+                graphRefreshIntervalMs={graphRefreshIntervalMs}
+                setGraphRefreshIntervalMs={setGraphRefreshIntervalMs}
+              />
+            </WorkbenchLayout>
+          </motion.div>
+        ) : (
+          /* 无 runId: 仅显示启动 CTA */
+          <motion.div variants={fadeUp} className="card p-8 text-center bg-gradient-to-br from-brand-50/50 to-accent-50/30 dark:from-brand-950/20 dark:to-accent-950/10">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 mx-auto inline-flex items-center justify-center text-white shadow-glow mb-3">
+              <Sparkles size={24} />
             </div>
-
-            {/* 议题推演（部门博弈） — PR-2 P1-2 锚点 #dept */}
-            <section id="dept" className="card p-5 scroll-mt-28">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-500/20 to-brand-500/20 inline-flex items-center justify-center text-accent-600">
-                  <Zap size={16} />
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                    {WORKBENCH.debateSection}
-                  </div>
-                  <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                    {WORKBENCH.debateTitle}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={topicInput}
-                  onChange={(e) => setTopicInput(e.target.value)}
-                  placeholder={WORKBENCH.debatePlaceholder}
-                  className="input flex-1"
-                  disabled={!companyId}
-                />
-                <button
-                  onClick={resolveTopic}
-                  disabled={!companyId || resolving || !topicInput.trim()}
-                  className="btn-primary h-10"
-                >
-                  {resolving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                  {WORKBENCH.debateRun}
-                </button>
-              </div>
-
-              {/* 多回合连续推演 */}
-              <div className="mt-2 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={runCompanySimulation}
-                    disabled={!companyId || simulating}
-                    className="btn-ghost h-8 text-[11px] flex-1"
-                    title={WORKBENCH.runMultiRoundTitle}
-                  >
-                    {simulating ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />}
-                    {WORKBENCH.runMultiRound}
-                  </button>
-                  <button
-                    onClick={downloadCompanyReport}
-                    disabled={!companyId}
-                    className="btn-ghost h-8 text-[11px] px-2"
-                    title={WORKBENCH.downloadReportTitle}
-                  >
-                    <FileDown size={11} />
-                  </button>
-                </div>
-                {/* P1-10: 实时回合指示 1/4 → 2/4 → 3/4 → 4/4 */}
-                {simulating && simulatingRound > 0 && (
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
-                    <span className="text-ink-500">推演中</span>
-                    <div className="flex items-center gap-0.5">
-                      {[1, 2, 3, 4].map((r) => (
-                        <span
-                          key={r}
-                          className={`px-1.5 py-0.5 rounded font-bold transition-colors ${
-                            r < simulatingRound
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                              : r === simulatingRound
-                                ? 'bg-brand-500 text-white animate-pulse-soft'
-                                : 'bg-ink-100 text-ink-400 dark:bg-ink-800 dark:text-ink-500'
-                          }`}
-                        >
-                          {r}
-                        </span>
-                      ))}
-                    </div>
-                    <span className="text-brand-600 dark:text-brand-400 font-bold tabular-nums">
-                      {simulatingRound}/4
-                    </span>
-                    <span className="text-ink-400">·</span>
-                    <span className="text-ink-500 tabular-nums">{Math.round(simulatingPct)}%</span>
-                  </div>
-                )}
-              </div>
-
-              {/* 多回合结果 */}
-              {simResult && simResult.round_results && (
-                <div className="mt-3 space-y-2">
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                    {WORKBENCH.multiRoundResults}（{simResult.round_results.length} 回合）
-                  </div>
-                  {simResult.round_results.map((r: any, i: number) => {
-                    const res = r.resolution || {}
-                    return (
-                      <div key={i} className="p-2 rounded-lg bg-ink-50/70 dark:bg-ink-900/50 border border-ink-200/50">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="text-[11px] font-semibold text-ink-700 dark:text-ink-200 truncate">
-                            R{r.round_num || i + 1} · {r.topic || res.topic}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono font-bold text-brand-600">
-                              {res.company_position?.toFixed(2) || '0.00'}
-                            </span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                              res.outcome === 'ADOPTED' ? 'bg-emerald-100 text-emerald-700' :
-                              res.outcome === 'REJECTED' ? 'bg-rose-100 text-rose-700' :
-                              res.outcome === 'COMPROMISED' ? 'bg-amber-100 text-amber-700' :
-                              'bg-ink-100 text-ink-700'
-                            }`}>
-                              {res.outcome_label_cn || res.outcome || '?'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              <AnimatePresence>
-                {resolution && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="mt-4 p-4 rounded-xl bg-gradient-to-br from-brand-50 to-accent-50/40 dark:from-brand-950/40 dark:to-accent-950/20 border border-brand-200/50"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                          {WORKBENCH.companyStance}
-                        </div>
-                        <div className="text-2xl font-bold font-mono text-brand-700 dark:text-brand-300">
-                          {resolution.company_position >= 0 ? '+' : ''}{resolution.company_position.toFixed(2)}
-                        </div>
-                      </div>
-                      <span className={`text-xs px-3 py-1.5 rounded-full font-semibold ${
-                        resolution.outcome === 'ADOPTED' ? 'bg-emerald-100 text-emerald-700' :
-                        resolution.outcome === 'REJECTED' ? 'bg-rose-100 text-rose-700' :
-                        resolution.outcome === 'COMPROMISED' ? 'bg-amber-100 text-amber-700' :
-                        'bg-ink-100 text-ink-700'
-                      }`}>
-                        {resolution.outcome_label_cn}
-                      </span>
-                    </div>
-
-                    {/* 部门立场条形图 — PR-2 P1-5：transform:scaleX 锚定 0 点 + 3 条参考线 */}
-                    <div className="space-y-1.5">
-                      {resolution.positions
-                        .sort((a, b) => b.position - a.position)
-                        .map((p) => {
-                          // 把 position 限到 [-1, 1] 避免溢出（实际数据通常在此范围内）
-                          const pos = Math.max(-1, Math.min(1, p.position))
-                          return (
-                            <div key={p.dept_type} className="flex items-center gap-2 text-[11px]">
-                              <div className="w-16 text-ink-600 dark:text-ink-300 truncate">{p.dept_name}</div>
-                              <div className="flex-1 h-2 rounded-full bg-ink-200/60 dark:bg-ink-800/60 relative overflow-hidden">
-                                {/* 参考线：-0.5 / 0 / +0.5（25% / 50% / 75%） */}
-                                <div className="absolute top-0 h-full w-px bg-ink-300/50 dark:bg-ink-700/60" style={{ left: '25%' }} aria-hidden="true" />
-                                <div className="absolute top-0 h-full w-px bg-ink-400/70 dark:bg-ink-500/70" style={{ left: '50%' }} aria-hidden="true" />
-                                <div className="absolute top-0 h-full w-px bg-ink-300/50 dark:bg-ink-700/60" style={{ left: '75%' }} aria-hidden="true" />
-                                {/* 条形：从 0 点（left:50%）开始向左/右延伸；scaleX(pos) 自动取方向 */}
-                                <div
-                                  className={`absolute top-0 h-full rounded-full transition-transform ${
-                                    pos >= 0 ? 'bg-emerald-500' : 'bg-rose-500'
-                                  }`}
-                                  style={{
-                                    left: '50%',
-                                    width: '50%',
-                                    transformOrigin: 'left center',
-                                    transform: `scaleX(${pos})`,
-                                  }}
-                                />
-                              </div>
-                              <div className={`w-12 text-right font-mono font-semibold ${
-                                p.position > 0.2 ? 'text-emerald-600' :
-                                p.position < -0.2 ? 'text-rose-600' : 'text-ink-500'
-                              }`}>
-                                {p.position >= 0 ? '+' : ''}{p.position.toFixed(2)}
-                              </div>
-                            </div>
-                          )
-                        })}
-                    </div>
-
-                    <div className="mt-3 text-[11px] text-ink-600 dark:text-ink-400 italic">
-                      {resolution.summary}
-                    </div>
-
-                    {/* P1-12: 决议卡末尾 — 用此立场开新一轮推演 CTA */}
-                    {runId && (
-                      <button
-                        onClick={() => {
-                          // 决议作为新推演上下文传入；navigate + state 让 Simulation 端读 fromResolution
-                          navigate(APP_ROUTES.simulation(runId), {
-                            state: {
-                              fromResolution: {
-                                topic: topicInput,
-                                outcome: resolution.outcome,
-                                companyPosition: resolution.company_position,
-                                summary: resolution.summary,
-                              },
-                            },
-                          })
-                        }}
-                        className="mt-3 w-full inline-flex items-center justify-center gap-1.5
-                                   h-9 px-3 rounded-lg
-                                   bg-gradient-to-r from-brand-500 to-accent-500
-                                   text-white text-xs font-semibold
-                                   hover:from-brand-600 hover:to-accent-600
-                                   shadow-soft transition-all"
-                        title={WORKBENCH.ctaStartNewRoundTitle}
-                      >
-                        <Lightbulb size={13} /> {WORKBENCH.ctaStartNewRound}
-                      </button>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </section>
+            <h3 className="text-base font-semibold text-ink-900 dark:text-white mb-1">
+              {WORKBENCH.startTitle}
+            </h3>
+            <p className="text-xs text-ink-500 dark:text-ink-400 mb-4 max-w-md mx-auto">
+              {WORKBENCH.startDesc}
+            </p>
+            <button onClick={handleStartPipeline} className="btn-primary">
+              <Play size={16} /> {WORKBENCH.start}
+            </button>
           </motion.div>
+        )}
 
-          {/* ---------- 右栏：7 步详情 + 实时事件流 ---------- */}
-          <motion.div variants={fadeUp} className="lg:col-span-7 space-y-4">
-            {/* 部门关系图（力导向） — PR-2 P1-2 锚点 #rel */}
-            {company && company.departments.length > 0 && (
-              <section id="rel" className="scroll-mt-28">
-                <DepartmentGraph company={company} height={400} />
-              </section>
-            )}
-
-            {/* 实时知识图谱（must-tier v1: 替换旧 KnowledgeGraph）— PR-2 P1-2 锚点 #graph */}
-            {graphNodes.length > 0 || runId ? (
-              <section id="graph" className="scroll-mt-28 relative">
-                <RealtimeKnowledgeGraph
-                  runId={runId}
-                  live
-                  height={400}
-                  title={WORKBENCH.realtimeGraphTitle}
-                  refreshIntervalMs={graphRefreshIntervalMs}
-                />
-                {/* mirofish-tier: 实体类型图例 (右上角 overlay) */}
-                <EntityTypeLegend overlay />
-                {/* mirofish-tier: 30s 轮询 toggle (SSE 兜底) */}
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    data-testid="realtime-kg-polling-toggle"
-                    onClick={() =>
-                      setGraphRefreshIntervalMs((v) => (v > 0 ? 0 : 30000))
-                    }
-                    className={`btn-ghost h-8 text-[11px] ${
-                      graphRefreshIntervalMs > 0
-                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-300/60'
-                        : ''
-                    }`}
-                    title={
-                      graphRefreshIntervalMs > 0
-                        ? '点击关闭 30s 轮询'
-                        : '点击开启 30s 轮询 (SSE 断线兜底)'
-                    }
-                  >
-                    <RefreshCw
-                      size={12}
-                      className={graphRefreshIntervalMs > 0 ? 'animate-spin-soft' : ''}
-                    />
-                    {graphRefreshIntervalMs > 0
-                      ? WORKBENCH.realtimeGraphPollingOn
-                      : WORKBENCH.realtimeGraphPollingOff}
-                  </button>
-                  {graphRefreshIntervalMs > 0 && (
-                    <span
-                      data-testid="realtime-kg-polling-badge"
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-mono font-semibold"
-                    >
-                      {WORKBENCH.realtimeGraphPollingBadge(graphRefreshIntervalMs)}
-                    </span>
-                  )}
-                </div>
-              </section>
-            ) : runId && !['completed', 'failed', 'cancelled'].includes(status) ? (
-              /* 推演进行中: 展示 phase + 节点/边计数 */
-              <section id="graph" className="scroll-mt-28">
-                <div className="card p-8 flex flex-col items-center justify-center min-h-[320px] bg-gradient-to-br from-ink-50/30 to-white dark:from-ink-900/40 dark:to-ink-900/20">
-                  <Loader2 size={32} className="text-brand-500 animate-spin mb-3" />
-                  <div className="text-sm font-semibold text-ink-700 dark:text-ink-200">
-                    {WORKBENCH.loadingGraph}
-                  </div>
-                  <div className="text-[10px] text-ink-400 mt-1 font-mono">
-                    {graphProgress.phase} · {graphProgress.nodes} 节点 / {graphProgress.edges} 边
-                  </div>
-                </div>
-              </section>
-            ) : runId ? (
-              /* replay 模式但 hydrate 仍未拿到 entity（如后端图谱文件丢失）的兜底 */
-              <section id="graph" className="scroll-mt-28">
-                <div className="card p-8 text-center min-h-[320px] flex flex-col items-center justify-center">
-                  <Network size={28} className="text-ink-300 mb-2" />
-                  <div className="text-sm text-ink-500">未找到该 run 的知识图谱快照</div>
-                </div>
-              </section>
-            ) : null}
-
-            {/* must-tier v1: 信念演化多线 LineChart（#belief 锚点） */}
-            {simRounds.length > 0 && (() => {
-              // BeliefData = { round: number; [agent: string]: number }
-              // 把 simRounds[].belief_updates 摊平为每个 round 一行
-              const beliefByRound = new Map<number, Record<string, number>>()
-              const agentSet = new Set<string>()
-              for (const r of simRounds) {
-                const updates = Array.isArray(r.belief_updates) ? r.belief_updates : []
-                const row = beliefByRound.get(r.round) ?? { round: r.round }
-                for (const u of updates) {
-                  const aId = String((u as any).agent_id ?? (u as any).agentId ?? (u as any).agent ?? 'unknown')
-                  const v = typeof (u as any).value === 'number' ? (u as any).value
-                    : typeof (u as any).belief === 'number' ? (u as any).belief
-                    : 0
-                  row[aId] = v
-                  agentSet.add(aId)
-                }
-                beliefByRound.set(r.round, row)
-              }
-              const data = Array.from(beliefByRound.values()).sort((a, b) => (a.round as number) - (b.round as number)) as Array<{ round: number; [agent: string]: number }>
-              const agents = Array.from(agentSet)
-              if (data.length === 0 || agents.length === 0) return null
-              return (
-                <section id="belief" className="card p-5 scroll-mt-28">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500/20 to-accent-500/20 inline-flex items-center justify-center text-brand-600">
-                      <Activity size={16} />
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                        {WORKBENCH.beliefTitle}
-                      </div>
-                      <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                        {WORKBENCH.beliefSubtitle}
-                      </div>
-                    </div>
-                  </div>
-                  <BeliefEvolutionChart data={data} agents={agents} />
-                </section>
-              )
-            })()}
-
-            {/* must-tier v1: 迭代关系网时序图（#net 锚点） */}
-            {networkFrames.length > 0 && (
-              <section id="net" className="card p-5 scroll-mt-28">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-500/20 to-brand-500/20 inline-flex items-center justify-center text-accent-600">
-                    <Network size={16} />
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                      {WORKBENCH.networkTitle}
-                    </div>
-                    <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                      {WORKBENCH.networkSubtitle}
-                    </div>
-                  </div>
-                </div>
-                <SimulationNetworkGraph
-                  runId={runId}
-                  height={400}
-                  title={WORKBENCH.networkTitle}
-                />
-              </section>
-            )}
-
-            {/* must-tier v1: 风险矩阵热力图（#risks 锚点） */}
-            {reportRisks.length > 0 && (
-              <section id="risks" className="card p-5 scroll-mt-28">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-rose-500/20 to-amber-500/20 inline-flex items-center justify-center text-rose-600">
-                    <Zap size={16} />
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                      {WORKBENCH.riskTitle}
-                    </div>
-                    <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                      {WORKBENCH.riskSubtitle}
-                    </div>
-                  </div>
-                </div>
-                <RiskMatrixHeatmap risks={reportRisks} />
-              </section>
-            )}
-
-            {/* feature1 (feature/history-graph-and-viz): 涌现议题时间线 */}
-            <EmergedTopicsTimeline />
-
-            {/* should-tier v3: 信念漂移事件流 (放在 EmTopics 之后, 主题相关) */}
-            <BeliefShiftFeed />
-
-            {/* feature2: 图谱轮次 diff 对比 */}
-            <GraphRoundDiff />
-
-            {/* feature3: 进一步推演 CTA — 仅 completed/failed 显示 */}
-            <DeeperSimCta />
-
-            {/* 智能体采访 — PR-2 P1-2 锚点 #interview */}
-            {companyId && (
-              <section id="interview" className="scroll-mt-28">
-                <AgentInterview companyId={companyId} />
-              </section>
-            )}
-
-            {/* P5: 旧 7 步详细卡已删除 — 由顶部 <StageProgressStrip> 取代 */}
-
-            {/* 实时事件流（仅在推演时显示） */}
-            {(stage === 'SIMULATION_RUNNING' || status === 'running') && runId && (
-              <div className="card p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/20 to-brand-500/20 inline-flex items-center justify-center text-emerald-600">
-                    <Activity size={16} />
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                      {WORKBENCH.timelineTitle}
-                    </div>
-                    <div className="text-sm font-semibold text-ink-900 dark:text-white">
-                      {WORKBENCH.timelineSubtitle}
-                    </div>
-                  </div>
-                </div>
-                <RoundTimeline simulationId={runId} />
-              </div>
-            )}
-
-            {/* 操作面板（启动/重启） */}
-            {!runId && (
-              <div className="card p-8 text-center bg-gradient-to-br from-brand-50/50 to-accent-50/30 dark:from-brand-950/20 dark:to-accent-950/10">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 mx-auto inline-flex items-center justify-center text-white shadow-glow mb-3">
-                  <Sparkles size={24} />
-                </div>
-                <h3 className="text-base font-semibold text-ink-900 dark:text-white mb-1">
-                  {WORKBENCH.startTitle}
-                </h3>
-                <p className="text-xs text-ink-500 dark:text-ink-400 mb-4 max-w-md mx-auto">
-                  {WORKBENCH.startDesc}
-                </p>
-                <button onClick={handleStartPipeline} className="btn-primary">
-                  <Play size={16} /> {WORKBENCH.start}
-                </button>
-              </div>
-            )}
+        {/* ===== SystemLogs 全宽终端 (P5: 在 3-region 下方) ===== */}
+        {runId && (
+          <motion.div variants={fadeUp} className="px-0 md:px-2">
+            <SystemLogs runId={runId} height={220} />
           </motion.div>
-        </div>
+        )}
       </motion.div>
     </div>
   )
