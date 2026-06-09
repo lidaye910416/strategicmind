@@ -383,6 +383,21 @@ export const WORKBENCH = {
   debateRun: '推演',
   companyStance: '公司级立场',
   stagesTitle: '7 步流水线',
+  // 7 步进度条 (P5 增强)
+  stageProgressTitle: '推演流水线',
+  stageProgressLoopBadge: (year: number) => `↻ 循环第 ${year} 年`,
+  stageProgressIdleHint: '等待启动推演…',
+  stageProgressSubSimulation: (round: number, total: number, agents: number) =>
+    `R${round}/${total} · ${agents} 部门活跃`,
+  stageProgressSubLoop: (year: number) => `回环至第 ${year} 年`,
+  stageProgressNoData: '尚无阶段数据',
+  // 部门动作分布 (P5 增强)
+  railSectionActiveAgents: '活跃 Agent',
+  railSectionDepartment: '部门动作分布',
+  railActiveAgentsEmpty: '等待 Agent 行动流入…',
+  railDepartmentEmpty: '等待部门动作流入…',
+  railDepartmentDept: (name: string) => name,
+  railActiveAgentActionCount: (n: number) => `${n} 行动`,
   running: '进行中',
   done: '已完成',
   startTitle: '准备开始推演',
@@ -486,6 +501,47 @@ export const WORKBENCH = {
   realtimeGraphPollingOn: '关闭轮询',
   realtimeGraphPollingOff: '开启 30s 轮询',
   realtimeGraphPollingBadge: (n: number) => `轮询 ${Math.round(n / 1000)}s`,
+  // loop-engine-v2 (T2.2): 3-region layout status strip + state heroes
+  statusStripRound: (cur: number, total: number) => `Round ${cur}/${total}`,
+  statusStripProgress: (p: number) => `${(p * 100).toFixed(0)}%`,
+  execSummaryIdle: '点击"启动推演"开始多 Agent 战略推演',
+  execSummaryConfiguring: '正在解析种子文档与构建图谱…',
+  execSummaryRunning: (n: number) => `第 ${n} 轮推演进行中`,
+  execSummaryPaused: '推演已暂停',
+  execSummaryCompleted: '推演已完成，可查看报告或继续推 1 年',
+  execSummaryFailed: '推演失败，请检查种子文档后重试',
+  execSummaryCancelled: '推演已取消',
+  // StateHero i18n
+  heroIdleTitle: '推演工作台就绪',
+  heroIdleSubtitle: '请到首页上传种子文档并配置推演参数。',
+  heroConfiguringTitle: '图谱构建中…',
+  heroConfiguringSubtitle: '正在解析种子文档与抽取实体。',
+  heroRunningTitle: '推演进行中',
+  heroRunningSubtitle: '实时显示图谱增长、关系网演化、部门博弈。',
+  heroPausedTitle: '推演已暂停',
+  heroPausedSubtitle: '可继续推演或取消当前 run。',
+  heroCompletedTitle: '推演完成',
+  heroCompletedSubtitle: '已生成完整战略报告，可下载或继续推 1 年。',
+  heroFailedTitle: '推演失败',
+  heroFailedSubtitle: '请检查后端日志或重试。',
+  heroCancelledTitle: '推演已取消',
+  heroCancelledSubtitle: '可重新启动推演。',
+  // StateHero banner hints
+  failedBannerHint: () => '请检查后端日志或重试。',
+  roundCompleteBannerHint: (n: number) => `Round ${n} 已完成，等待下一轮。`,
+  yearCompleteBannerHint: () => '本年推演完成。',
+  // RightRail i18n
+  railSectionAgents: '活跃 Agent',
+  railSectionEvents: '实时事件',
+  railSectionTopics: '涌现议题',
+  railSectionControls: '控制面板',
+  railEmptyAgents: '尚无 Agent',
+  railEmptyEvents: '尚无事件',
+  railEmptyTopics: '尚无议题',
+  // RoundTimeline i18n
+  roundTimelineEmpty: '等待推演开始…',
+  roundTimelineCardText: (n: number, actions: number, shifts: number) =>
+    `Round ${n} · ${actions} 行动 · ${shifts} 漂移`,
 }
 
 export const WORKBENCH_SUBNAV = {
