@@ -12,22 +12,20 @@ import { Link, useNavigate, useParams, useLocation, useSearchParams } from 'reac
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Play, Pause, FileText, Loader2, Sparkles, ArrowUpRight,
-  GitBranch, Users, Database, BookOpen,
-  Activity, Zap, Home, Settings2, Network, FileDown, Lightbulb,
+  Activity, Zap, Home, Network, FileDown, Lightbulb,
   FastForward, Rocket, Upload, Eye, RefreshCw,
 } from 'lucide-react'
 import api from '../services/api'
 import companyApi, { type CompanyContext, type TopicResolution } from '../services/companyApi'
-import PipelineDashboard from '../components/PipelineDashboard'
 import RoundTimeline from '../components/RoundTimeline'
 import DepartmentGraph from '../components/DepartmentGraph'
-import SimulationExplainer from '../components/SimulationExplainer'
 import RealtimeKnowledgeGraph from '../components/RealtimeKnowledgeGraph'
 import BeliefEvolutionChart from '../components/BeliefEvolutionChart'
 import SimulationNetworkGraph from '../components/SimulationNetworkGraph'
 import RiskMatrixHeatmap from '../components/RiskMatrixHeatmap'
 import AgentInterview from '../components/AgentInterview'
 import WorkbenchSubnav from '../components/WorkbenchSubnav'
+import StageProgressStrip from '../components/Workbench/StageProgressStrip'
 import Stat from '../components/Workbench/Stat'
 import DeptMini from '../components/Workbench/DeptMini'
 import EmergedTopicsTimeline from '../components/Workbench/EmergedTopicsTimeline'
@@ -46,26 +44,17 @@ import EntityTypeLegend from '../components/EntityTypeLegend'
 import PlatformStatusCards from '../components/PlatformStatusCards'
 import Hero from '../components/layout/Hero'
 import {
-  WORKBENCH, STAGE_LABELS, STATUS_LABELS,  COMMON, APP_ROUTES,
+  WORKBENCH, STATUS_LABELS,  COMMON, APP_ROUTES,
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 import {
-  usePipelineStore, useRunId, useStatus, useStage, useProgress, useSnapshot, useLastRunConfig,
+  usePipelineStore, useRunId, useStatus, useStage, useSnapshot, useLastRunConfig,
   useGraphNodes, useGraphProgress, useSimRounds, useNetworkFrames,
   useMarketEvents, useRecentShocks, useYearAdvanced,
-  useReportRisks,
+  useReportRisks, useStageProgress,
 } from '../store/pipeline'
 
-// ---- 7 步流水线定义 ----
-const STAGES = [
-  { key: 'SEED_PARSING', icon: BookOpen, desc: '解析种子文档' },
-  { key: 'GRAPH_BUILDING', icon: GitBranch, desc: '构建知识图谱' },
-  { key: 'ENTITY_EXTRACTION', icon: Database, desc: '抽取实体关系' },
-  { key: 'PROFILE_GENERATION', icon: Users, desc: '生成 Agent 画像' },
-  { key: 'CONFIG_GENERATION', icon: Settings2, desc: '生成仿真配置' },
-  { key: 'SIMULATION_RUNNING', icon: Activity, desc: '执行多 Agent 推演' },
-  { key: 'REPORT_GENERATING', icon: FileText, desc: '生成战略报告' },
-]
+// ---- P5: 7 步流水线定义已迁至 components/Workbench/StageProgressStrip.tsx 与 store/pipeline.ts ----
 
 export default function Workbench() {
 
@@ -80,7 +69,6 @@ export default function Workbench() {
   const runId = useRunId()
   const status = useStatus()
   const stage = useStage()
-  const progress = useProgress()
   const startPipeline = usePipelineStore((s) => s.startPipeline)
   const pausePipeline = usePipelineStore((s) => s.pause)
   const resumePipeline = usePipelineStore((s) => s.resume)
@@ -92,6 +80,8 @@ export default function Workbench() {
   const snapshot = useSnapshot()
   // P3-A: 读最近一次启动时的 config（用户在 Dashboard 选的真实参数），避免硬编码
   const lastRunConfig = useLastRunConfig()
+  // P5: 7 步流水线状态条 (StageProgressStrip) 数据
+  const stageProgress = useStageProgress()
   // store: 加载指定 runId 的快照到 store (snapshot + graph + rounds)
   const hydrateFromRunId = usePipelineStore((s) => s.hydrateFromRunId)
   // ---- replay 模式检测: URL 有 :runId 且 status 是终态 ----
@@ -306,9 +296,6 @@ export default function Workbench() {
     }
   }, [advanceYear, advancingYear])
 
-  const currentStageIdx = STAGES.findIndex((s) => s.key === stage)
-  const isCompleted = stage === 'COMPLETED'
-
   return (
     <div className="min-h-screen pb-20">
       {/* P1-10: 顶部 NProgress 进度条（CSS 实现，部门博弈连续推演 1/4→4/4 期间显示） */}
@@ -433,26 +420,18 @@ export default function Workbench() {
           </motion.div>
         )}
 
-        {/* ===== 有 runId 时, 推演说明仍展示（数据到之前可视） ===== */}
+        {/* ===== P5: 7 步流水线状态条 (取代旧 PipelineDashboard + 底部 7 步详细卡) ===== */}
         {runId && (
-          <motion.div variants={fadeUp}>
-            <SimulationExplainer
-              currentStage={stage}
-              progress={progress}
-              status={status}
+          <motion.div variants={fadeUp} className="px-4 md:px-8 max-w-[1800px] mx-auto">
+            <StageProgressStrip
+              stages={stageProgress.stages}
+              sub={stageProgress.sub}
+              currentStage={stageProgress.currentStage}
+              isLooping={stageProgress.isLooping}
+              yearOffset={stageProgress.yearOffset}
             />
           </motion.div>
         )}
-
-        {/* ===== 顶部 7 步流水线 Dashboard ===== */}
-        <motion.div variants={fadeUp}>
-          <PipelineDashboard
-            runId={runId || 'preview'}
-            currentStage={stage}
-            progress={progress}
-            status={status}
-          />
-        </motion.div>
 
         {/* ===== sticky 子导航（4 锚点 + scroll-spy + 心跳） PR-2 P1-1/2 ===== */}
         <motion.div variants={fadeUp}>
@@ -937,67 +916,7 @@ export default function Workbench() {
               </section>
             )}
 
-            {/* 7 步流水线（详细卡） */}
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500/20 to-accent-500/20 inline-flex items-center justify-center text-brand-600">
-                  <GitBranch size={16} />
-                </div>
-                <div className="text-[10px] uppercase tracking-wider text-ink-500 font-bold">
-                  {WORKBENCH.stagesTitle}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {STAGES.map((s, i) => {
-                  const isDone = currentStageIdx > i || isCompleted
-                  const isActive = currentStageIdx === i && !isCompleted
-                  return (
-                    <div
-                      key={s.key}
-                      className={`p-3 rounded-lg border transition-colors ${
-                        isActive
-                          ? 'bg-gradient-to-r from-brand-50 to-accent-50/30 border-brand-300 dark:from-brand-950/40 dark:to-accent-950/20 dark:border-brand-700'
-                          : isDone
-                            ? 'bg-emerald-50/50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800'
-                            : 'bg-ink-50/50 border-ink-200/60 dark:bg-ink-900/30 dark:border-ink-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-7 h-7 rounded-full inline-flex items-center justify-center text-xs font-bold ${
-                          isDone ? 'bg-emerald-500 text-white' :
-                          isActive ? 'bg-gradient-to-br from-brand-500 to-accent-500 text-white animate-pulse-soft' :
-                          'bg-ink-200 dark:bg-ink-800 text-ink-500'
-                        }`}>
-                          {isDone ? '✓' : isActive ? <Loader2 size={12} className="animate-spin" /> : i + 1}
-                        </div>
-                        <s.icon size={14} className={
-                          isActive ? 'text-brand-600' : isDone ? 'text-emerald-600' : 'text-ink-400'
-                        } />
-                        <div className="flex-1">
-                          <div className={`text-sm font-semibold ${
-                            isActive ? 'text-brand-900 dark:text-brand-100' : 'text-ink-900 dark:text-white'
-                          }`}>
-                            {STAGE_LABELS[s.key] || s.desc}
-                          </div>
-                          <div className="text-[10px] text-ink-500">{s.desc}</div>
-                        </div>
-                        {isActive && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500 text-white font-semibold">
-                            {WORKBENCH.running}
-                          </span>
-                        )}
-                        {isDone && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
-                            {WORKBENCH.done}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            {/* P5: 旧 7 步详细卡已删除 — 由顶部 <StageProgressStrip> 取代 */}
 
             {/* 实时事件流（仅在推演时显示） */}
             {(stage === 'SIMULATION_RUNNING' || status === 'running') && runId && (
