@@ -1,7 +1,7 @@
 """
 Agent 采访服务 - 模拟完成后与部门 Agent 或竞品 Agent 对话。
 
-参考 MiroFish Step5Interaction.vue 的设计：
+参考 Step5Interaction.vue 的设计：
 - 用户可选择"采访"任一 Agent（部门/竞品/客户）
 - 询问该 Agent 对推演结果、战略决策的看法
 - Agent 基于自己的角色（部门 KPI / 经营模式 / 立场）回答

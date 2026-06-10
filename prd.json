@@ -1,10 +1,10 @@
 {
   "project": "StrategicMind - 战略推演引擎",
-  "branchName": "ralph/mirofish-refactor",
-  "description": "基于开源技术栈的公司战略规划推演系统。核心能力：LLM驱动实体抽取 + nano-graphRAG知识图谱 + 自研战略模拟引擎，取代 MiroFish 中的 Zep Cloud 和 OASIS，实现多Agent博弈模拟与信念演化追踪。",
+  "branchName": "main",
+  "description": "基于开源技术栈的公司战略规划推演系统。核心能力：LLM驱动实体抽取 + nano-graphRAG知识图谱 + 自研战略模拟引擎，完整本地化部署（无需 Zep Cloud / OASIS 等 SaaS 依赖），实现多Agent博弈模拟与信念演化追踪。",
   "technicalDecisions": {
     "graphRAG": {
-      "mirofish": "Zep Cloud (自动抽取 + 存储 + 检索)",
+      "priorArt": "Zep Cloud (自动抽取 + 存储 + 检索)",
       "ourChoice": "nano-graphRAG + LLM Entity Extraction Layer",
       "rationale": "Zep 的核心价值是内部 LLM 自动抽取实体关系。nano-graphRAG 本身不包含 LLM 调用，需要额外实现一个 Entity Extraction Layer 调用 ILLMProvider 来完成抽取。",
       "implementation": {
@@ -14,7 +14,7 @@
       }
     },
     "simulationEngine": {
-      "mirofish": "OASIS (Twitter/Reddit 社交模拟)",
+      "priorArt": "OASIS (Twitter/Reddit 社交模拟)",
       "ourChoice": "自研战略模拟引擎（基于 OASIS 框架但重写核心决策逻辑）",
       "rationale": "战略博弈场景（信息不对称、隐藏动作、信念追踪）与通用社交模拟有本质差异。复用 OASIS 的模拟循环框架，但 Agent 决策逻辑和传播模型需要重写。",
       "reusableFromOASIS": {
@@ -27,7 +27,7 @@
       }
     },
     "llm": {
-      "mirofish": "Bailian Qwen-plus only",
+      "priorArt": "Bailian Qwen-plus only",
       "ourChoice": "Ollama 本地为主 + Bailian 备选",
       "rationale": "战略推理需要更强的模型能力和更低的延迟。本地 Ollama 部署 Qwen2.5-72B 成本更低、延迟更小；Bailian 作为云端备选。",
       "models": {
@@ -71,7 +71,7 @@
     {
       "id": "US-003",
       "title": "Implement EntityExtractor using ILLMProvider",
-      "description": "As a developer, I need EntityExtractor to extract entities and relationships from text using LLM, replacing Zep's auto-extraction capability. This is the KEY DIFFERENCE from MiroFish - Zep has built-in LLM extraction, nano-graphRAG does not.",
+      "description": "As a developer, I need EntityExtractor to extract entities and relationships from text using LLM, replacing Zep's auto-extraction capability. This is the KEY DIFFERENCE from prior art - Zep has built-in LLM extraction, nano-graphRAG does not.",
       "acceptanceCriteria": [
         "Create backend/services/entity_extractor.py with EntityExtractor class",
         "EntityExtractor uses ILLMProvider for LLM calls",
@@ -339,7 +339,7 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "RENAME from LocalProfileGenerator - generates StrategicAgent, not OasisAgentProfile. Key difference from MiroFish social simulation.",
+      "notes": "RENAME from LocalProfileGenerator - generates StrategicAgent, not OasisAgentProfile. Key difference from generic social simulation.",
       "status": "stub"
     },
     {
@@ -964,7 +964,7 @@
     {
       "id": "US-058",
       "title": "Remove all remaining zep_cloud imports from codebase",
-      "description": "As a developer, I need all zep_cloud imports removed from the codebase so that MiroFish runs fully locally without any Zep Cloud dependency.",
+      "description": "As a developer, I need all zep_cloud imports removed from the codebase so that StrategicMind runs fully locally without any Zep Cloud dependency.",
       "acceptanceCriteria": [
         "grep -r 'zep_cloud' backend/app/ returns zero matches",
         "grep -r 'from zep' backend/app/ returns zero matches",
@@ -979,7 +979,7 @@
     },
     {
       "id": "US-059",
-      "title": "Set up MiroFish Frontend project scaffold",
+      "title": "Set up StrategicMind Frontend project scaffold",
       "description": "As a frontend developer, I need a React/Vite project scaffold so that the UI can be built on a solid foundation.",
       "definitionOfDone": "Frontend project at frontend/ exists, builds with npm run dev, connects to backend /api/ endpoints.",
       "acceptanceCriteria": [
@@ -1425,7 +1425,7 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "NEW - Different from MiroFish report, more actionable",
+      "notes": "NEW - Different from generic social-sim report, more actionable",
       "status": "stub"
     },
     {
@@ -1616,7 +1616,7 @@
     {
       "id": "US-095",
       "title": "Define StrategicAction for recording agent decisions",
-      "description": "As a developer, I need StrategicAction to represent agent decisions that are recorded to the graph during simulation, following MiroFish pattern of recording actions then inferring effects later.",
+      "description": "As a developer, I need StrategicAction to represent agent decisions that are recorded to the graph during simulation, following the prior-art pattern of recording actions then inferring effects later.",
       "acceptanceCriteria": [
         "Create backend/models/strategic_action_result.py",
         "StrategicActionResult contains: action, direct_effects (belief changes), delayed_effects (metrics changes), public_reactions",
@@ -1626,13 +1626,13 @@
       ],
       "priority": 20,
       "passes": true,
-      "notes": "SIMPLIFIED - MiroFish style: record actions, infer effects in Report stage",
+      "notes": "SIMPLIFIED - prior-art style: record actions, infer effects in Report stage",
       "status": "stub"
     },
     {
       "id": "US-096",
       "title": "Implement ActionRecorder for graph updates during simulation",
-      "description": "As a developer, I need ActionRecorder to record agent actions to the graph during simulation, following MiroFish pattern of recording behavior facts for later analysis.",
+      "description": "As a developer, I need ActionRecorder to record agent actions to the graph during simulation, following the prior-art pattern of recording behavior facts for later analysis.",
       "acceptanceCriteria": [
         "Create backend/services/business_metrics_tracker.py",
         "BusinessMetricsTracker.update(action_results, market_context) → new_metrics",
@@ -1644,13 +1644,13 @@
       ],
       "priority": 20,
       "passes": true,
-      "notes": "SIMPLIFIED - MiroFish style: record actions to graph, not calculate metrics",
+      "notes": "SIMPLIFIED - prior-art style: record actions to graph, not calculate metrics",
       "status": "stub"
     },
     {
       "id": "US-097",
       "title": "Implement ExternalShockSimulator for market dynamics",
-      "description": "As a developer, I need ExternalShockSimulator to inject external events (competitor moves, regulatory changes, market shifts) that affect the simulation, similar to how MiroFish seeds events.",
+      "description": "As a developer, I need ExternalShockSimulator to inject external events (competitor moves, regulatory changes, market shifts) that affect the simulation, similar to how the prior-art system seeds events.",
       "acceptanceCriteria": [
         "Create backend/services/external_shock_simulator.py",
         "ExternalShockSimulator.inject_shock(context, probability) → shock_event or None",
@@ -1661,7 +1661,7 @@
       ],
       "priority": 21,
       "passes": true,
-      "notes": "Adds dynamism to simulation, like MiroFish's event injection",
+      "notes": "Adds dynamism to simulation, like the prior-art's event injection",
       "status": "stub"
     },
     {
@@ -1683,7 +1683,7 @@
     {
       "id": "US-099",
       "title": "Implement StrategicOutcomeReportGenerator for final output",
-      "description": "As a developer, I need StrategicOutcomeReportGenerator to generate reports that include both belief evolution and business outcome projections, following MiroFish's report structure.",
+      "description": "As a developer, I need StrategicOutcomeReportGenerator to generate reports that include both belief evolution and business outcome projections, following the prior-art's report structure.",
       "acceptanceCriteria": [
         "Create backend/services/strategic_outcome_report_generator.py",
         "Report sections: executive_summary, strategic_actions_timeline, belief_evolution, business_metrics_projection, key_insights, strategic_recommendations",
@@ -1694,7 +1694,7 @@
       ],
       "priority": 22,
       "passes": true,
-      "notes": "Final output, like MiroFish's prediction report",
+      "notes": "Final output, like the prior-art's prediction report",
       "status": "stub"
     },
     {
@@ -1713,7 +1713,7 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "NEW - Strategic-specific visualization, not in MiroFish",
+      "notes": "NEW - Strategic-specific visualization, not in prior-art social-simulation tools",
       "status": "stub"
     },
     {
@@ -1834,7 +1834,7 @@
     {
       "phase": "3.5",
       "name": "舆情推演扩展",
-      "description": "支持类 MiroFish 的社交媒体传播模拟",
+      "description": "支持通用社交媒体传播模拟（舆情跟踪 + 公众意见演化）",
       "keyDeliverable": "PublicOpinionAgent + SocialMediaPropagation + SentimentTracker + OpinionReportGenerator",
       "prds": [
         "US-089",
@@ -1861,7 +1861,7 @@
         "US-099"
       ],
       "status": "new",
-      "note": "这是 StrategicMind 与 MiroFish 的本质区别 - 必须追踪实际经营影响"
+      "note": "StrategicMind 的核心差异化 - 必须追踪实际经营影响, 而非仅情绪演化"
     },
     {
       "phase": 3,
@@ -1909,7 +1909,7 @@
   ],
   "focus": "A股/公司战略规划推演",
   "replaces": [
-    "MiroFish - 通用社交舆论模拟"
+    "通用社交舆论模拟方案"
   ],
   "techStack": {
     "graphRAG": {
@@ -2005,7 +2005,7 @@
       "不是通用Agent，是专业化战略角色",
       "不是情绪分析，是利益与信念追踪"
     ],
-    "comparisonWithMiroFish": {
+    "comparisonWithPriorArt": {
       "similar": [
         "Pipeline架构",
         "图谱构建流程",
@@ -2059,18 +2059,18 @@
       "output": "战略建议报告"
     },
     "strategicExecutionPrediction": {
-      "name": "战略执行预测（类MiroFish）",
+      "name": "战略执行预测（社交传播 + 业务影响）",
       "description": "模拟公司战略在社交媒体的传播和舆论影响",
       "agents": [
         "战略角色",
         "社交媒体角色"
       ],
       "output": "舆论影响预测报告",
-      "reuseMiroFishComponents": true
+      "reusePriorArtComponents": true
     }
   },
   "coreDifference": {
-    "mirofish": {
+    "priorArt": {
       "tracks": [
         "beliefs",
         "sentiments",
@@ -2094,9 +2094,9 @@
   },
   "coreDesign": {
     "philosophy": "基于行为的推演，而非数学建模",
-    "mirofishInsight": "Agent行为 → 事实涌现 → 报告预测",
+    "priorArtInsight": "Agent行为 → 事实涌现 → 报告预测",
     "ourApproach": "战略行动 → Agent行为 → 业务影响推演 → 战略建议",
-    "keyDifference": "MiroFish追踪社交行为，我们追踪战略行为及业务影响"
+    "keyDifference": "通用社交舆论模拟方案追踪社交情绪演化, StrategicMind 追踪战略行为及业务影响"
   },
   "audit": {
     "audit_date": "2026-06-02",

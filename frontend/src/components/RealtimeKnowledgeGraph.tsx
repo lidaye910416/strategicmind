@@ -1,5 +1,5 @@
 /**
- * RealtimeKnowledgeGraph - MiroFish 风格的实时增长知识图谱。
+ * RealtimeKnowledgeGraph - 工作台风格的实时增长知识图谱。
  *
  * 数据源（FE3 P3-C：统一 EventSource 入口）：
  *   1. Store selector: useGraphNodes() / useGraphEdges() / useGraphPhase()
@@ -12,7 +12,7 @@
  *   - 新边：stroke-dasharray 由 0→长度（"绘制"）
  *   - 已有节点/边保留位置（基于 ID 复用）
  *
- * 配色：12 种实体类型固定调色板（参考 MiroFish GraphPanel.vue）
+ * 配色：12 种实体类型固定调色板（参考 GraphPanel.vue）
  */
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -32,7 +32,7 @@ import {
   type GraphEdgeLive,
 } from '../store/pipeline'
 
-// 12 色调色板（与 MiroFish GraphPanel 保持一致）
+// 12 色调色板（与 GraphPanel 保持一致）
 const NODE_COLORS: Record<string, string> = {
   COMPANY: '#FF6B35',
   PERSON: '#E91E63',
@@ -78,7 +78,7 @@ interface Props {
   title?: string
   fallback?: { nodes: any[]; edges: any[] } | null
   /**
-   * MiroFish 旧版 SSE 兜底轮询: 当 SSE 断线时, 每 N ms 重拉一次 graph-snapshot
+   * 旧版 SSE 兜底轮询: 当 SSE 断线时, 每 N ms 重拉一次 graph-snapshot
    * 重新 seedGraph 进 store. 默认 0 = 关闭.
    * - 0: 不轮询 (仅靠 store SSE 增量推送)
    * - > 0: 每 N ms 调一次 /api/pipeline/<runId>/graph-snapshot
@@ -158,7 +158,7 @@ export default function RealtimeKnowledgeGraph({
     return () => { cancelled = true }
   }, [runId, seedGraphAction])
 
-  // ---- MiroFish SSE 兜底轮询: refreshIntervalMs > 0 时, 周期性重新 seedGraph ----
+  // ---- SSE 兜底轮询: refreshIntervalMs > 0 时, 周期性重新 seedGraph ----
   // 适用场景: SSE 断线/重连中, 仍想拿到最新图谱. 不阻塞正常 SSE 增量推送.
   // - 只在 runId 存在 + 间隔 > 0 时启动
   // - 卸载/间隔变化时严格 clearInterval
@@ -399,7 +399,7 @@ export default function RealtimeKnowledgeGraph({
               const isHighlighted = hovered === node.id
               const color = NODE_COLORS[node.type] || NODE_COLORS.DEFAULT
               const r = node.size * node.birth
-              // self-loop 数 (MiroFish v-bind badge)
+              // self-loop 数 (self-loop badge)
               const selfLoopCount = countSelfLoops(edges, node.id)
               return (
                 <g
@@ -420,7 +420,7 @@ export default function RealtimeKnowledgeGraph({
                     stroke={isHighlighted ? '#E91E63' : '#fff'}
                     strokeWidth={isHighlighted ? 3 : 2}
                   />
-                  {/* mirofish-tier: self-loop 数 badge (节点右上角) */}
+                  {/* tier-1: self-loop 数 badge (节点右上角) */}
                   {renderSelfLoopBadge(r, selfLoopCount)}
                   {showLabels && (
                     <text
@@ -512,7 +512,7 @@ export default function RealtimeKnowledgeGraph({
 }
 
 /**
- * 纯函数: 渲染单条边 (MiroFish v-bind 范式)
+ * 纯函数: 渲染单条边 (self-loop 范式)
  *  - self-loop (source === target) → 节点上方圆环
  *  - 普通边 → 直线
  * 导出供测试直接调用, 避免触发 rAF force-simulation
@@ -578,7 +578,7 @@ export function renderEdge(
   )
 }
 
-/** 纯函数: 计算某节点的自环数 (MiroFish v-bind badge) */
+/** 纯函数: 计算某节点的自环数 (self-loop badge) */
 export function countSelfLoops(edges: { source: string; target: string }[], nodeId: string): number {
   return edges.filter((e) => e.source === nodeId && e.target === nodeId).length
 }

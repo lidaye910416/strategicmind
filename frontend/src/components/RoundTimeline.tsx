@@ -1,5 +1,5 @@
 /**
- * RoundTimeline - 每回合博弈事件流（MiroFish 风格 v2）
+ * RoundTimeline - 每回合博弈事件流（工作台风格 v2）
  *
  * 升级：
  *   1. 数据源改为 useSimRounds() 派生（与全局 SSE 同步），不再走自有 simulationId 轮询
@@ -144,7 +144,7 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
 
   return (
     <div className="card p-5">
-      {/* 顶部状态栏（MiroFish 风格 + 平台分解） */}
+      {/* 顶部状态栏（工作台风格 + 平台分解） */}
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="flex items-center gap-4 flex-wrap">
           <div>

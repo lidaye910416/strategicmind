@@ -1042,7 +1042,7 @@ export const useGraphPhase = () => usePipelineStore((s) => s.graphProgress.phase
 export const useGraphSnapshots = () => usePipelineStore((s) => s.graphSnapshots)
 
 // should-tier v3: 实体类型图例 (KnowledgeGraph 增强)
-// MiroFish GraphPanel.vue:285-299 风格 10 色 palette
+// GraphPanel.vue:285-299 风格 10 色 palette
 export const ENTITY_TYPE_PALETTE: ReadonlyArray<{ type: string; color: string; label: string }> = [
   { type: 'COMPANY',    color: '#3b82f6', label: '公司' },
   { type: 'PERSON',     color: '#ec4899', label: '人物' },
@@ -1155,3 +1155,82 @@ export const useRoundStartedBanner = () => usePipelineStore((s) => s.roundStarte
 
 // ---- must-tier v1: 报告风险矩阵 selector (live) ----
 export const useReportRisks = () => usePipelineStore((s) => s.reportRisks)
+
+// ---------------------------------------------------------------------------
+// Loop Engine v2 (T0.2) — influence / weight selectors + helpers
+//
+// Per docs/superpowers/specs/loop-engine-v2-implementation.md §T0.2:
+//   influence = clamp01(0.4·normDeg + 0.3·recency + 0.3·(prop ?? 0.4))
+//   weight    = clamp01(0.5·normCount + 0.5·exp(-0.15·age))
+//   recency   = 0.5 if no round, 1 if round>=current, else 1/(1+(current-round))
+// ---------------------------------------------------------------------------
+
+/** Clamp a number into [0, 1]; return 0 for NaN / ±Infinity. */
+export function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  if (n < 0) return 0
+  if (n > 1) return 1
+  return n
+}
+
+/** Normalize a value by reference; 0 for non-finite or non-positive ref. */
+export function normalize(value: number, ref: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (!Number.isFinite(ref) || ref <= 0) return 0
+  return value / ref
+}
+
+/**
+ * Recency score for a node that emerged at `emergedRound`.
+ *  - undefined round → 0.5 (neutral)
+ *  - round >= currentRound → 1
+ *  - otherwise 1 / (1 + (currentRound - round))
+ */
+export function recencyScore(
+  emergedRound: number | undefined,
+  currentRound: number,
+): number {
+  if (emergedRound === undefined || emergedRound === null) return 0.5
+  if (!Number.isFinite(emergedRound) || !Number.isFinite(currentRound)) return 0.5
+  if (emergedRound >= currentRound) return 1
+  return 1 / (1 + (currentRound - emergedRound))
+}
+
+export interface SelectInfluenceOpts {
+  degree: number
+  maxDegree: number
+  currentRound: number
+}
+
+/** Node influence per the Loop Engine v2 spec formula. */
+export function selectInfluence(
+  node: GraphNodeData,
+  opts: SelectInfluenceOpts,
+): number {
+  const normDeg = normalize(opts.degree, opts.maxDegree)
+  const recency = recencyScore(node.round, opts.currentRound)
+  const prop = node.properties?.influence
+  const propInfluence = typeof prop === 'number' ? prop : 0.4
+  return clamp01(0.4 * normDeg + 0.3 * recency + 0.3 * propInfluence)
+}
+
+export interface SelectWeightOpts {
+  count: number
+  maxCount: number
+}
+
+/**
+ * Edge weight per the spec formula. `age` is `max(0, currentRound - edge.round)`;
+ * edges without a `round` field are treated as touching the current round
+ * (age=0, no decay).
+ */
+export function selectWeight(
+  edge: GraphEdgeData,
+  currentRound: number,
+  opts: SelectWeightOpts = { count: 1, maxCount: 1 },
+): number {
+  const normCount = normalize(opts.count, opts.maxCount)
+  const lastTouch = edge.round ?? currentRound
+  const age = Math.max(0, currentRound - lastTouch)
+  return clamp01(0.5 * normCount + 0.5 * Math.exp(-0.15 * age))
+}

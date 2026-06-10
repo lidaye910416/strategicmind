@@ -1,7 +1,7 @@
 """
 StrategicOutcomeReportGenerator - Final output with belief evolution and projections
 
-Following MiroFish's report structure with strategic additions.
+Following the prior-art's report structure with strategic additions.
 
 Implements: US-099
 """

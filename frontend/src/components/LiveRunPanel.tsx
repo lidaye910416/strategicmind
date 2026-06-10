@@ -13,7 +13,7 @@
  *
  * 包含的可视化：
  *   1. RealtimeKnowledgeGraph - 实时增长图谱
- *   2. SimulationNetworkGraph - 迭代关系网（MiroFish 杀手锏）
+ *   2. SimulationNetworkGraph - 迭代关系网（核心特性）
  *   3. RoundTimeline - 行动事件流
  *   4. StageCards - 7 步富内容
  *   5. SystemLogs - 终端风格日志

@@ -33,7 +33,7 @@ const PIPELINE_STEPS: Omit<PipelineStep, 'status'>[] = [
     title: '解析种子文档',
     description: '读取用户上传的战略规划文档，提取关键事实、实体、声明',
     icon: FileText,
-    details: '使用本地文本解析器（替代 MiroFish 的 Zep Cloud），支持 PDF/Word/TXT',
+    details: '使用本地文本解析器（替代 Zep Cloud），支持 PDF/Word/TXT',
   },
   {
     key: 'GRAPH_BUILDING',

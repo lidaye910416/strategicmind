@@ -1,5 +1,5 @@
 /**
- * SimulationNetworkGraph - 模拟迭代关系网图（MiroFish 杀手锏）。
+ * SimulationNetworkGraph - 模拟迭代关系网图（核心特性）。
  *
  * 每个 round 一帧：
  *   - 节点 = 智能体（按 agent_type 着色）

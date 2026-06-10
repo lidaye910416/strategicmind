@@ -1,5 +1,5 @@
 /**
- * RealtimeKnowledgeGraph — 30s polling toggle (MiroFish SSE 兜底) 单元测试
+ * RealtimeKnowledgeGraph — 30s polling toggle (SSE 兜底) 单元测试
  *
  * 覆盖 (3 个 case):
  *  (1) refreshIntervalMs=0 (默认) → 不启动 setInterval, 不重复调 graph-snapshot
@@ -40,7 +40,7 @@ function makeSnapshotResponse(nodeCount = 0) {
   return { data: { nodes, edges: [], stage: 'GRAPH_BUILDING' } }
 }
 
-describe('RealtimeKnowledgeGraph — 30s polling toggle (MiroFish SSE 兜底)', () => {
+describe('RealtimeKnowledgeGraph — 30s polling toggle (SSE 兜底)', () => {
   beforeEach(() => {
     cleanup()
     mockApiGet.mockReset()

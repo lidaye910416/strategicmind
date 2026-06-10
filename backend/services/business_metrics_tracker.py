@@ -1,7 +1,7 @@
 """
 BusinessMetricsTracker - Track metrics changes from agent behavior
 
-Following MiroFish pattern: metrics emerge from actions, not formulas.
+Following the prior-art pattern: metrics emerge from actions, not formulas.
 LLM determines metric changes based on action context.
 
 Implements: US-096

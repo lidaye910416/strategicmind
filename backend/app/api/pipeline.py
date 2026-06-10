@@ -233,19 +233,44 @@ def _read_graph_from_knowledge_store(knowledge_store, limit: int = 2000) -> Dict
             except Exception:
                 continue
             if fname.startswith("relation_"):
+                # Edge weight: per T0.2 the frontend treats it as a count,
+                # so coerce the stored float to a rounded int. Missing or
+                # non-numeric weight → 1.
+                raw_w = (payload.get("attributes") or {}).get("weight", 1)
+                try:
+                    weight = int(round(float(raw_w)))
+                except (TypeError, ValueError):
+                    weight = 1
                 all_edges.append({
                     "id": payload.get("uuid") or fname[:-5],
                     "source": payload.get("source_id"),
                     "target": payload.get("target_id"),
                     "type": payload.get("relation_type"),
-                    "weight": (payload.get("attributes") or {}).get("weight", 1.0),
+                    "weight": weight,
                     "attributes": payload.get("attributes", {}),
                 })
             else:
+                # Node influence: read from attributes.influence, default
+                # 0.5 (neutral), clamp into [0, 1]. Per T0.2 every node in
+                # the snapshot MUST carry a numeric influence.
+                attrs = payload.get("attributes") or {}
+                raw_inf = attrs.get("influence")
+                if raw_inf is None:
+                    influence = 0.5
+                else:
+                    try:
+                        influence = float(raw_inf)
+                    except (TypeError, ValueError):
+                        influence = 0.5
+                if influence < 0.0:
+                    influence = 0.0
+                elif influence > 1.0:
+                    influence = 1.0
                 all_nodes.append({
                     "id": payload.get("uuid") or fname[:-5],
                     "label": payload.get("name") or payload.get("label") or fname[:-5],
                     "type": payload.get("entity_type") or "unknown",
+                    "influence": influence,
                     "attrs": {
                         k: v for k, v in payload.items()
                         if k not in ("uuid",)

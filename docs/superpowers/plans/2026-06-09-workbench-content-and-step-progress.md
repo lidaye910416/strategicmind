@@ -82,7 +82,7 @@ Expected: 0 errors (or only existing pre-existing warnings)
 - [ ] **Step 4: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/i18n/zh.ts
 git commit -m "feat(i18n): 7 步进度条 + 活跃 Agent / 部门动作 i18n keys"
 ```
@@ -247,7 +247,7 @@ Expected: PASS (6 tests passed)
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/components/Workbench/stageProgress.ts frontend/src/components/Workbench/__tests__/stageProgress.test.ts
 git commit -m "feat(workbench): stageProgress 工具函数 + 6 个单元测试"
 ```
@@ -354,7 +354,7 @@ Expected: 0 errors
 - [ ] **Step 4: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/store/pipeline.ts
 git commit -m "feat(store): useStageProgress selector (聚合 currentStage/simRounds/yearAdvanced)"
 ```
@@ -616,7 +616,7 @@ Expected: PASS (5 tests passed)
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/components/Workbench/StageProgressStrip.tsx frontend/src/components/Workbench/__tests__/StageProgressStrip.test.tsx
 git commit -m "feat(workbench): StageProgressStrip 7 步流水线状态条 (5 tests)"
 ```
@@ -764,7 +764,7 @@ Expected: PASS (3 tests passed)
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/components/Workbench/StageProgressPills.tsx frontend/src/components/Workbench/__tests__/StageProgressPills.test.tsx
 git commit -m "feat(workbench): StageProgressPills compact 状态条 (3 tests)"
 ```
@@ -864,7 +864,7 @@ Expected: PASS (all existing tests)
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/components/Workbench/WorkbenchLayout.tsx
 git commit -m "feat(workbench): 在 WorkbenchLayout 挂载 StageProgressStrip"
 ```
@@ -922,7 +922,7 @@ Expected: 0 errors
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/components/SystemLogs.tsx
 git commit -m "feat(systemlogs): header 增加 StageProgressPills"
 ```
@@ -1152,7 +1152,7 @@ Expected: PASS (all tests, 现有 4 个 + 新增 4 个 = 8 个)
 - [ ] **Step 6: 提交**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add frontend/src/components/Workbench/RightRail.tsx frontend/src/components/Workbench/__tests__/RightRail.test.tsx
 git commit -m "feat(rightrail): Section 5 活跃 Agent + Section 6 部门动作分布 (4 tests)"
 ```
@@ -1167,7 +1167,7 @@ git commit -m "feat(rightrail): Section 5 活跃 Agent + Section 6 部门动作�
 - [ ] **Step 1: 启动后端**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 pkill -f "backend.run_server" 2>/dev/null
 nohup python3 -m backend.run_server > /tmp/backend.log 2>&1 &
 sleep 3
@@ -1179,7 +1179,7 @@ Expected: 后端进程 listening on 8000
 - [ ] **Step 2: 启动前端**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor/frontend
+cd /Users/jasonlee/strategicmind/frontend
 pkill -f "vite" 2>/dev/null
 nohup npm run dev > /tmp/frontend.log 2>&1 &
 sleep 5
@@ -1221,7 +1221,7 @@ curl -X POST http://localhost:8000/api/pipeline/start \
 - [ ] **Step 6: 全测试套件跑一遍**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 python3 -m pytest backend/tests/integration/ backend/tests/acceptance/ --ignore=backend/tests/e2e -q 2>&1 | tail -5
 cd frontend && npm run test 2>&1 | tail -10
 ```
@@ -1231,8 +1231,8 @@ Expected: 全部通过 (允许已知 flaky)
 - [ ] **Step 7: 提交验证报告 (可选, 创建 data/reports/)**
 
 ```bash
-mkdir -p /Users/jasonlee/mirofish-refactor/data/reports/
-cat > /Users/jasonlee/mirofish-refactor/data/reports/workbench-p5-verification.md <<'EOF'
+mkdir -p /Users/jasonlee/strategicmind/data/reports/
+cat > /Users/jasonlee/strategicmind/data/reports/workbench-p5-verification.md <<'EOF'
 # Workbench P5 验证报告
 
 日期: 2026-06-09
@@ -1254,7 +1254,7 @@ EOF
 - [ ] **Step 8: 提交 (如有截图/报告)**
 
 ```bash
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 git add data/reports/workbench-p5-verification.md
 git commit -m "docs: Workbench P5 验证报告"
 ```

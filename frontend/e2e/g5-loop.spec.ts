@@ -1,5 +1,5 @@
 /**
- * G5 — MiroFish 跨年推演循环 E2E
+ * G5 — 跨年推演循环 跨年推演循环 E2E
  *
  * 目标：
  *   - 已 completed run 在 Workbench 看到 "再推 1 年" 按钮

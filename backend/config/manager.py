@@ -13,6 +13,58 @@ from typing import Optional, List
 from dotenv import load_dotenv
 
 
+# ---------------------------------------------------------------------------
+# Loop Engine v2 (T0.3) — env-driven feature flags
+#
+# These are intentionally re-read on every call so monkeypatch.setenv() in
+# tests is honoured without having to re-instantiate the ConfigManager.
+# The plumbing is observability + a switch the orchestrator can branch on
+# later (T1.9); we don't change runtime behaviour here.
+# ---------------------------------------------------------------------------
+
+_LOOP_ENGINE_V2_ENV = "STRATEGICMIND_LOOP_ENGINE_V2"
+_COSMIC_GRAPH_ENV = "STRATEGICMIND_COSMIC_GRAPH"
+
+
+@dataclass
+class FeatureFlags:
+    """Snapshot of the current Loop Engine v2 / Cosmic Graph flags."""
+
+    loop_engine_v2: bool = False
+    cosmic_graph: bool = False
+
+
+def _parse_bool(value, default: bool = False) -> bool:
+    """Coerce a string env value to bool.
+
+    Truthy (case-insensitive): ``1``, ``true``, ``yes``, ``on``.
+    Falsy: ``0``, ``false``, ``no``, ``off``, empty string, anything else
+    (including ``"2"`` — only the four spellings above are honoured).
+    ``None`` (env unset) returns ``default``.
+    """
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        return bool(value)
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def feature_flags() -> FeatureFlags:
+    """Read both env vars fresh and return a :class:`FeatureFlags`."""
+    return FeatureFlags(
+        loop_engine_v2=_parse_bool(os.environ.get(_LOOP_ENGINE_V2_ENV)),
+        cosmic_graph=_parse_bool(os.environ.get(_COSMIC_GRAPH_ENV)),
+    )
+
+
+def is_loop_engine_v2_enabled() -> bool:
+    return feature_flags().loop_engine_v2
+
+
+def is_cosmic_graph_enabled() -> bool:
+    return feature_flags().cosmic_graph
+
+
 @dataclass
 class LLMConfig:
     """LLM provider configuration"""
@@ -106,7 +158,12 @@ class ConfigManager:
         self._load_graph_store_config()
         self._load_simulation_config()
         self._load_flask_config()
-        
+        # Loop Engine v2 (T0.3) — read env at construction time so callers
+        # that snapshot config.feature_flags see the value at init.
+        # Per-call helpers above (feature_flags() / is_*_enabled) re-read
+        # the env so monkeypatch.setenv in tests is honoured.
+        self.feature_flags = feature_flags()
+
         self._initialized = True
     
     def _load_llm_config(self) -> None:

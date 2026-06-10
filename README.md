@@ -4,7 +4,7 @@
 
 ## 项目目标
 
-打造**完全本地化部署**的战略推演引擎，取代 MiroFish 中的闭源依赖（Zep Cloud、OASIS），使用开源技术栈实现端到端自动化Pipeline，支撑公司战略规划的多Agent博弈模拟。
+打造**完全本地化部署**的战略推演引擎，基于「持续演化的知识图谱 + 多 Agent 博弈推演」自研技术栈，实现端到端自动化 Pipeline，支撑 A 股 / 公司战略规划的多 Agent 博弈模拟。
 
 ---
 
@@ -81,13 +81,13 @@
 
 ## 技术选型
 
-| 组件 | 原MiroFish | StrategicMind | 原因 |
-|------|-----------|---------------|------|
-| **图谱存储** | Zep Cloud | nano-graphRAG | 本地化、无需SaaS |
-| **LLM调用** | Bailian | Ollama + Bailian | 本地优先、成本更低 |
-| **模拟引擎** | OASIS | 自研 StrategicSimulationRunner | 支持战略决策场景 |
-| **传播层** | Twitter/Reddit | 战略博弈+信息不对称 | 更适合公司战略推演 |
-| **前端** | Vue.js | Vue.js + TypeScript | 保持一致 |
+| 组件 | 选型 | 原因 |
+|------|------|------|
+| **图谱存储** | nano-graphRAG（自研） | 本地化、无需 SaaS、时序知识图谱 |
+| **LLM 调用** | Ollama + Bailian | 本地优先、成本更低、可热切换 |
+| **模拟引擎** | 自研 StrategicSimulationRunner | 部门级建模 + 多 Agent 博弈 + 时序推演 |
+| **传播层** | 战略博弈 + 信息不对称 | 私有信息 / 隐藏动作 / 联盟博弈 |
+| **前端** | React + TypeScript | 类型安全、组件化、现代化 |
 
 ---
 
@@ -153,8 +153,8 @@
 
 ## 关键差异化特性
 
-### vs MiroFish (通用社交模拟)
-- **场景专一**: 聚焦A股/公司战略规划，不做通用社交模拟
+### vs 通用社交模拟
+- **场景专一**: 聚焦 A 股 / 公司战略规划，不做通用社交模拟
 - **信息不对称**: 支持私有信息、隐藏动作、联盟博弈
 - **信念追踪**: 完整的信念演化跟踪，而非简单的情绪分析
 - **收敛分析**: 多轮迭代直到观点收敛
@@ -170,8 +170,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-org/strategic-mind.git
-cd strategic-mind
+git clone https://github.com/your-org/strategicmind.git
+cd strategicmind
 
 # 2. 安装依赖
 npm run setup:all
@@ -191,7 +191,7 @@ pytest tests/acceptance/ -v
 ## 项目结构
 
 ```
-strategic-mind/
+strategicmind/
 ├── backend/
 │   ├── app/
 │   │   ├── api/              # Flask API 路由

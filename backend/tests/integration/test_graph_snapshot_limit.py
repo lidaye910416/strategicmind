@@ -249,7 +249,7 @@ async def test_kg_aggregate_graph_json(tmp_storage):
     """AC: ``rebuild_aggregate(graph_id)`` writes a single
     ``graph_<graph_id>.json`` containing all nodes + edges from the
     per-entity / per-relation files. This is the local equivalent of
-    MiroFish's "load whole graph from Zep in one call" — consumers
+    the prior-art's "load whole graph from Zep in one call" — consumers
     that need the full graph can read one file instead of scanning
     thousands of inodes."""
     from backend.services.local_graph_store import LocalGraphStore

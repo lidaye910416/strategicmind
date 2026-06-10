@@ -3,7 +3,7 @@
 **日期**：2026-06-07
 **作者**：Ralph Agent
 **模式**：ultracode（多 Agent 编排 + Workflow 工具）
-**前置 HEAD**：`9725ff8` (ralph/mirofish-refactor)
+**前置 HEAD**：`9725ff8` (main)
 
 ---
 
@@ -15,7 +15,7 @@
 | **G2** | 推演进行中 Dashboard 和 Workbench 内容同步 | 同一 runId 在两个视图展示一致；SSE live_event 真正跑通；`/workbench/:runId` URL 切自动重连 |
 | **G3** | 添加与公司经营/多轮模拟相关的可选参数 | StrategicConfigGenerator 接 user_params；`max_rounds = years × time_step`；公司部门多选；外部因素 textarea；涌现策略 |
 | **G4** | 历史任务不丢，刷新仍在 | runs 卡片化 + 复制配置 + 中途刷新重连（hydrate + SSE 重开 + graph-snapshot 回放）|
-| **G5** | 重点参考 MiroFish，按年份循环迭代 + 内外部环境变化 | **L3 多年逐月**（36 轮）+ 持续市场环境演化 + 外部因素按 N 轮注入 + 跨年"再推 1 年"按钮 |
+| **G5** | 重点参考, 按年份循环迭代 + 内外部环境变化 | **L3 多年逐月**（36 轮）+ 持续市场环境演化 + 外部因素按 N 轮注入 + 跨年"再推 1 年"按钮 |
 
 ---
 
@@ -86,7 +86,7 @@
 - FE-PERSIST-3: Workbench.tsx `hydrateFromRunId` 失败 retry 3 次；`graph-snapshot` + `network-frames` + `events` SSE 三件套重连
 - 验收：推演中刷新 → 3 秒内 workbench 恢复；点击历史 run 卡片看到完整复盘
 
-### P4 MiroFish 循环（G5）
+### P4 多年循环（G5）
 - BE-LOOP-1: MarketEnvironmentAgent 季度演化（已有 `market_environment.py`），每 4 轮调用一次 `evolve_quarter()` 产生市场扰动
 - BE-LOOP-2: ExternalShockSimulator 接入（已有 `external_shock_simulator.py`），每 N=3 轮把 user 的 external_factors 注入推演
 - BE-LOOP-3: 新增 `POST /api/pipeline/<id>/advance-year` → 推演 12 月 + 1 季度环境更新 + 1 次市场扰动
@@ -112,7 +112,7 @@
 | P1 | SYNC | P0 + P2/P3 已合并代码 | sim_loop 触发 print 验证 + FE 双视图共用 store | worktree |
 | P2 | PARAM | arch-spec + 当前 StrategicConfigGenerator | 后端派生 max_rounds + 前端 ConfigCard 校验 | worktree |
 | P3 | PERSIST | P0-P2 已合并 | RecentRuns 卡片 + 复制配置 + hydrate retry | worktree |
-| P4 | LOOP | MiroFish 库 + P0-P3 已合并 | market_environment 调用 + 跨年 API | worktree |
+| P4 | LOOP | 沙盘库 + P0-P3 已合并 | market_environment 调用 + 跨年 API | worktree |
 | P5 | Verify | 所有 commit | 端到端 36 轮 + 5 目标报告 | - |
 
 ---

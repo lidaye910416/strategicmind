@@ -1,6 +1,6 @@
 # 战略智脑 · 推演升级实施总结
 
-> 基于 MiroFish 的可视化范式 + 部门级建模 + 经营模式差异化 + 持续市场环境
+> 部门级建模 + 经营模式差异化 + 持续市场环境 + 多视角工作台
 
 ## 一、实施概览
 
@@ -12,7 +12,7 @@
 | **客户/竞品** | 无独立 Agent | **`CustomerAgent` + `CompetitorAgent` 集群** |
 | **部门冲突** | 无 | **`InterDepartmentResolver` 部门博弈 → 公司级决议** |
 | **推演合理性** | 通用 Agent 行动 | 部门 KPI 差异化 + 经营模式修正 + 议价权重 |
-| **前端可视化** | `PipelineDashboard` 147 行（仅 stepper） | **`Workbench.tsx` 475 行**（MiroFish 风格工作台） |
+| **前端可视化** | `PipelineDashboard` 147 行（仅 stepper） | **`Workbench.tsx` 475 行**（多视角工作台） |
 | **API 端点** | 7 个 pipeline 端点 | + **8 个公司编排端点** |
 
 ## 二、新增/修改文件清单
@@ -35,7 +35,7 @@
 | 文件 | 行数 | 说明 |
 |------|------|------|
 | `frontend/src/services/companyApi.ts` | 163 | 公司编排 API 客户端 |
-| `frontend/src/views/Workbench.tsx` | 475 | **推演工作台（参考 MiroFish Process.vue）** |
+| `frontend/src/views/Workbench.tsx` | 475 | **多视角推演工作台** |
 | `frontend/src/router/index.tsx` | +3 | 添加 `/workbench` 路由 |
 | `frontend/src/i18n/zh.ts` | +27 | 添加 WORKBENCH 中文 i18n |
 | `frontend/src/views/Dashboard.tsx` | +5 | 添加"推演工作台"入口 |
@@ -90,7 +90,7 @@ POST   /api/company/<id>/add-customers      添加客户群
 
 ## 五、前端工作台（Workbench）
 
-参考 MiroFish `Process.vue` 的设计：
+工作台设计:
 - **顶部**：7 步流水线 Dashboard（复用现有组件）
 - **左栏**：
   - 公司画像（经营模式 + 关键指标 + 7 部门卡片）
@@ -150,7 +150,7 @@ cd frontend && npm run dev
 
 - [ ] 把 CompanyContext 接入到 SimulationLoop，让推演真实包含部门博弈
 - [ ] 报告生成器（ReportAgent）输出"部门立场分布"章节
-- [ ] 实时图谱 D3 力导向图迁移（MiroFish GraphPanel.vue 1423 行）
+- [ ] 实时图谱 D3 力导向图深度优化 (性能 + 交互)
 - [ ] 推演结果回放（基于 SSE 事件流）
 - [ ] 报告导出 PDF / Word
 
@@ -209,7 +209,7 @@ cd frontend && npm run dev
 | 文件 | 行数 | 说明 |
 |------|------|------|
 | `backend/services/company_report_generator.py` | 382 | 公司级 Markdown 报告生成器（8 章节） |
-| `frontend/src/components/KnowledgeGraph.tsx` | 406 | D3 知识图谱组件（参考 MiroFish GraphPanel） |
+| `frontend/src/components/KnowledgeGraph.tsx` | 406 | D3 知识图谱组件 (力导向布局) |
 | `backend/app/api/company.py` | +90 | 新增 `/report` 和 `/report/download` 端点 |
 | `backend/app/api/graph.py` | +90 | 新增 `/nodes` 和 `/demo-graph` 端点 |
 
@@ -272,7 +272,7 @@ API 端点: 10 (P0) + 2 (P1) + 2 (P2) = 14 个
 - ✅ 知识图谱（演示数据 + 实际数据）
 
 ### 前端能力
-- ✅ 推演工作台（475 行，MiroFish 风格）
+- ✅ 推演工作台 (475 行, 多视角布局)
 - ✅ 部门关系图（410 行，力导向）
 - ✅ 知识图谱组件（406 行）
 - ✅ 多回合连续推演
@@ -284,20 +284,20 @@ API 端点: 10 (P0) + 2 (P1) + 2 (P2) = 14 个
 
 ---
 
-# P3 增强 - 对标 MiroFish 优化实施
+# P3 增强 - 智能体采访 + 场景种子库
 
 ## 新增 P3 文件
 
 | 文件 | 行数 | 说明 |
 |------|------|------|
-| `backend/services/agent_interview.py` | 274 | 智能体采访服务（参考 MiroFish Step5Interaction） |
+| `backend/services/agent_interview.py` | 274 | 智能体采访服务 (对话式收集部门立场) |
 | `frontend/src/components/AgentInterview.tsx` | 318 | 智能体采访 UI（对话界面） |
 | `backend/data/seed_examples/*.md` | - | 4 个内置战略场景（金融/制造/SaaS/政务） |
 | `backend/app/api/company.py` | +130 | 新增 3 个采访端点 |
 
-## MiroFish 对标能力矩阵（更新）
+## 能力矩阵（持续迭代）
 
-| 能力 | MiroFish | 升级前 StrategicMind | 升级后 StrategicMind |
+| 能力 | 通用社交模拟 | 升级前 StrategicMind | 升级后 StrategicMind |
 |------|----------|----------------------|----------------------|
 | 多智能体采访 | ✅ Step5 完整 | ❌ 无 | ✅ AgentInterview 318 行 |
 | 场景种子库 | ✅ seed_examples/ | ⚠️ 1 个内嵌 | ✅ 4 个结构化场景 |
@@ -340,7 +340,7 @@ API 端点: 10 (P0) + 2 (P1) + 2 (P2) = 14 个
 
 ## 总结
 
-| 维度 | MiroFish | 升级后 StrategicMind |
+| 维度 | 通用社交模拟 | 升级后 StrategicMind |
 |------|----------|----------------------|
 | 部门建模 | ❌ | ✅ 10 种 + KPI |
 | 经营模式 | ❌ | ✅ 8 种 + 修正 |

@@ -9,7 +9,7 @@
  *   - 任何 PR 引入的可灰度改动都必须挂一个 flag
  *   - 翻 false = 立即降级到旧行为，无需重新部署
  *   - 默认值：P0 = true, P1 = true, P2 = false（灰度推荐）
- *   - 真值来源：localStorage 覆盖（key=`mirofish:flag:${name}`，value=`'1'/'0'`）
+ *   - 真值来源：localStorage 覆盖（key=`strategicmind:flag:${name}`，value=`'1'/'0'`）
  *
  * 来源：C4 评审书 §6.3 单点回滚开关
  * D5 集成最终版（合并 3 个 P2 分支）：
@@ -77,7 +77,7 @@ const cache = new Map<FlagName, boolean>()
 function readOverride(name: FlagName): boolean | undefined {
   if (typeof window === 'undefined') return undefined
   try {
-    const v = window.localStorage.getItem(`mirofish:flag:${name}`)
+    const v = window.localStorage.getItem(`strategicmind:flag:${name}`)
     if (v === '1') return true
     if (v === '0') return false
     return undefined
@@ -98,16 +98,16 @@ export function getFlag(name: FlagName): boolean {
   return final
 }
 
-/** 写覆盖值（用于调试：window.mirofishFlag.set(...)） */
+/** 写覆盖值（用于调试：window.strategicmindFlag.set(...)） */
 export function setFlag(name: FlagName, value: boolean): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(`mirofish:flag:${name}`, value ? '1' : '0')
+    window.localStorage.setItem(`strategicmind:flag:${name}`, value ? '1' : '0')
   } catch { /* ignore */ }
   cache.set(name, value)
   // 触发一个自定义事件，方便 UI 即时响应（如果它想监听）
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('mirofish:flag-changed', { detail: { name, value } }))
+    window.dispatchEvent(new CustomEvent('strategicmind:flag-changed', { detail: { name, value } }))
   }
 }
 
@@ -118,7 +118,7 @@ export const flags: Readonly<Record<FlagName, boolean>> = new Proxy({} as Record
   },
 })
 
-/** 调试入口：浏览器 console 用 `mirofishFlag.set('stageCardsSplit', true)` */
+/** 调试入口：浏览器 console 用 `strategicmindFlag.set('stageCardsSplit', true)` */
 if (typeof window !== 'undefined') {
-  ;(window as any).mirofishFlag = { get: getFlag, set: setFlag }
+  ;(window as any).strategicmindFlag = { get: getFlag, set: setFlag }
 }

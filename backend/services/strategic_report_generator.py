@@ -62,7 +62,7 @@ class StrategicReportGenerator:
     """
     Generate actionable strategic reports from simulation results.
     
-    Unlike MiroFish's prediction report, this focuses on
+    Unlike generic social-simulation prediction reports, this focuses on
     actionable strategic recommendations.
     """
     

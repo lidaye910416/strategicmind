@@ -4,7 +4,7 @@ LocalKnowledgeStore - IKnowledgeStore implementation using nano-graphRAG
 This service combines nano-graphRAG storage with our custom EntityExtractor
 LLM-based extraction layer.
 
-The key difference from MiroFish: Zep has built-in extraction, we must
+The key difference from the prior-art: Zep has built-in extraction, we must
 integrate our own EntityExtractor with nano-graphRAG.
 
 Replaces: Zep Cloud knowledge store
@@ -29,7 +29,7 @@ from .entity_extractor import EntityExtractor
 # --- Dedup index constants ------------------------------------------------
 # Phase 4d fix (see ws4gdxlm1 diagnosis): without these, every LLM extraction
 # of the same name yields a new uuid → one file per call → 6910 files for 155
-# unique entities (~22x duplication, Apple Inc. → 403 copies). MiroFish offloads
+# unique entities (~22x duplication, Apple Inc. → 403 copies). the prior art offloads
 # this to Zep's server-side name/embedding merge; we replicate it locally with
 # a normalized (name, entity_type) index. Normalization helpers live in
 # `backend/models/text_normalize.py` so `Entity.from_name` and this store

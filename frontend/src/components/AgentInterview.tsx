@@ -1,5 +1,5 @@
 /**
- * 智能体采访组件 - 参考 MiroFish Step5Interaction.vue
+ * 智能体采访组件 - 参考 Step5Interaction.vue
  *
  * 用户可选择"采访"任一 Agent（部门/竞品/客户），
  * Agent 基于自己的角色（部门 KPI / 经营模式 / 立场）回答。

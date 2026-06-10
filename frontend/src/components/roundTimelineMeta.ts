@@ -18,7 +18,7 @@ export interface ActionMetaShape {
   variant: 'text' | 'numeric' | 'binary' | 'idle'
 }
 
-// 18 种动作类型完整配置（MiroFish 风格）
+// 18 种动作类型完整配置（工作台风格）
 export const ACTION_META: Record<string, ActionMetaShape> = {
   MAKE_STATEMENT:    { icon: Megaphone,  label: '公开发声',   color: 'text-brand-700 dark:text-brand-300',     bg: 'bg-brand-50 dark:bg-brand-950/40',       border: 'border-brand-200/60 dark:border-brand-800/60',   variant: 'text' },
   PUBLISH_REPORT:    { icon: Newspaper,  label: '发布报告',   color: 'text-cyan-700 dark:text-cyan-300',       bg: 'bg-cyan-50 dark:bg-cyan-950/40',         border: 'border-cyan-200/60 dark:border-cyan-800/60',     variant: 'text' },

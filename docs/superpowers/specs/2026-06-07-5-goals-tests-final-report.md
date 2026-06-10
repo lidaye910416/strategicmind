@@ -16,7 +16,7 @@
 | **G2** | Dashboard ↔ Workbench 同步 | ✅ | P7A 4 个 pytest (SSE) | `GET /api/pipeline/<id>/events` 推送 `snapshot` + `live_event` 帧 |
 | **G3** | 公司经营 + 多轮参数 | ✅ | P7B 7 个 pytest + P8 端到端实测 | 部门 → 9 个 ANALYST slot agent, external_factors → 报告 prompt 注入, max_rounds=12 |
 | **G4** | 历史任务不丢 | ✅ | P7B 5 个 pytest | /runs 内存/磁盘扫描/limit/config_summary/clone_config 5/5 PASS |
-| **G5** | MiroFish 多年循环 | ✅ | P7B 5 个 pytest (3 slow) | market_event/4 round, shock/3 round, advance_year → 12+12 rounds |
+| **G5** | 多年循环 | ✅ | P7B 5 个 pytest (3 slow) | market_event/4 round, shock/3 round, advance_year → 12+12 rounds |
 
 **5/5 ✅ 全达成。**
 
@@ -201,7 +201,7 @@ user_params.external_factors: ['竞品下月降价 20%']
 
 #### REPORT_GENERATING (prompt 注入验证)
 
-文件: `/Users/jasonlee/mirofish-refactor/backend/data/reports/run_b694c9e1.md`
+文件: `/Users/jasonlee/strategicmind/backend/data/reports/run_b694c9e1.md`
 内容: `Mock response` (mock LLM 不消费 prompt，直接返回固定串)
 
 **真实注入验证** 由单元测试 `test_external_factors_in_report` 保证（P7B 添加，P8 验证 PASS）：
@@ -227,7 +227,7 @@ G2 Dashboard ↔ Workbench 同步 — SSE 双轨 + 双视图共用 store
 G3 公司经营 + 多轮参数 — StrategicConfigGenerator 接 user_params，
     PROFILE 部门 slot agents，ReportAgent prompt 注入 external_factors
 G4 历史任务持久化 — runs 列表卡片化 + 复制配置 + Workbench hydrate
-G5 MiroFish 多年循环 — 多年逐月推演 + market_event + shock + advance-year
+G5 多年循环 — 多年逐月推演 + market_event + shock + advance-year
 
 测试套件：
 - backend pytest 122/122 PASSED (含 25 个 G1-G5 集成 + 5 个 P4 集成)

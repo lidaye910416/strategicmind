@@ -1,7 +1,7 @@
 /**
- * PlatformStatusCards - 推演阶段顶部双列平台卡（MiroFish 风格）。
+ * PlatformStatusCards - 推演阶段顶部双列平台卡（工作台风格）。
  *
- * 仿照 MiroFish Step3Simulation.vue 第 6-90 行：
+ * 仿照 Step3Simulation.vue 第 6-90 行：
  *   - 顶部并排两列：外部推演（Plaza/广场）+ 内部推演（Community/社群）
  *   - 每列三态：pending / active / completed
  *   - 显示 ROUND / TIME / ACTS
@@ -229,7 +229,7 @@ function PlatformCard({ platform, icon: Icon, name, subName, accentColor, stats,
         </div>
       )}
 
-      {/* Hover tooltip：可用动作（MiroFish 标志性） */}
+      {/* Hover tooltip：可用动作（标志性） */}
       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-2 bg-ink-950 text-white rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20 min-w-[200px] pointer-events-none">
         <div className="text-[10px] font-bold text-ink-400 uppercase tracking-widest mb-1.5">可用动作</div>
         <div className="flex flex-wrap gap-1">

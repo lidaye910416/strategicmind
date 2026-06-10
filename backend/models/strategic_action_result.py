@@ -1,7 +1,7 @@
 """
 StrategicActionResult - Recording agent decisions for later analysis
 
-Following MiroFish pattern: record actions, infer effects in Report stage.
+Following the prior-art pattern: record actions, infer effects in Report stage.
 LLM determines effects based on action context, not hardcoded rules.
 
 Implements: US-095

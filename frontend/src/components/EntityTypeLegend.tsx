@@ -1,13 +1,13 @@
 /**
- * EntityTypeLegend — 实体类型图例（MiroFish GraphPanel.vue 风格）
+ * EntityTypeLegend — 实体类型图例（GraphPanel.vue 风格）
  *
- * 借鉴 /Users/jasonlee/MiroFish/frontend/src/components/GraphPanel.vue:217-225 + 285-299
+ * 借鉴 /Users/jasonlee/strategicmind/frontend/src/components/GraphPanel.vue:217-225 + 285-299
  * - 10 色 palette 按出现顺序展示
  * - 每行 [色块] [类型名] [count]
  * - 挂到 RealtimeKnowledgeGraph 右上角叠加
  * - 实时根据 graphNodes 变化（useEntityTypes 派生）
  *
- * Implements: mirofish-tier / item #1 (Entity Type Legend)
+ * Implements: tier-1 / item #1 (Entity Type Legend)
  */
 import { motion } from 'framer-motion'
 import { Tag } from 'lucide-react'

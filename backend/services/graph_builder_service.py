@@ -15,12 +15,12 @@ from ..models.seed_document import SeedDocument
 from .entity_extractor import EntityExtractor
 
 
-# Step 10 (ws4gdxlm1) — per-doc entity cap. MiroFish doesn't need this
+# Step 10 (ws4gdxlm1) — per-doc entity cap. the prior art doesn't need this
 # because Zep's server-side merge collapses similar entities post-extract;
 # our local extractor produces N from each LLM call with no upper bound,
 # and ws4gdxlm1 numeric evidence showed one doc producing 1014 entity files
 # (29% of total). Capping at 50 mirrors the "high-signal action types only"
-# filter MiroFish applies in its action_descriptions table.
+# filter the prior art applies in its action_descriptions table.
 MAX_ENTITIES_PER_DOC = int(_os.environ.get("STRATEGICMIND_MAX_ENTITIES_PER_DOC", "50"))
 
 
@@ -90,7 +90,7 @@ class GraphBuilderService:
             # Step 10 (ws4gdxlm1) — per-doc cap.
             # Rank by signal density (longer summary + longer name = more
             # context per entity) then truncate to MAX_ENTITIES_PER_DOC.
-            # This mirrors MiroFish's DO_NOTHING skip behaviour at the
+            # This mirrors the prior-art's DO_NOTHING skip behaviour at the
             # extractor level — keep the high-signal entities, drop the
             # filler. Without this cap a single dense doc (e.g.
             # hubei_plan_seed.txt) can flood the graph with hundreds of

@@ -1,5 +1,5 @@
 /**
- * 推演工作台 - 参考 MiroFish Process.vue 风格。
+ * 推演工作台 - 参考 Process.vue 风格。
  *
  * 主视觉：左侧"实时图谱 + 部门态势" + 右侧"7 步流水线面板 + 议题推演"。
  *
@@ -87,7 +87,7 @@ export default function Workbench() {
   // must-tier v1: 风险矩阵派生
   const reportRisks = useReportRisks()
 
-  // ---- mirofish-tier: 30s 轮询 toggle (SSE 断线兜底) ----
+  // ---- tier-1: 30s 轮询 toggle (SSE 断线兜底) ----
   // 0 = 关闭 (默认), 30000 = 开启
   const [graphRefreshIntervalMs, setGraphRefreshIntervalMs] = useState<number>(0)
 

@@ -4,7 +4,7 @@ StakeholderModel - Strategic actors and relationships
 This module defines stakeholder relationships for corporate dynamics,
 including shareholders, management, board, regulators, and competitors.
 
-NEW - Core for strategic simulation, not in MiroFish
+NEW - Core for strategic simulation, not in generic social-simulation tools
 """
 
 from dataclasses import dataclass, field

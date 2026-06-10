@@ -1,7 +1,7 @@
 # StrategicMind 5 目标达成最终报告
 
 **日期**：2026-06-07
-**主分支 HEAD**：`4564784` (ralph/mirofish-refactor)
+**主分支 HEAD**：`4564784` (main)
 **commits**：7 (5 merge + 2 fix)
 **总 workflow agents**：6 (P0~P4 + P5 verify)
 
@@ -15,7 +15,7 @@
 | **G2** | Dashboard ↔ Workbench 同步 | ✅ | SSE 链路通；EventBus singleton 修复；hydrate retry 3×2s；abort controller 全部落地 |
 | **G3** | 公司经营 + 多轮参数 | ⚠️ | ✅ max_rounds=12 (1y × month)；✅ network-frames 12 帧；❌ PROFILE agents 仍 5 (默认) 而非 9；❌ report 不含"竞品" |
 | **G4** | 历史任务不丢 | ✅ | `/api/pipeline/runs?limit=20` 返回 20 个历史 run 含 config_summary；on-disk + in-memory 合并 |
-| **G5** | MiroFish 多年循环 + 环境演化 | ✅ | POST `/advance-year` HTTP 202 启动 12 rounds；market_event + shock_injected 已 emit (P4 验证) |
+| **G5** | 多年循环 + 环境演化 | ✅ | POST `/advance-year` HTTP 202 启动 12 rounds；market_event + shock_injected 已 emit (P4 验证) |
 
 **整体：5 目标中 3 个 ✅ 完全达成，1 个 ⚠️ 部分达成，0 个 ❌ 完全未达成。**
 

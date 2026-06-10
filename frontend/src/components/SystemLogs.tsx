@@ -1,7 +1,7 @@
 /**
- * SystemLogs - 推演系统日志栏（MiroFish 风格）
+ * SystemLogs - 推演系统日志栏（工作台风格）
  *
- * 仿照 MiroFish Step3Simulation 底部 .system-logs：
+ * 仿照 Step3Simulation 底部 .system-logs：
  *   - 黑色背景 + 绿色等宽字体（terminal 风）
  *   - 毫秒精度时间戳（HH:MM:SS.mmm）
  *   - 自动滚动到最新

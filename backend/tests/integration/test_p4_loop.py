@@ -1,5 +1,5 @@
 """
-P4 LOOP (G5) — MiroFish 多年循环 + 内外部环境变化 集成测试。
+P4 LOOP (G5) — 多年循环 + 内外部环境变化 集成测试。
 
 验收 (G5 L3 多年逐月):
 - POST /api/pipeline/start with years=3, time_step=month → 推演 36 rounds

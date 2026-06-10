@@ -55,7 +55,7 @@ UI 评审 (B3) ───────┘
 | **A3** pipeline-fixer | 读 A2 trace，定点修复后端 bug 或配置 | A2 trace | patch + retest | - |
 | **B1** user-journey | 3 路径：上传→启动 / 启动→监控 / 监控→报告 | frontend code | user-journey.md | worktree |
 | **B2** code-audit | 5 文件审计：Dashboard/Workbench/store/LiveRunPanel/PipelineDashboard | frontend code | code-audit.md | worktree |
-| **B3** ui-review | 信息密度 / 视线流 / MiroFish 范式对比 | frontend code + MiroFish ref | ui-review.md | worktree |
+| **B3** ui-review | 信息密度 / 视线流 / 沙盘推演范式对比 | frontend code + 沙盘范式参考 | ui-review.md | worktree |
 | **C1** design-perf | 性能/实时性 优先方案 | B1+B2+B3 | design-perf.md | worktree |
 | **C2** design-dx | DX/可维护性 优先方案 | B1+B2+B3 | design-dx.md | worktree |
 | **C3** design-ux | UX/决策流 优先方案 | B1+B2+B3 | design-ux.md | worktree |

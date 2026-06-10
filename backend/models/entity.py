@@ -31,7 +31,7 @@ class Entity:
         metadata: Optional metadata (source, timestamps, etc.)
         _norm_key: Stable normalized (name, entity_type) lookup key. Computed
             in __post_init__ so persistence layers can dedup without
-            re-deriving the key. Mirrors MiroFish's reliance on Zep's
+            re-deriving the key. Mirrors the prior-art's reliance on Zep's
             server-side name merging — see ws4gdxlm1.
     """
 

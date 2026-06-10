@@ -189,7 +189,7 @@ class LocalGraphStore(IGraphStore):
         ``source_dir`` (defaults to ``self.storage_path``) and rebuild a
         single aggregate ``graph_<graph_id>.json`` next to them.
 
-        This is the "MiroFish-equivalent local aggregate" — Zep exposes a
+        This is the prior-art's "local aggregate equivalent" — Zep exposes a
         single graph_id, here we keep the per-entity files (for cheap
         random access) AND write a periodically-refreshed aggregate so
         consumers can load the whole graph in one read instead of

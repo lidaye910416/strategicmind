@@ -1,7 +1,7 @@
 /**
  * RealtimeKnowledgeGraph — 单元测试
  *
- * 覆盖 (MiroFish v-bind 自环范式):
+ * 覆盖 (self-loop 自环范式):
  *  (1) 自环边 (edge.source === edge.target) 渲染为 <circle> 而非 <line>
  *  (2) 普通边 (source !== target) 渲染为 <line>
  *  (3) countSelfLoops: 3+ 自环时返回 3
@@ -35,7 +35,7 @@ const wrapSvg = (children: React.ReactNode) => (
   <svg data-testid="wrap">{children}</svg>
 )
 
-describe('RealtimeKnowledgeGraph — Self-Loop (MiroFish v-bind)', () => {
+describe('RealtimeKnowledgeGraph — Self-Loop (self-loop)', () => {
   describe('renderEdge', () => {
     it('自环边 (source === target) 渲染为 <circle>, 不渲染 <line>', () => {
       const node = makeNode('n1', 100, 100)

@@ -1,5 +1,5 @@
 """
-G5 (P4-LOOP) MiroFish 循环 — 扩展 test_p4_loop.py，验证：
+G5 (P4-LOOP) 多年循环 — 扩展 test_p4_loop.py，验证:
 - 12 轮 → >=3 个 market_event (每 4 轮 1 次)
 - external_factors=[X] → >=4 个 shock_injected (每 3 轮 1 次)
 - 已 completed run, POST /advance-year → 跑 12 rounds

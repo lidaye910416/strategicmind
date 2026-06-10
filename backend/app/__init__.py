@@ -19,7 +19,7 @@ _THIS_DIR = _os.path.dirname(_os.path.abspath(__file__))   # .../backend/app
 _BACKEND_DIR = _os.path.dirname(_THIS_DIR)                  # .../backend
 # `backend` is the package name we want importable. Its parent (the
 # project root) must be on sys.path.
-_PROJECT_ROOT = _os.path.dirname(_BACKEND_DIR)              # .../mirofish-refactor
+_PROJECT_ROOT = _os.path.dirname(_BACKEND_DIR)              # .../strategicmind
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
 

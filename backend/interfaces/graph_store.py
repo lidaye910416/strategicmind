@@ -2,7 +2,7 @@
 IGraphStore interface - Abstract interface for graph storage layer
 
 This interface allows swapping between Zep Cloud and local implementations.
-Replaces: MiroFish's Zep SDK dependency
+Replaces: the Zep Cloud SDK dependency (which prior-art systems use)
 """
 
 from abc import ABC, abstractmethod

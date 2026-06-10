@@ -162,7 +162,7 @@ def get_rounds(run_id: str):
     """Per-round detailed data: actions, belief updates, propagation events.
 
     Returns one entry per round, in order, with all the data needed to
-    render a MiroFish-style round-by-round timeline.
+    render a continuous-time, round-by-round timeline.
     """
     snap = _get_run(run_id)
     if not snap:

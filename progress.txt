@@ -2,7 +2,7 @@
 
 Started: 2026-06-01
 Project: StrategicMind - 战略推演引擎
-Branch: ralph/mirofish-refactor
+Branch: main
 
 ## Codebase Patterns
 
@@ -14,7 +14,7 @@ Branch: ralph/mirofish-refactor
 - All models have `to_dict()` and `from_dict()` for serialization
 - Mock implementations configurable via `set_response()`, `set_error()`
 - Test structure: `backend/tests/unit/test_*.py` with class-based tests
-- Branch name in prd.json: ralph/mirofish-refactor
+- Branch name in prd.json: main
 - Total US: 104, completed 42 (40.4%), pending 62
 - Frontend: React + Vite + TypeScript on port 3000, proxies /api to :8000
 

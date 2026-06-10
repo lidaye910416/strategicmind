@@ -1,6 +1,6 @@
 # StrategicMind 项目 — AI 协作者开发规范
 
-> StrategicMind 是基于 MiroFish 范式的公司战略推演平台。
+> StrategicMind 是公司战略推演平台, 基于「持续演化的知识图谱 + 多 Agent 博弈推演」自研技术栈。
 > 本文件记录历次踩过的坑 + UI 规范 + 5 目标实施要点, 避免重复犯错。
 
 ---
@@ -128,7 +128,7 @@ docs/superpowers/specs/        # design specs + 终报告
 
 ## 🏷️ Git 工作流
 
-- 主分支: **`main`** (从 `ralph/mirofish-refactor` 重命名)
+- 主分支: **`main`**
 - 修复分支: `feature/<goal-N>-<topic>` (e.g. `feature/goal-2-sync`)
 - 合并: `--no-ff` 保留分支历史
 - 合并后 worktree 保留, 不主动删除
@@ -141,17 +141,17 @@ docs/superpowers/specs/        # design specs + 终报告
 ```bash
 # 后端
 pkill -f "backend.run_server" 2>/dev/null
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 nohup python3 -m backend.run_server > /tmp/backend.log 2>&1 &
 # PID 会变, 查: lsof -i :8000
 
 # 前端
 pkill -f "vite" 2>/dev/null
-cd /Users/jasonlee/mirofish-refactor/frontend
+cd /Users/jasonlee/strategicmind/frontend
 nohup npm run dev > /tmp/frontend.log 2>&1 &
 
 # 跑测试
-cd /Users/jasonlee/mirofish-refactor
+cd /Users/jasonlee/strategicmind
 python3 -m pytest backend/tests/integration/ backend/tests/acceptance/ --ignore=backend/tests/e2e -q
 cd frontend && npm run test
 ```

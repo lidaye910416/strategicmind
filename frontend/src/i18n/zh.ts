@@ -539,13 +539,13 @@ export const WORKBENCH = {
   entityDanmakuEmpty: '尚无新涌现实体',
   entityTypeLegendTitle: '实体类型图例',
   entityTypeLegendEmpty: '尚无实体',
-  // mirofish-tier: 30s 轮询 toggle (SSE 兜底)
+  // tier-1: 30s 轮询 toggle (SSE 兜底)
   realtimeGraphPollingOn: '关闭轮询',
   realtimeGraphPollingOff: '开启 30s 轮询',
   realtimeGraphPollingBadge: (n: number) => `轮询 ${Math.round(n / 1000)}s`,
   // loop-engine-v2 (T2.2): 3-region layout status strip + state heroes
   statusStripRound: (cur: number, total: number) => `Round ${cur}/${total}`,
-  statusStripProgress: (p: number) => `${(p * 100).toFixed(0)}%`,
+  statusStripProgress: (p: number) => `${p.toFixed(0)}%`,
   execSummaryIdle: '点击"启动推演"开始多 Agent 战略推演',
   execSummaryConfiguring: '正在解析种子文档与构建图谱…',
   execSummaryRunning: (n: number) => `第 ${n} 轮推演进行中`,

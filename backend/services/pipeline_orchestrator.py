@@ -283,6 +283,22 @@ class PipelineOrchestrator:
     def checkpoint_dir(self) -> str:
         return self._resolve_checkpoint_dir()
 
+    # ---- Loop Engine v2 (T0.3) — observability + branch point for T1.9 ----
+
+    @property
+    def feature_flags(self) -> "FeatureFlags":
+        """Re-read env on every call so tests can flip the flag mid-run."""
+        from backend.config.manager import feature_flags
+        return feature_flags()
+
+    @property
+    def loop_engine_v2_enabled(self) -> bool:
+        return self.feature_flags.loop_engine_v2
+
+    @property
+    def cosmic_graph_enabled(self) -> bool:
+        return self.feature_flags.cosmic_graph
+
     def _init_state(self) -> None:
         """Initialize per-orchestrator state (called once after __init__)."""
         self._runs: Dict[str, PipelineRun] = {}
@@ -771,6 +787,17 @@ class PipelineOrchestrator:
         if not agents_meta:
             return {"current_round": 0, "round_results": [], "skipped": "no agents"}
 
+        # Pre-store the planned round count so consumers (network-frames,
+        # realtime graph UI) can see the plan while the stage is still
+        # running. Without this, the network-frames endpoint returns
+        # total_rounds=0 from when SIMULATION_RUNNING starts until the
+        # stage finishes and writes the final result.
+        planned_max_rounds = int(sim_config.get("max_rounds") or 0)
+        if planned_max_rounds:
+            existing_artifact = run.artifacts.get(Stage.SIMULATION_RUNNING.value) or {}
+            existing_artifact.setdefault("total_rounds", planned_max_rounds)
+            run.artifacts[Stage.SIMULATION_RUNNING.value] = existing_artifact
+
         agent_type_map = {t.value: t for t in AgentType}
         agents: List[StrategicAgent] = []
         for a in agents_meta:
@@ -793,7 +820,7 @@ class PipelineOrchestrator:
             llm_provider=self.llm_provider,
         )
         # P4 LOOP: 接入 MarketEnvironmentAgent（每 4 轮季度演化）+ ExternalShockSimulator（每 3 轮按用户外部因素注入）
-        # 设计目标：MiroFish 风格"按年份循环迭代 + 内外部环境变化"
+        # 设计目标: "按年份循环迭代 + 内外部环境变化"
         user_params = run.config.get("user_params") or {}
         industry = (
             run.config.get("industry")
@@ -969,8 +996,9 @@ class PipelineOrchestrator:
                             continue
                     # Persist the EpisodicMemory file at round boundary
                     # so a crash mid-run leaves a consistent on-disk
-                    # snapshot (MiroFish does the equivalent via Zep's
-                    # episode-commit on each batch — see ws4gdxlm1).
+                    # snapshot (the prior-art system does the equivalent
+                    # via Zep's episode-commit on each batch — see
+                    # ws4gdxlm1).
                     epi = run.artifacts.get("_episodic_memory")
                     if epi is not None:
                         try:
@@ -1011,7 +1039,7 @@ class PipelineOrchestrator:
         additional ``market_event`` / ``shock_injected`` events through
         the event bus.
 
-        Spec: G5 (MiroFish loop) — POST /api/pipeline/<id>/advance-year
+        Spec: G5 (multi-year loop) — POST /api/pipeline/<id>/advance-year
         """
         run = self._runs.get(run_id)
         if run is None:

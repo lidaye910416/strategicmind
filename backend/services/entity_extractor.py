@@ -4,7 +4,7 @@ EntityExtractor - LLM-based entity and relation extraction
 This service extracts entities and relationships from text using LLM,
 replacing Zep's auto-extraction capability.
 
-The key difference from MiroFish (Zep): Zep has built-in LLM extraction,
+The key difference from the prior-art (Zep): Zep has built-in LLM extraction,
 nano-graphRAG does not. This service provides that capability.
 
 Replaces: Zep's automatic entity extraction
@@ -35,7 +35,7 @@ class EntityExtractor:
     """
     Extract entities and relationships from text using LLM.
     
-    This is the KEY DIFFERENCE from MiroFish - Zep has built-in LLM extraction,
+    This is the KEY DIFFERENCE from the prior art - Zep has built-in LLM extraction,
     nano-graphRAG does not. This service provides that capability.
     
     Usage:
