@@ -36,8 +36,17 @@ class LocalGraphStore(IGraphStore):
         os.makedirs(storage_path, exist_ok=True)
     
     def _get_graph_path(self, graph_id: str) -> str:
-        """Get file path for a graph"""
-        return os.path.join(self.storage_path, f"{graph_id}.json")
+        """Get file path for a graph.
+
+        Uses the ``graph_<id>.json`` prefix so the aggregate sits next
+        to per-entity files (``{uuid}.json``) and per-relation files
+        (``relation_<uuid>.json``) without being misclassified by
+        directory scans (e.g. ``_read_graph_from_knowledge_store`` in
+        pipeline.py skips ``graph_*.json``). Without the prefix, a
+        per-run aggregate like ``run_xxx.json`` looks just like an
+        entity file with a UUID id and pollutes graph snapshots.
+        """
+        return os.path.join(self.storage_path, f"graph_{graph_id}.json")
     
     def _load_graph(self, graph_id: str) -> Dict[str, Any]:
         """Load graph data from file"""
@@ -89,25 +98,36 @@ class LocalGraphStore(IGraphStore):
         top_k: int = 10,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        """Simple text search in nodes"""
+        """Simple text search in nodes.
+
+        Searches across ``name``, ``summary``, ``text`` and
+        ``post_content`` — the last two cover Step 7 Episode mirror
+        nodes whose payload sits in ``text`` rather than ``summary``.
+        Without this, knowledge_store.search() returns 0 Episode hits
+        even when the mirror is wired correctly.
+        """
         data = self._load_graph(graph_id)
-        
+
         results = []
         query_lower = query.lower()
-        
+
         for node in data.get("nodes", []):
-            text = f"{node.get('name', '')} {node.get('summary', '')}".lower()
+            # Concatenate every text-bearing field so a query matches
+            # whichever field the node happens to use.
+            text = " ".join(str(node.get(k, "") or "") for k in (
+                "name", "summary", "text", "post_content"
+            )).lower()
             if query_lower in text:
                 results.append({
                     "id": node.get("id", str(uuid4())),
-                    "text": node.get("summary", node.get("name", "")),
+                    "text": node.get("text") or node.get("summary") or node.get("name", ""),
                     "score": 0.5,
                     "metadata": node,
                 })
-            
+
             if len(results) >= top_k:
                 break
-        
+
         return results
     
     async def get_nodes(
@@ -159,3 +179,71 @@ class LocalGraphStore(IGraphStore):
             os.remove(path)
             return True
         return False
+
+    def rebuild_aggregate(
+        self,
+        graph_id: str = "default",
+        source_dir: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """Scan one-file-per-entity / one-file-per-relation JSONs under
+        ``source_dir`` (defaults to ``self.storage_path``) and rebuild a
+        single aggregate ``graph_<graph_id>.json`` next to them.
+
+        This is the "MiroFish-equivalent local aggregate" — Zep exposes a
+        single graph_id, here we keep the per-entity files (for cheap
+        random access) AND write a periodically-refreshed aggregate so
+        consumers can load the whole graph in one read instead of
+        scanning 6910 inodes. See ws4gdxlm1 Step 6.
+
+        Returns:
+            ``{"nodes": int, "edges": int}`` written to the aggregate.
+        """
+        src = source_dir or self.storage_path
+        if not os.path.isdir(src):
+            return {"nodes": 0, "edges": 0}
+
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        try:
+            files = sorted(os.listdir(src))
+        except OSError:
+            return {"nodes": 0, "edges": 0}
+
+        for fname in files:
+            if not fname.endswith(".json"):
+                continue
+            # Skip persistence artefacts (dedup indices + this aggregate file).
+            if fname.startswith("_") or fname.startswith("graph_"):
+                continue
+            fpath = os.path.join(src, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+            if fname.startswith("relation_"):
+                edges.append(payload)
+            else:
+                nodes.append(payload)
+
+        aggregate = {
+            "graph_id": graph_id,
+            "nodes": nodes,
+            "edges": edges,
+        }
+        # Atomic write so a partial failure doesn't leave a half-written
+        # aggregate that crashes consumers on next read.
+        path = self._get_graph_path(graph_id)
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(aggregate, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            return {"nodes": 0, "edges": 0}
+
+        return {"nodes": len(nodes), "edges": len(edges)}

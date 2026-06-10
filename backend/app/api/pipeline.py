@@ -195,23 +195,36 @@ def _build_live_event_frame(
 # Graph snapshot helper (reads in-memory knowledge_store)
 # ---------------------------------------------------------------------------
 
-def _read_graph_from_knowledge_store(knowledge_store) -> Dict[str, Any]:
+def _read_graph_from_knowledge_store(knowledge_store, limit: int = 2000) -> Dict[str, Any]:
     """Read entities + relations from a LocalKnowledgeStore on disk.
 
     LocalKnowledgeStore persists each entity/relation as an individual
     JSON file under ``storage_path``. We scan that directory and return
-    a flat ``{nodes, edges}`` shape compatible with the graph UI.
+    a flat ``{nodes, edges, total_nodes, total_edges, has_more}`` payload.
+
+    Truncation: when total_nodes > limit, nodes are sorted by uuid
+    (deterministic) and the first ``limit`` are kept; edges whose
+    endpoints are not in the kept set are dropped (no dangling refs).
+    Index files (``_entity_index.json``) and aggregate files
+    (``graph_*.json``) are skipped — they are persistence artefacts,
+    not graph content.
     """
     if knowledge_store is None:
-        return {"nodes": [], "edges": []}
+        return {"nodes": [], "edges": [], "total_nodes": 0, "total_edges": 0, "has_more": False}
     storage_path = getattr(knowledge_store, "storage_path", None)
     if not storage_path or not os.path.isdir(storage_path):
-        return {"nodes": [], "edges": []}
-    nodes: list = []
-    edges: list = []
+        return {"nodes": [], "edges": [], "total_nodes": 0, "total_edges": 0, "has_more": False}
+
+    all_nodes: list = []
+    all_edges: list = []
     try:
         for fname in os.listdir(storage_path):
             if not fname.endswith(".json"):
+                continue
+            # Skip persistence artefacts:
+            #   _entity_index.json / _relation_index.json (dedup indices)
+            #   graph_*.json (Step 6 aggregate snapshots)
+            if fname.startswith("_") or fname.startswith("graph_"):
                 continue
             fpath = os.path.join(storage_path, fname)
             try:
@@ -220,7 +233,7 @@ def _read_graph_from_knowledge_store(knowledge_store) -> Dict[str, Any]:
             except Exception:
                 continue
             if fname.startswith("relation_"):
-                edges.append({
+                all_edges.append({
                     "id": payload.get("uuid") or fname[:-5],
                     "source": payload.get("source_id"),
                     "target": payload.get("target_id"),
@@ -229,7 +242,7 @@ def _read_graph_from_knowledge_store(knowledge_store) -> Dict[str, Any]:
                     "attributes": payload.get("attributes", {}),
                 })
             else:
-                nodes.append({
+                all_nodes.append({
                     "id": payload.get("uuid") or fname[:-5],
                     "label": payload.get("name") or payload.get("label") or fname[:-5],
                     "type": payload.get("entity_type") or "unknown",
@@ -239,8 +252,43 @@ def _read_graph_from_knowledge_store(knowledge_store) -> Dict[str, Any]:
                     },
                 })
     except Exception:
-        return {"nodes": nodes, "edges": edges}
-    return {"nodes": nodes, "edges": edges}
+        # Listing failed mid-scan — return what we have with conservative totals.
+        return {
+            "nodes": all_nodes,
+            "edges": all_edges,
+            "total_nodes": len(all_nodes),
+            "total_edges": len(all_edges),
+            "has_more": False,
+        }
+
+    total_nodes = len(all_nodes)
+    total_edges = len(all_edges)
+
+    # Deterministic truncation: sort by id (uuid) ascending so the same
+    # limit-N call always returns the same N nodes. Without sort, list
+    # order depends on filesystem iteration which is unstable.
+    all_nodes.sort(key=lambda n: n.get("id", ""))
+    if limit is None or limit <= 0 or total_nodes <= limit:
+        kept_nodes = all_nodes
+        has_more = False
+    else:
+        kept_nodes = all_nodes[:limit]
+        has_more = True
+
+    kept_ids = {n["id"] for n in kept_nodes}
+    # Drop dangling edges: both endpoints MUST be in the returned node set.
+    kept_edges = [
+        e for e in all_edges
+        if e.get("source") in kept_ids and e.get("target") in kept_ids
+    ]
+
+    return {
+        "nodes": kept_nodes,
+        "edges": kept_edges,
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "has_more": has_more,
+    }
 
 
 def _read_graph_snapshot(run_id: str) -> Dict[str, Any]:
@@ -635,3 +683,239 @@ def list_pipeline_runs():
     )
     projected = projected[:limit]
     return jsonify({"runs": projected, "count": len(projected), "limit": limit})
+
+
+# ---------------------------------------------------------------------------
+# Step 9 (ws4gdxlm1) — admin endpoints for KG cleanup
+#
+# Background: the ws4gdxlm1 diagnosis identified ~6910 polluting entity
+# files in data/knowledge_graphs/ accumulated across runs (155 unique
+# (name, entity_type), avg 22x duplication, single entity 403 copies).
+# Once Step 2's dedup is in place future inserts stay clean — but the
+# already-polluted directory needs a one-shot cleanup. These endpoints
+# expose that cleanup behind an admin-token gate, with dry_run=True as
+# the safe default (returns the merge plan without touching disk).
+# ---------------------------------------------------------------------------
+
+_ADMIN_TOKEN_ENV = "STRATEGICMIND_ADMIN_TOKEN"
+_DEFAULT_KG_PATH = "./data/knowledge_graphs"
+
+
+def _admin_token_required():
+    """Header gate for /admin/* endpoints.
+
+    Returns ``None`` when authorised, or a ``(response, status_code)``
+    tuple when rejected. If ``STRATEGICMIND_ADMIN_TOKEN`` is unset the
+    gate is open (dev mode) — that's intentional: setting the env var
+    in production enables enforcement without a code change.
+    """
+    expected = os.environ.get(_ADMIN_TOKEN_ENV, "")
+    if not expected:
+        # Dev mode — no token required. We log this so prod has a
+        # visible signal if someone forgot to set it.
+        return None
+    got = request.headers.get("X-Admin-Token", "")
+    if got != expected:
+        return jsonify({
+            "error": "admin_token_required",
+            "msg": "POST X-Admin-Token header must match STRATEGICMIND_ADMIN_TOKEN env var",
+        }), 401
+    return None
+
+
+def _normalize_kg_path(raw: Optional[str]) -> str:
+    """Resolve and validate the storage path query param. Defaults to
+    ``./data/knowledge_graphs``. We refuse to operate on absolute paths
+    outside the project tree so an attacker who got past the token can't
+    use this to nuke ``/etc``."""
+    p = (raw or _DEFAULT_KG_PATH).strip() or _DEFAULT_KG_PATH
+    abs_p = os.path.abspath(p)
+    # backend/app/api/pipeline.py → backend/app/api → backend/app → backend → <repo root>
+    project_root = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "..",
+    ))
+    # abs_p must be inside project_root OR under /tmp (tests).
+    if not (abs_p == project_root or abs_p.startswith(project_root + os.sep) or abs_p.startswith("/tmp")):
+        raise ValueError(f"refusing to touch path outside project tree: {abs_p} (root={project_root})")
+    return abs_p
+
+
+@pipeline_bp.route('/admin/dedupe-kg', methods=['POST'])
+def admin_dedupe_kg():
+    """Sweep ``data/knowledge_graphs/`` to collapse duplicate entities.
+
+    Query params:
+        dry_run: ``true`` (default) → return the merge plan, touch nothing.
+                 ``false`` → actually delete duplicates and rebuild
+                 ``_entity_index.json``.
+        path: storage directory (default ``./data/knowledge_graphs``).
+              Must be inside the project tree or under /tmp (test fixtures).
+
+    Returns: ``{before, after, deduped, groups: [...]}`` where
+        ``before`` = total entity files scanned
+        ``after`` = unique (normalized_name, entity_type) keys
+        ``deduped`` = before − after (files that would be / were removed)
+        ``groups`` = top-20 most-duplicated keys (helps audit/sanity-check).
+    """
+    auth = _admin_token_required()
+    if auth is not None:
+        return auth
+
+    try:
+        # Lazy import to avoid pulling backend.services at module load.
+        from backend.models.text_normalize import make_entity_key
+    except Exception as e:
+        return jsonify({"error": "import_failed", "msg": str(e)}), 500
+
+    try:
+        kg_path = _normalize_kg_path(request.args.get("path"))
+    except ValueError as e:
+        return jsonify({"error": "bad_path", "msg": str(e)}), 400
+
+    dry_run = request.args.get("dry_run", "true").lower() not in ("false", "0", "no", "off")
+
+    if not os.path.isdir(kg_path):
+        return jsonify({
+            "error": "path_missing",
+            "msg": f"{kg_path} is not a directory",
+        }), 404
+
+    # Collect (mtime, fname, payload, key) for every entity file.
+    items: list = []
+    for fname in os.listdir(kg_path):
+        if not fname.endswith(".json"):
+            continue
+        if fname.startswith("_") or fname.startswith("relation_") or fname.startswith("graph_"):
+            continue
+        fpath = os.path.join(kg_path, fname)
+        try:
+            mt = os.path.getmtime(fpath)
+        except OSError:
+            mt = 0.0
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            continue
+        name = payload.get("name", "")
+        etype = payload.get("entity_type", "")
+        if not name or not etype:
+            continue
+        key = make_entity_key(name, etype)
+        items.append((mt, fname, payload, key))
+
+    before = len(items)
+    # Group by key, oldest mtime wins (first-wins on cold-start rebuild).
+    groups: Dict[str, list] = {}
+    for mt, fn, payload, key in items:
+        groups.setdefault(key, []).append((mt, fn, payload))
+    for k in groups:
+        groups[k].sort(key=lambda t: t[0])  # ascending mtime
+
+    after = len(groups)
+    deduped = before - after
+
+    # Top-20 most duplicated keys for the audit trail.
+    top_dupes = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)[:20]
+    top_summary = [
+        {
+            "key": k,
+            "name": v[0][2].get("name"),
+            "entity_type": v[0][2].get("entity_type"),
+            "files": len(v),
+            "kept_uuid": v[0][2].get("uuid") or v[0][1][:-5],
+        }
+        for k, v in top_dupes
+    ]
+
+    if dry_run:
+        return jsonify({
+            "dry_run": True,
+            "path": kg_path,
+            "before": before,
+            "after": after,
+            "deduped": deduped,
+            "groups": top_summary,
+        })
+
+    # Real run — delete duplicates, rebuild index, optionally rebuild aggregate.
+    removed = 0
+    new_index: Dict[str, str] = {}
+    for key, entries in groups.items():
+        kept_mt, kept_fn, kept_payload = entries[0]
+        kept_uuid = kept_payload.get("uuid") or kept_fn[:-5]
+        new_index[key] = kept_uuid
+        for mt, fn, _payload in entries[1:]:
+            try:
+                os.remove(os.path.join(kg_path, fn))
+                removed += 1
+            except OSError:
+                pass
+
+    # Persist the rebuilt _entity_index.json (atomic write).
+    index_path = os.path.join(kg_path, "_entity_index.json")
+    tmp = index_path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(new_index, f, ensure_ascii=False)
+        os.replace(tmp, index_path)
+    except OSError as e:
+        return jsonify({
+            "error": "index_write_failed",
+            "msg": str(e),
+            "removed": removed,
+        }), 500
+
+    return jsonify({
+        "dry_run": False,
+        "path": kg_path,
+        "before": before,
+        "after": after,
+        "deduped": deduped,
+        "removed_files": removed,
+        "groups": top_summary,
+    })
+
+
+@pipeline_bp.route('/admin/reset-kg', methods=['POST'])
+def admin_reset_kg():
+    """Wipe everything under ``data/knowledge_graphs/`` for a clean slate.
+
+    Query params:
+        path: storage directory (default ``./data/knowledge_graphs``).
+              Same project-tree / /tmp guard as dedupe-kg.
+
+    Refuses to run without an admin token in production. Returns
+    ``{deleted: N, path}`` on success.
+    """
+    auth = _admin_token_required()
+    if auth is not None:
+        return auth
+
+    try:
+        kg_path = _normalize_kg_path(request.args.get("path"))
+    except ValueError as e:
+        return jsonify({"error": "bad_path", "msg": str(e)}), 400
+
+    if not os.path.isdir(kg_path):
+        return jsonify({
+            "error": "path_missing",
+            "msg": f"{kg_path} is not a directory",
+        }), 404
+
+    deleted = 0
+    for fname in os.listdir(kg_path):
+        if not fname.endswith(".json"):
+            continue
+        # Wipe everything: entity + relation + index + aggregate.
+        try:
+            os.remove(os.path.join(kg_path, fname))
+            deleted += 1
+        except OSError:
+            pass
+
+    return jsonify({
+        "path": kg_path,
+        "deleted": deleted,
+    })

@@ -594,6 +594,34 @@ class PipelineOrchestrator:
         )
         # Stash the knowledge store on the run for downstream stages
         run.artifacts["_knowledge_store"] = knowledge_store
+
+        # Step 8 (ws4gdxlm1) — instantiate the MemoryWriteback writer up
+        # front so SIMULATION_RUNNING can mirror every action's Episode
+        # into the same knowledge store. Without this hookup the new
+        # LoopEngine v2 path is wired into orchestration but the
+        # knowledge graph never sees the per-round Episode nodes the
+        # report agent needs for grounding (see ws4gdxlm1 verdict #1).
+        try:
+            from backend.services.loop.memory_writeback import (
+                MemoryWriteback,
+                EpisodicMemory,
+            )
+            episodic = EpisodicMemory.for_run(run.run_id)
+            writer = MemoryWriteback(
+                memory=episodic,
+                knowledge_store=knowledge_store,
+                run_id=run.run_id,
+                mirror_enabled=True,
+            )
+            run.artifacts["_memory_writeback"] = writer
+            run.artifacts["_episodic_memory"] = episodic
+        except Exception:
+            # MemoryWriteback wiring is best-effort — a failure here
+            # must not break GRAPH_BUILDING. SIMULATION_RUNNING will
+            # detect a missing writer via run.artifacts.get and skip
+            # the mirror loop, falling back to legacy behaviour.
+            pass
+
         return result
 
     async def _stage_entity_extraction(self, run: PipelineRun) -> Dict[str, Any]:
@@ -917,6 +945,42 @@ class PipelineOrchestrator:
                 except Exception:
                     pass
 
+            # 6) Step 8 (ws4gdxlm1) — mirror this round's StrategicActions
+            # into the knowledge graph via MemoryWriteback. The writer
+            # was stashed in _stage_graph_building; if it's missing
+            # (e.g. an older run loaded from a stale checkpoint) we
+            # silently skip — the legacy SSE path is unaffected.
+            #
+            # We prefer the LIVE objects in evt["_actions_objects"] so
+            # v2 ad-hoc attributes (action_id, post_content, evidence,
+            # in_reply_to, metadata) survive — they are NOT in
+            # StrategicAction.to_dict's canonical shape.
+            try:
+                writer = run.artifacts.get("_memory_writeback")
+                actions_live = evt.get("_actions_objects") or []
+                if writer is not None and actions_live:
+                    for act in actions_live:
+                        try:
+                            writer.write_action(act, state_after=None)
+                        except Exception:
+                            # One action's mirror failure must not
+                            # break the round — the EpisodicMemory
+                            # path still records what it can.
+                            continue
+                    # Persist the EpisodicMemory file at round boundary
+                    # so a crash mid-run leaves a consistent on-disk
+                    # snapshot (MiroFish does the equivalent via Zep's
+                    # episode-commit on each batch — see ws4gdxlm1).
+                    epi = run.artifacts.get("_episodic_memory")
+                    if epi is not None:
+                        try:
+                            epi.save()
+                        except Exception:
+                            pass
+            except Exception:
+                # Outer guard — writer wiring or evt malformed.
+                pass
+
         try:
             results = await sim_loop.run(
                 agents=agents,
@@ -1201,6 +1265,38 @@ class PipelineOrchestrator:
                     except Exception:
                         pass
 
+                # Step 8 (ws4gdxlm1) — mirror cross-year-advanced rounds
+                # through MemoryWriteback too. The writer was stashed by
+                # the original run's _stage_graph_building; reload from
+                # run.artifacts so we share its EpisodicMemory file +
+                # knowledge_store handle. global_round is the absolute
+                # round index across the multi-year extension.
+                try:
+                    writer = run.artifacts.get("_memory_writeback")
+                    actions_live = evt.get("_actions_objects") or []
+                    if writer is not None and actions_live:
+                        for act in actions_live:
+                            # Ensure the action carries the global round
+                            # so Episodes from advance-year don't collide
+                            # with the original run's by reusing round
+                            # indices.
+                            try:
+                                act.round_num = int(global_round)
+                            except Exception:
+                                pass
+                            try:
+                                writer.write_action(act, state_after=None)
+                            except Exception:
+                                continue
+                        epi = run.artifacts.get("_episodic_memory")
+                        if epi is not None:
+                            try:
+                                epi.save()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
             # Run additional rounds
             self.event_bus.emit(
                 run_id, "year_advanced", {
@@ -1325,8 +1421,18 @@ class PipelineOrchestrator:
         and stringifies any non-serializable artifact.
         """
         artifacts = {}
+        # Underscore-prefixed artifacts are live in-process handles
+        # (knowledge store, writer, episodic memory) — they hold open
+        # file handles / asyncio state and can't be JSON-serialized.
+        # Strip them here so checkpoint write / /runs render don't
+        # explode with "Object of type X is not JSON serializable".
+        _LIVE_HANDLES = {
+            "_knowledge_store",
+            "_memory_writeback",
+            "_episodic_memory",
+        }
         for k, v in (run.artifacts or {}).items():
-            if k == "_knowledge_store":
+            if k in _LIVE_HANDLES:
                 continue
             try:
                 json.dumps(v, ensure_ascii=False, default=str)

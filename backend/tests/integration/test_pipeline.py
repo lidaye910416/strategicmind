@@ -13,8 +13,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 
 @pytest.mark.asyncio
-async def test_e2e_pipeline():
-    """Test end-to-end pipeline flow"""
+async def test_e2e_pipeline(tmp_path):
+    """Test end-to-end pipeline flow.
+
+    `tmp_path` (pytest built-in fixture) is propagated to LocalKnowledgeStore
+    so this test never writes to the repo's data/knowledge_graphs/ — see
+    ws4gdxlm1 verdict #2: the previous default-storage path injected
+    mock Apple/Tim Cook entities directly into the shared production
+    directory, polluting every worktree on the next checkout.
+    """
     from backend.tests.mocks.mock_llm_provider import MockLLMProvider
     from backend.tests.mocks.mock_graph_store import MockGraphStore
     from backend.services.local_knowledge_store import LocalKnowledgeStore
@@ -27,7 +34,7 @@ async def test_e2e_pipeline():
     from backend.tools.search_tool import SearchTool
     from backend.models.strategic_agent import StrategicAgent, AgentType
     from backend.models.seed_document import SeedDocument, DocumentType
-    
+
     # Setup
     mock_llm = MockLLMProvider()
     # Graph builder, simulation loop and report agent will all call the LLM.
@@ -44,9 +51,13 @@ async def test_e2e_pipeline():
     mock_llm.set_responses([entity_response] * 32)
 
     mock_graph = MockGraphStore()
+    # Storage_path MUST be a tmp dir — otherwise this test writes mock
+    # Apple/Tim Cook entity files to the shared ./data/knowledge_graphs/
+    # and every other worktree picks them up on next checkout.
     knowledge_store = LocalKnowledgeStore(
         graph_store=mock_graph,
         llm_provider=mock_llm,
+        storage_path=str(tmp_path / "kg"),
     )
     
     # Stage 1: SeedDocument parsing

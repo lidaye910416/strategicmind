@@ -7,11 +7,21 @@ Implements: US-022 (uses US-021 LocalKnowledgeStore)
 
 from typing import Dict, List, Any, Optional, Callable
 import asyncio
+import os as _os
 
 from ..interfaces.knowledge_store import IKnowledgeStore
 from ..interfaces.llm_provider import ILLMProvider
 from ..models.seed_document import SeedDocument
 from .entity_extractor import EntityExtractor
+
+
+# Step 10 (ws4gdxlm1) — per-doc entity cap. MiroFish doesn't need this
+# because Zep's server-side merge collapses similar entities post-extract;
+# our local extractor produces N from each LLM call with no upper bound,
+# and ws4gdxlm1 numeric evidence showed one doc producing 1014 entity files
+# (29% of total). Capping at 50 mirrors the "high-signal action types only"
+# filter MiroFish applies in its action_descriptions table.
+MAX_ENTITIES_PER_DOC = int(_os.environ.get("STRATEGICMIND_MAX_ENTITIES_PER_DOC", "50"))
 
 
 class GraphBuilderService:
@@ -34,6 +44,19 @@ class GraphBuilderService:
         self.entity_extractor = entity_extractor
         self.knowledge_store = knowledge_store
         self.config = config or {}
+        # Wire the extractor's back-reference so `Entity.from_name` inside
+        # `_parse_entity_response` can hit the store's `_entity_index` and
+        # reuse existing uuids on a normalized (name, type) match. This
+        # closes the three-layer dedup loop when GraphBuilderService is
+        # constructed with an extractor that wasn't built by the store.
+        # No-op if the extractor was already wired (LocalKnowledgeStore
+        # case) — reassigning to the same reference is safe.
+        try:
+            self.entity_extractor.knowledge_store = self.knowledge_store
+        except AttributeError:
+            # Test stubs may not allow attribute assignment — fine,
+            # the store-layer dedup still catches duplicates.
+            pass
 
     async def build(
         self,
@@ -63,6 +86,23 @@ class GraphBuilderService:
 
             # Extract entities
             entities = await self.entity_extractor.extract_entities(content, ontology)
+
+            # Step 10 (ws4gdxlm1) — per-doc cap.
+            # Rank by signal density (longer summary + longer name = more
+            # context per entity) then truncate to MAX_ENTITIES_PER_DOC.
+            # This mirrors MiroFish's DO_NOTHING skip behaviour at the
+            # extractor level — keep the high-signal entities, drop the
+            # filler. Without this cap a single dense doc (e.g.
+            # hubei_plan_seed.txt) can flood the graph with hundreds of
+            # marginal entities and crowd out subsequent docs.
+            if len(entities) > MAX_ENTITIES_PER_DOC:
+                entities.sort(
+                    key=lambda e: (
+                        -len(getattr(e, "summary", "") or ""),
+                        -len(getattr(e, "name", "") or ""),
+                    ),
+                )
+                entities = entities[:MAX_ENTITIES_PER_DOC]
 
             # Extract relations
             relations = await self.entity_extractor.extract_relations(

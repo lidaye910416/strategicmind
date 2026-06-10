@@ -132,6 +132,14 @@ class SimulationLoop:
             # Progress callback (per-round event payload for event_bus).
             # Callback signature: callable(dict) -> None; the dict matches
             # the `round_completed` event schema in arch-spec §1.2.
+            #
+            # The ``_actions_objects`` key (underscore-prefixed = internal)
+            # carries the LIVE ``StrategicAction`` instances for the
+            # orchestrator's MemoryWriteback mirror — bypassing the
+            # to_dict() round-trip preserves v2 ad-hoc attributes
+            # (action_id, post_content, evidence, in_reply_to, metadata)
+            # that MemoryWriteback.write_action looks up via getattr.
+            # See ws4gdxlm1 Step 8.
             if progress_callback:
                 progress_callback({
                     "type": "round_completed",
@@ -139,6 +147,7 @@ class SimulationLoop:
                     "total_rounds": total_rounds,
                     "progress": round_num / total_rounds,
                     "actions": [a.to_dict() for a in round_result.actions],
+                    "_actions_objects": list(round_result.actions),
                     "belief_updates": list(round_result.belief_updates),
                     "propagation_events": list(round_result.propagation_events),
                     "active_agents": list(round_result.active_agents),
