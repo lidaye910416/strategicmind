@@ -6,3 +6,18 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+
+# Root-level runtime data — never commit production / test-fixture KG dumps.
+# (root data/ is shared across all .claude/worktrees, so test pollution
+#  written here leaks into every worktree's baseline. See ws4gdxlm1 diagnosis.)
+data/knowledge_graphs/
+data/episodic_memory/
+data/pipelines/
+# Test-stub reports (smoke tests write here); keep real verification docs tracked.
+data/reports/run_smoke_*.md
+data/reports/run_smoke_*.json
+data/reports/run_*.md.meta.json
+
+# Vite dev cache
+.vite/
+frontend/node_modules/.vite/

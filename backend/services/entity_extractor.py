@@ -55,19 +55,31 @@ class EntityExtractor:
         llm_provider: ILLMProvider,
         batch_size: int = 10,
         max_concurrent: int = 5,
+        knowledge_store: Any = None,
     ):
         """
         Initialize EntityExtractor.
-        
+
         Args:
             llm_provider: LLM provider for extraction calls
             batch_size: Number of texts per batch
             max_concurrent: Maximum concurrent LLM calls
+            knowledge_store: Optional reference back to the knowledge store
+                that owns this extractor. When set, parsed entities are
+                created via ``Entity.from_name(..., knowledge_store=store)``
+                so they reuse the existing uuid when the normalized
+                (name, entity_type) already exists. Wiring this is what
+                makes the three-layer dedup (model → extractor → store)
+                actually defensive — see ws4gdxlm1 Step 3.
         """
         self.llm_provider = llm_provider
         self.batch_size = batch_size
         self.max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        # Late-bindable: callers that don't have a store at construction
+        # time (e.g. GraphBuilderService) may set ``extractor.knowledge_store``
+        # after the fact.
+        self.knowledge_store = knowledge_store
     
     async def extract_entities(
         self,
@@ -240,30 +252,45 @@ Only include relationships explicitly mentioned or clearly implied in the text."
         return prompt
     
     def _parse_entity_response(self, response: str) -> List[Entity]:
-        """Parse LLM response into Entity objects"""
+        """Parse LLM response into Entity objects.
+
+        Uses ``Entity.from_name`` so each entity carries a stable
+        ``_norm_key`` from creation time and — when a knowledge_store is
+        wired — reuses an existing uuid for the same normalized
+        (name, entity_type). This is the model-layer half of the three-layer
+        dedup (model → extractor → store); the store-layer guard in
+        ``LocalKnowledgeStore.insert_entity`` still catches anything that
+        slips through (e.g. extractor with no store wired).
+        """
         import json
         import re
-        
+
         # Try to extract JSON from response
         json_match = re.search(r'\[.*\]', response, re.DOTALL)
         if not json_match:
             return []
-        
+
         try:
             data = json.loads(json_match.group())
             entities = []
-            
+
             for item in data:
                 if isinstance(item, dict) and "name" in item:
-                    entities.append(Entity(
-                        name=item["name"],
-                        entity_type=item.get("entity_type", "Unknown"),
-                        summary=item.get("summary", ""),
-                        attributes=item.get("attributes", {}),
-                    ))
-            
+                    try:
+                        entities.append(Entity.from_name(
+                            name=item["name"],
+                            entity_type=item.get("entity_type", "Unknown"),
+                            summary=item.get("summary", ""),
+                            attributes=item.get("attributes", {}),
+                            knowledge_store=self.knowledge_store,
+                        ))
+                    except ValueError:
+                        # name or entity_type empty after stripping —
+                        # skip rather than abort the whole batch.
+                        continue
+
             return entities
-            
+
         except json.JSONDecodeError:
             return []
     
