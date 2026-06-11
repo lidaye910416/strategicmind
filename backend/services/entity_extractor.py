@@ -18,65 +18,58 @@ from dataclasses import dataclass
 from ..interfaces.llm_provider import ILLMProvider
 from ..models.entity import Entity
 
+# KG-OPT-P2 [P2-1-prompt-template]: 从单一真相源 kg_prompts 导入常量与
+# 提示词构建函数,避免 entity_extractor ↔ graph_builder_service 双源漂移。
+# 这里 re-export 一组 module-level 同名别名,既保持旧调用方代码不变,
+# 又让所有常量来自 kg_prompts(可被环境变量 STRATEGICMIND_KG_TYPE_TAXONOMY
+# / STRATEGICMIND_KG_FALLBACK_TYPE 覆盖)。
+from .kg_prompts import (  # KG-OPT-P2 [P2-1-prompt-template]: single source
+    build_entity_extraction_prompt as _kg_build_entity_extraction_prompt,
+    build_relation_extraction_prompt as _kg_build_relation_extraction_prompt,
+    build_legacy_entity_extraction_prompt as _kg_build_legacy_entity_extraction_prompt,
+    build_legacy_relation_extraction_prompt as _kg_build_legacy_relation_extraction_prompt,
+    get_whitelist as _kg_get_whitelist,
+    get_fallback_type as _kg_get_fallback_type,
+    MAX_ENTITIES_HINT,
+    MAX_RELATIONS_HINT,
+    SKIP_ROLE_PATTERNS_CN,
+    SKIP_ROLE_PATTERNS_EN,
+    SKIP_ROLE_PATTERNS,
+    DEFAULT_BOTTOM_TYPES,
+)
+
 
 # KG-OPT-P0 [entity-cap-hardening]: 模块级常量与 feature flag 解析
 # 这些常量集中管理 hard-cap 行为，配合 STRATEGICMIND_USE_HARD_CAP 实现
 # 旧 prompt → 新 prompt 的可降级切换。
+# KG-OPT-P2 [P2-1-prompt-template]: MAX_ENTITIES / MAX_RELATIONS /
+# SKIP_ROLE_PATTERNS_* / DEFAULT_BOTTOM_TYPES 已迁出到 kg_prompts,
+# 仍以同名 module-level 别名保留(指向 kg_prompts 的同名常量),既保持
+# 旧调用方不变,又让所有真实值来自单一来源。
 HARD_CAP_ENV_VAR = "STRATEGICMIND_USE_HARD_CAP"
-MAX_ENTITIES = 25
-MAX_RELATIONS = 40
-DEFAULT_BOTTOM_TYPES = (
-    "Person",
-    "Organization",
-    "Location",
-    "Event",
-    "Concept",
-    "Product",
-    "Policy",
-    "Coalition",
-)
-# KG-OPT-P0-FIX [M6]: 拆成中英两份；只保留精确的多字后缀，避免 "一般"/"常见"
-# 这种高频 bigram 把正常实体一起误杀。
-SKIP_ROLE_PATTERNS_CN = (
-    "员",
-    "部门",
-    "人员",
-    "负责人",
-    "工作组",
-    "办公室",
-    "委员会",
-)
-# KG-OPT-P0-FIX [M6]: 英文只保留和中文一一对应的精确后缀，删除噪声大的 "directors"。
-SKIP_ROLE_PATTERNS_EN = (
-    "department",
-    "staff",
-    "office",
-    "committee",
-    "team",
-    "group",
-)
-# 向后兼容：保留同名 tuple，但内容已替换为 CN 精确后缀。
-# 调用方在 prompt 构建中应优先使用 SKIP_ROLE_PATTERNS_CN / _EN。
-SKIP_ROLE_PATTERNS = SKIP_ROLE_PATTERNS_CN
+# 向后兼容别名：旧代码 / 测试直接引用 MAX_ENTITIES / MAX_RELATIONS 不需要改。
+MAX_ENTITIES = MAX_ENTITIES_HINT
+MAX_RELATIONS = MAX_RELATIONS_HINT
 
-# KG-OPT-P1-FIX F3: extractor 端的白名单副本。
-# 与 graph_builder_service.ENTITY_TYPE_WHITELIST (8 个 bottom 类型) 保持同步,
-# 故意在本地复制一份 frozenset 而非 import — 避免 entity_extractor ↔ graph_builder
-# 形成循环 import (graph_builder_service 已经 import 了 EntityExtractor)。
-# 修改时务必同步更新 graph_builder_service.ENTITY_TYPE_WHITELIST。
-_LOCAL_ENTITY_TYPE_WHITELIST = frozenset({
-    "Person",
-    "Organization",
-    "Location",
-    "Event",
-    "Concept",
-    "Product",
-    "Policy",
-    "Coalition",
-})
-# KG-OPT-P1-FIX F3: 软降级目标 entity_type，与 graph_builder_service._ENTITY_TYPE_FALLBACK
-# 行为一致 — 可被环境变量 STRATEGICMIND_KG_FALLBACK_TYPE 覆盖，默认 "Concept"。
-_LOCAL_ENTITY_TYPE_FALLBACK = os.environ.get("STRATEGICMIND_KG_FALLBACK_TYPE", "Concept")
+# KG-OPT-P1-FIX F3: extractor 端的白名单。
+# KG-OPT-P2 [P2-1-prompt-template]: 不再本地复制 frozenset,改为调用
+# kg_prompts.get_whitelist() —— 后者会读 STRATEGICMIND_KG_TYPE_TAXONOMY
+# 覆盖,且通过 frozenset 提供 O(1) 成员判断。每次调用都热解析,行为与
+# 旧版（一次性绑定）兼容（默认 env 未设置时返回与旧版完全相同的 8 个类型）。
+def _LOCAL_ENTITY_TYPE_WHITELIST():
+    """KG-OPT-P2 [P2-1-prompt-template]: 热路径白名单(替代旧的 frozenset 常量)。
+    返回 frozenset,可直接 ``in`` 判断。"""
+    return _kg_get_whitelist()
+
+
+# KG-OPT-P1-FIX F3: 软降级目标 entity_type,与 graph_builder_service._ENTITY_TYPE_FALLBACK
+# 行为一致 —— 可被环境变量 STRATEGICMIND_KG_FALLBACK_TYPE 覆盖,默认 "Concept"。
+# KG-OPT-P2 [P2-1-prompt-template]: 不再一次性绑定,而是函数式热解析,行为兼容。
+def _LOCAL_ENTITY_TYPE_FALLBACK():
+    """KG-OPT-P2 [P2-1-prompt-template]: 热路径 fallback type(替代旧的常量)。"""
+    return _kg_get_fallback_type()
+
+
 # KG-OPT-P1-FIX F3: 模块级软降级事件计数器（供调试 / benchmark 跨实例聚合）。
 # 同时在 EntityExtractor 实例上有 self._softdemote_count，两者同步递增。
 _extractor_softdemote_count = 0
@@ -327,102 +320,25 @@ class EntityExtractor:
         - 当 ``STRATEGICMIND_USE_HARD_CAP`` 开启（默认），返回带 hard-cap
           + 严格 enum + signal_density + 跳过角色类指令的新 prompt。
         - 当 flag 关闭，返回与改前字节一致的旧 prompt（便于回滚 / 缓存命中）。
+
+        KG-OPT-P2 [P2-1-prompt-template]: 改为 thin wrapper,真实 prompt
+        构造逻辑委托给 kg_prompts.build_entity_extraction_prompt。
         """
-        if not self._use_hard_cap:
-            return self._legacy_entity_extraction_prompt(text, ontology)
-
-        # 1) 决定可用 entity_type 列表：ontology 优先；否则使用 8 个 bottom 类型白名单。
-        if ontology and ontology.get("entity_types"):
-            allowed_types = [et.get("name", et) for et in ontology["entity_types"]]
-        else:
-            allowed_types = list(DEFAULT_BOTTOM_TYPES)
-
-        type_lines = "\n".join(f"- {t}" for t in allowed_types)
-
-        # 2) 角色/泛型跳过指令（双语：中英都告诉 LLM，跨语料更稳）。
-        # KG-OPT-P0-FIX [M6]: 使用 CN/EN 分离的精确后缀列表。
-        skip_lines_zh = "、".join(SKIP_ROLE_PATTERNS_CN)
-        skip_lines_en = ", ".join(SKIP_ROLE_PATTERNS_EN)
-
-        # 3) ontology 描述（仅当用户提供时附带）。
-        ontology_block = ""
-        if ontology:
-            entity_types = ontology.get("entity_types", [])
-            if entity_types:
-                ontology_block = "\nOntology hints (use only the types listed above; ignore any others):\n"
-                for et in entity_types:
-                    ontology_block += f"- {et.get('name', et)}: {et.get('description', '')}\n"
-
-        prompt = f"""Extract entities from the following text.
-
-HARD CAP: Return AT MOST {MAX_ENTITIES} entities. Prefer high-signal,
-named, and uniquely identifiable entities. Do not pad with generic roles.
-
-entity_type MUST be one of the following STRICT values (no "etc.", no
-free-form extensions, no lowercase variants — pick the closest one and
-stay in this enum):
-{type_lines}
-
-Skip these generic-role / role-pattern entities (do NOT extract them as
-nodes even if mentioned):
-  ZH: {skip_lines_zh}
-  EN: {skip_lines_en}
-
-Return entities as a JSON list with fields:
-- name: entity name
-- entity_type: one of the values listed above
-- summary: brief description (one short sentence)
-- signal_density: float in [0.0, 1.0] — how informative / load-bearing
-  this entity is in the text. 1.0 = central actor / named institution;
-  0.0 = passing mention / decorative. Be honest; do not inflate.
-
-Text:
-{text}
-{ontology_block}
-Output as JSON list:
-[
-  {{"name": "...", "entity_type": "...", "summary": "...", "signal_density": 0.0}},
-  ...
-]
-
-Only include entities that are clearly mentioned in the text.
-Do not exceed {MAX_ENTITIES} entries.
-"""
-        return prompt
+        return _kg_build_entity_extraction_prompt(
+            text, ontology, use_hard_cap=self._use_hard_cap
+        )
 
     def _legacy_entity_extraction_prompt(
         self,
         text: str,
         ontology: Optional[Dict[str, Any]],
     ) -> str:
-        """旧版 entity prompt（feature flag 关闭时回退到这里的字节内容）。"""
-        prompt = f"""Extract all entities from the following text.
+        """旧版 entity prompt（feature flag 关闭时回退到这里的字节内容）。
 
-Return entities as a JSON list with fields:
-- name: entity name
-- entity_type: type (Person, Organization, Location, Event, Concept, etc.)
-- summary: brief description
+        KG-OPT-P2 [P2-1-prompt-template]: thin wrapper,真实文本在 kg_prompts。
+        """
+        return _kg_build_legacy_entity_extraction_prompt(text, ontology)
 
-Text:
-{text}
-
-"""
-
-        if ontology:
-            entity_types = ontology.get("entity_types", [])
-            if entity_types:
-                prompt += f"\nUse these entity types if applicable:\n"
-                for et in entity_types:
-                    prompt += f"- {et.get('name', et)}: {et.get('description', '')}\n"
-
-        prompt += """
-Output as JSON list:
-[{"name": "...", "entity_type": "...", "summary": "..."}, ...]
-
-Only include entities that are clearly mentioned in the text."""
-
-        return prompt
-    
     def _build_relation_extraction_prompt(
         self,
         text: str,
@@ -435,57 +351,13 @@ Only include entities that are clearly mentioned in the text."""
         - 当 ``STRATEGICMIND_USE_HARD_CAP`` 开启（默认），返回带 hard-cap
           + source/target 必须来自 entities 列表 + 仅高信噪比边的新 prompt。
         - 当 flag 关闭，返回与改前字节一致的旧 prompt。
+
+        KG-OPT-P2 [P2-1-prompt-template]: 改为 thin wrapper,真实 prompt
+        构造逻辑委托给 kg_prompts.build_relation_extraction_prompt。
         """
-        if not self._use_hard_cap:
-            return self._legacy_relation_extraction_prompt(text, entities, ontology)
-
-        entity_list = "\n".join([
-            f"- {e.name} ({e.entity_type})" for e in entities
-        ])
-
-        # ontology edge_types 提示（仅当用户提供时附带）；但仍以"高信噪比"为优先过滤。
-        ontology_block = ""
-        if ontology:
-            relation_types = ontology.get("edge_types", [])
-            if relation_types:
-                ontology_block = "\nUse these relation types if applicable:\n"
-                for rt in relation_types:
-                    ontology_block += f"- {rt.get('name', rt)}: {rt.get('description', '')}\n"
-
-        prompt = f"""Extract relationships between the following entities from the text.
-
-HARD CAP: Return AT MOST {MAX_RELATIONS} relations.
-
-HARD RULE — endpoint selection:
-  source and target MUST be selected verbatim from the entity list below.
-  Never invent a node that was not in the entities pass. If both endpoints
-  are not present in the list, drop the edge.
-
-HARD RULE — high signal-to-noise only:
-  - Include only direct, evidenced relations.
-  - Exclude co-mention only (two entities appearing in the same sentence
-    is not a relation).
-  - Exclude inferred / weak ties that the text does not actually assert.
-  - Exclude self-loops (source == target).
-  - Exclude duplicate edges within the same response (one edge per
-    unordered pair per relation_type).
-
-Entities:
-{entity_list}
-
-Text:
-{text}
-{ontology_block}
-Output as JSON list:
-[
-  {{"source": "entity1_name", "target": "entity2_name", "relation_type": "RELATES_TO", "attributes": {{}}}},
-  ...
-]
-
-Only include relationships explicitly mentioned or clearly implied in the text.
-Do not exceed {MAX_RELATIONS} entries.
-"""
-        return prompt
+        return _kg_build_relation_extraction_prompt(
+            text, entities, use_hard_cap=self._use_hard_cap
+        )
 
     def _legacy_relation_extraction_prompt(
         self,
@@ -493,35 +365,11 @@ Do not exceed {MAX_RELATIONS} entries.
         entities: List[Entity],
         ontology: Optional[Dict[str, Any]],
     ) -> str:
-        """旧版 relation prompt（feature flag 关闭时回退到这里的字节内容）。"""
-        entity_list = "\n".join([
-            f"- {e.name} ({e.entity_type})" for e in entities
-        ])
+        """旧版 relation prompt（feature flag 关闭时回退到这里的字节内容）。
 
-        prompt = f"""Extract relationships between the following entities from the text.
-
-Entities:
-{entity_list}
-
-Text:
-{text}
-
-"""
-
-        if ontology:
-            relation_types = ontology.get("edge_types", [])
-            if relation_types:
-                prompt += f"\nUse these relation types if applicable:\n"
-                for rt in relation_types:
-                    prompt += f"- {rt.get('name', rt)}: {rt.get('description', '')}\n"
-
-        prompt += """
-Output as JSON list:
-[{"source": "entity1_name", "target": "entity2_name", "relation_type": "RELATES_TO", "attributes": {}}, ...]
-
-Only include relationships explicitly mentioned or clearly implied in the text."""
-
-        return prompt
+        KG-OPT-P2 [P2-1-prompt-template]: thin wrapper,真实文本在 kg_prompts。
+        """
+        return _kg_build_legacy_relation_extraction_prompt(text, entities, ontology)
     
     def _parse_entity_response(self, response: str) -> List[Entity]:
         """Parse LLM response into Entity objects.
@@ -576,8 +424,8 @@ Only include relationships explicitly mentioned or clearly implied in the text."
                     raw_name = item["name"]
                     raw_type = item.get("entity_type", "Unknown")
                     if self._use_hard_cap:
-                        if not isinstance(raw_type, str) or raw_type not in _LOCAL_ENTITY_TYPE_WHITELIST:
-                            _fallback = _LOCAL_ENTITY_TYPE_FALLBACK
+                        if not isinstance(raw_type, str) or raw_type not in _LOCAL_ENTITY_TYPE_WHITELIST():
+                            _fallback = _LOCAL_ENTITY_TYPE_FALLBACK()
                             # 仅当原始 type 与 fallback 不同时记录 original，避免污染。
                             if isinstance(raw_type, str) and raw_type != _fallback:
                                 raw_attrs["original_entity_type"] = raw_type

@@ -17,6 +17,17 @@ from ..models.seed_document import SeedDocument
 from ..config.manager import parse_bool
 from .entity_extractor import EntityExtractor
 
+# KG-OPT-P2 [P2-1-prompt-template]: 从单一真相源 kg_prompts 导入白名单与
+# fallback type 的解析函数,避免 graph_builder_service 与 entity_extractor
+# 双源漂移。模块顶部仍保留 ENTITY_TYPE_WHITELIST / _ENTITY_TYPE_FALLBACK
+# 两个 module-level 公共导出供旧调用方使用(向后兼容 —— 旧调用方期望它们
+# 在 import 时就被绑定;新调用方可用 kg_prompts.get_whitelist() 在热路径
+# 重新解析以响应 env 变化)。
+from .kg_prompts import (  # KG-OPT-P2 [P2-1-prompt-template]: single source
+    get_whitelist as _get_whitelist,
+    get_fallback_type as _get_fallback_type,
+)
+
 # KG-OPT-P1-FIX F2: 模块级 logger,供软降级事件审计。
 _logger = _logging.getLogger(__name__)
 
@@ -67,23 +78,20 @@ MAX_RELATIONS_PER_DOC = _get_max_relations_per_doc()
 # KG-OPT-P0 [_signal_score]: 实体类型白名单。frozenset 保证 O(1) 查询与不可变。
 # 这 8 个类型对应 prompt 中提示 LLM 重点抽取的"高信号动作类型"——其余类型
 # (如 "Unknown" 默认值) 在 STRATEGICMIND_USE_HARD_CAP=true 路径下被静默丢弃。
-ENTITY_TYPE_WHITELIST = frozenset({
-    "Person",
-    "Organization",
-    "Location",
-    "Event",
-    "Concept",
-    "Product",
-    "Policy",
-    "Coalition",
-})
+# KG-OPT-P2 [P2-1-prompt-template]: 不再本地复制 frozenset,改为在 import
+# 时调用 kg_prompts.get_whitelist() 拿到默认 8 个 bottom 类型。运行时可通过
+# 设置 STRATEGICMIND_KG_TYPE_TAXONOMY 切换 domain-specific 白名单,旧调用方
+# 重新 import 即可拿到新值(向后兼容)。
+ENTITY_TYPE_WHITELIST = _get_whitelist()
 
 # KG-OPT-P1 [B3]: 模块级"软降级"目标 entity_type。
 # 当 LLM 返回白名单外的 type 时(常见为 "Unknown"/"Other"/新长尾类型),
 # 不再硬丢弃,而是把 entity_type 降级为 _ENTITY_TYPE_FALLBACK 并把原始 type
 # 记到 attributes["original_entity_type"],便于后续审计与回追。
 # 可通过环境变量 STRATEGICMIND_KG_FALLBACK_TYPE 覆盖,默认 "Concept"。
-_ENTITY_TYPE_FALLBACK = _os.environ.get("STRATEGICMIND_KG_FALLBACK_TYPE", "Concept")
+# KG-OPT-P2 [P2-1-prompt-template]: 改为调用 kg_prompts.get_fallback_type()
+# 在 import 时绑定,确保默认行为不变(默认 "Concept")。
+_ENTITY_TYPE_FALLBACK = _get_fallback_type()
 
 # KG-OPT-P0-FIX [M8]: 用于惩罚人称/部门类低信号实体的关键字。
 # 已移除单字 "处" —— 之前是子串检查,"处" 会误伤词内含 "处" 的实体(如 "处理"/"处长"/"处在")。
@@ -232,14 +240,17 @@ class GraphBuilderService:
                 # 3) 截断到 max_entities_per_doc(默认 25,与 prompt 对齐)。
                 # KG-OPT-P1 [B2]: 把"硬丢弃"改成"软降级"——entity_type 不在白名单时,
                 # 不直接丢弃,而是:attributes["original_entity_type"] = 原 type;
-                # e.entity_type = _ENTITY_TYPE_FALLBACK(默认 "Concept")。这样 LLM
+                # e.entity_type = _get_fallback_type()(默认 "Concept")。这样 LLM
                 # 偶尔返回的合理新类型(如 "Technology"/"Initiative")不会再被静默丢弃,
                 # 也不会污染白名单下游,而是降级到 fallback 桶里且保留回追线索。
                 # 该软降级逻辑只在 flag=on 启用;flag=off 保留旧的全量保留路径。
-                _fallback = _ENTITY_TYPE_FALLBACK
+                # KG-OPT-P2 [P2-1-prompt-template]: ENTITY_TYPE_WHITELIST 在
+                # build() 热路径重新解析,响应 runtime env 变化(STRATEGICMIND_KG_TYPE_TAXONOMY)。
+                _whitelist = _get_whitelist()
+                _fallback = _get_fallback_type()
                 for e in entities:
                     et = getattr(e, "entity_type", None)
-                    if et is None or et not in ENTITY_TYPE_WHITELIST:
+                    if et is None or et not in _whitelist:
                         # KG-OPT-P1-FIX F2: 软降级桶通过 __is_fallback + name prefix 隔离命名空间。
                         # 保留 entity_type = "Concept" 不变(下游契约稳定),
                         # 但同时设置 attributes["__is_fallback"]=True 与 original_entity_type,

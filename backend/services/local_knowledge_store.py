@@ -8,10 +8,33 @@ The key difference from the prior-art: Zep has built-in extraction, we must
 integrate our own EntityExtractor with nano-graphRAG.
 
 Replaces: Zep Cloud knowledge store
+
+Concurrency notes (P2-2 / KG-OPT-P2 [P2-2-store-lock])
+-------------------------------------------------------
+F1 (entity_extractor dedup) fix moved per-call dedup locking down to the
+extractor layer, but the store layer still has a check-then-set race on
+``_entity_index`` / ``_relation_index`` — two concurrent ``insert_entity``
+calls with the same normalized key could both see ``existing_id is None``
+and both allocate new uuids, then both write the index (last-writer-wins,
+file duplicates on disk).
+
+To close that window this class owns an ``asyncio.Lock`` (``_index_lock``)
+held across the read-side ``.get(key)`` and the write-side
+``[key] = entity_id`` + ``_persist_index_atomic()``. The lock is per-store
+instance and is intentionally a single lock shared by entity and relation
+operations — both index files are small in-memory dicts and serialize
+through the same write paths, so splitting into two locks gains nothing.
+
+The lock is enabled by default. To compare performance or roll back in
+an emergency, set ``STRATEGICMIND_STORE_LOCK_DISABLED=true`` in the
+environment — the lock context manager short-circuits to a no-op
+(``AsyncExitStack``-style) and the store reverts to the pre-P2-2
+un-locked behaviour. The flag is read once at ``__init__`` time.
 """
 
 import os
 import json
+import asyncio  # KG-OPT-P2 [P2-2-store-lock]: per-store asyncio.Lock
 from typing import List, Dict, Any, Optional
 from uuid import uuid4
 
@@ -36,6 +59,35 @@ from .entity_extractor import EntityExtractor
 # always compute the same lookup key.
 _INDEX_FILENAME = "_entity_index.json"
 _RELATION_INDEX_FILENAME = "_relation_index.json"
+
+# KG-OPT-P2 [P2-2-store-lock]: feature flag for emergency rollback / A-B perf
+# comparison. Default (unset / "false") = lock enabled. Set to "true" /
+# "1" to skip the lock and revert to the pre-P2-2 un-locked path.
+_STORE_LOCK_DISABLED_ENV = "STRATEGICMIND_STORE_LOCK_DISABLED"
+
+
+def _is_store_lock_disabled() -> bool:  # KG-OPT-P2 [P2-2-store-lock]
+    """Read STRATEGICMIND_STORE_LOCK_DISABLED at init time.
+
+    Truthy values: "1", "true", "yes" (case-insensitive). Anything else
+    (including unset) leaves the lock enabled. We snapshot once at
+    __init__ so a later env change cannot flip behaviour mid-process.
+    """
+    raw = os.environ.get(_STORE_LOCK_DISABLED_ENV, "")
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
+class _NullAsyncLock:  # KG-OPT-P2 [P2-2-store-lock]
+    """Async context manager that does nothing — used when the feature
+    flag is on. Mirrors ``asyncio.Lock``'s ``async with`` interface so the
+    call sites don't need to branch.
+    """
+
+    async def __aenter__(self) -> "_NullAsyncLock":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
 
 
 class LocalKnowledgeStore(IKnowledgeStore):
@@ -84,6 +136,19 @@ class LocalKnowledgeStore(IKnowledgeStore):
         self._relation_index_path = os.path.join(storage_path, _RELATION_INDEX_FILENAME)
         self._entity_index: Dict[str, str] = {}
         self._relation_index: Dict[str, str] = {}
+
+        # KG-OPT-P2 [P2-2-store-lock]: per-store lock guarding the
+        # check-then-set window on _entity_index / _relation_index. Same
+        # lock is used for both index types — they share this class'
+        # write paths and the dicts are tiny, so a single lock is the
+        # simplest correct choice. Replaced with _NullAsyncLock when
+        # STRATEGICMIND_STORE_LOCK_DISABLED is set (see env handling
+        # below) so the call sites stay branch-free.
+        if _is_store_lock_disabled():
+            self._index_lock: object = _NullAsyncLock()  # type: ignore[assignment]
+        else:
+            self._index_lock = asyncio.Lock()
+
         self._load_or_rebuild_indices()
 
         # Wire the extractor's `knowledge_store` back-reference so that
@@ -373,31 +438,39 @@ class LocalKnowledgeStore(IKnowledgeStore):
             return entity_id
 
         key = _make_entity_key(name, etype)
-        existing_id = self._entity_index.get(key)
-        if existing_id:
-            # HIT — first-wins. Do NOT rewrite the file; preserve original
-            # summary/attributes/metadata. Callers that need provenance
-            # merging (e.g. append run_id to _seen_in_runs) should do it
-            # by reading the file, mutating, and writing back themselves.
-            return existing_id
+        # KG-OPT-P2 [P2-2-store-lock]: hold the lock across the entire
+        # check-then-set window (read existing_id → write file → update
+        # index → persist index). Without this, two concurrent inserts
+        # of the same normalized key can both see "MISS" and each
+        # allocate a fresh uuid, blowing up Phase 4d's first-wins
+        # dedup invariant. When the feature flag is on, _index_lock
+        # is a _NullAsyncLock so this is a cheap no-op.
+        async with self._index_lock:
+            existing_id = self._entity_index.get(key)
+            if existing_id:
+                # HIT — first-wins. Do NOT rewrite the file; preserve original
+                # summary/attributes/metadata. Callers that need provenance
+                # merging (e.g. append run_id to _seen_in_runs) should do it
+                # by reading the file, mutating, and writing back themselves.
+                return existing_id
 
-        # MISS — allocate uuid (reuse client-supplied if present), write
-        # file, update index, persist index atomically.
-        entity_id = entity.get("uuid", str(uuid4()))
-        entity["uuid"] = entity_id
-        if metadata:
-            entity["metadata"] = metadata
-        # Cache the normalized lookup key on the entity for downstream
-        # tooling (admin dedupe-kg, aggregate rebuild, etc.).
-        entity.setdefault("_norm_key", key)
+            # MISS — allocate uuid (reuse client-supplied if present), write
+            # file, update index, persist index atomically.
+            entity_id = entity.get("uuid", str(uuid4()))
+            entity["uuid"] = entity_id
+            if metadata:
+                entity["metadata"] = metadata
+            # Cache the normalized lookup key on the entity for downstream
+            # tooling (admin dedupe-kg, aggregate rebuild, etc.).
+            entity.setdefault("_norm_key", key)
 
-        entity_file = os.path.join(self.storage_path, f"{entity_id}.json")
-        with open(entity_file, "w", encoding="utf-8") as f:
-            json.dump(entity, f, ensure_ascii=False)
+            entity_file = os.path.join(self.storage_path, f"{entity_id}.json")
+            with open(entity_file, "w", encoding="utf-8") as f:
+                json.dump(entity, f, ensure_ascii=False)
 
-        self._entity_index[key] = entity_id
-        self._persist_index_atomic()
-        return entity_id
+            self._entity_index[key] = entity_id
+            self._persist_index_atomic()
+            return entity_id
 
     async def insert_relation(self, relation: Dict[str, Any]) -> str:
         """
@@ -427,19 +500,27 @@ class LocalKnowledgeStore(IKnowledgeStore):
             return relation_id
 
         key = _make_relation_key(src, tgt, rtype)
-        existing_id = self._relation_index.get(key)
-        if existing_id:
-            return existing_id
+        # KG-OPT-P2 [P2-2-store-lock]: same check-then-set hazard as
+        # insert_entity — guard the read of _relation_index through the
+        # persist of the relation-index file with the per-store lock.
+        # We deliberately reuse _index_lock (shared with entities)
+        # because the relation index and entity index are both tiny
+        # in-memory dicts and their write paths share this class;
+        # a single lock is the simplest correct serialization.
+        async with self._index_lock:
+            existing_id = self._relation_index.get(key)
+            if existing_id:
+                return existing_id
 
-        relation_id = relation.get("uuid", str(uuid4()))
-        relation["uuid"] = relation_id
-        relation_file = os.path.join(self.storage_path, f"relation_{relation_id}.json")
-        with open(relation_file, "w", encoding="utf-8") as f:
-            json.dump(relation, f, ensure_ascii=False)
+            relation_id = relation.get("uuid", str(uuid4()))
+            relation["uuid"] = relation_id
+            relation_file = os.path.join(self.storage_path, f"relation_{relation_id}.json")
+            with open(relation_file, "w", encoding="utf-8") as f:
+                json.dump(relation, f, ensure_ascii=False)
 
-        self._relation_index[key] = relation_id
-        self._persist_relation_index_atomic()
-        return relation_id
+            self._relation_index[key] = relation_id
+            self._persist_relation_index_atomic()
+            return relation_id
     
     async def get_neighbors(
         self,
