@@ -246,12 +246,26 @@ async def run_benchmark(mode: str, seed_paths: List[str], use_mock: bool) -> Dic
     max_entities = _get_max_entities_per_doc()
     max_relations = _get_max_relations_per_doc()
 
-    # Wire up dependencies. LLM provider is mock by default in this script.
-    llm: Any = MockLLMProvider() if use_mock else None
-    if llm is None:
-        raise RuntimeError(
-            "Real LLM mode is not supported in this benchmark — pass --mock."
-        )
+    # Wire up dependencies. LLM provider is mock by default; --no-mock now
+    # goes through backend.services.llm_factory.create_llm_provider() which
+    # auto-detects provider from env (MINIMAX_API_KEY → minimax, LLM_API_KEY →
+    # bailian, else ollama). See docs/kg-optimization-rollout.md §6.
+    llm: Any
+    if use_mock:
+        llm = MockLLMProvider()
+    else:
+        try:
+            from backend.services.llm_factory import create_llm_provider
+            llm = create_llm_provider()
+            print(
+                f"[real LLM] provider={llm.get_model_name()} model={getattr(llm, 'model_name', '?')}",
+                flush=True,
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            raise RuntimeError(
+                f"--no-mock requires MINIMAX_API_KEY / LLM_API_KEY in .env "
+                f"(or ollama running locally). create_llm_provider() failed: {e}"
+            ) from e
     extractor = EntityExtractor(llm_provider=llm, batch_size=10, max_concurrent=2)
     store = InMemoryKnowledgeStore()
     builder = GraphBuilderService(entity_extractor=extractor, knowledge_store=store)
@@ -425,8 +439,11 @@ async def run_benchmark(mode: str, seed_paths: List[str], use_mock: bool) -> Dic
         ],
         "llm": {
             "provider": llm.get_model_name(),
-            "entity_call_count": llm.entity_call_count,
-            "relation_call_count": llm.relation_call_count,
+            # MockLLMProvider exposes these; real ILLMProvider adapters
+            # (MiniMaxAdapter / BailianAdapter / OllamaAdapter) don't —
+            # use getattr for backward compat with both code paths.
+            "entity_call_count": getattr(llm, "entity_call_count", None),
+            "relation_call_count": getattr(llm, "relation_call_count", None),
         },
         "metrics": {
             # The headline numbers — these are the ones Phase 6 will diff.
@@ -492,7 +509,8 @@ def main() -> int:
         "--no-mock",
         dest="mock",
         action="store_false",
-        help="disable mock — not supported in this benchmark.",
+        help="Use real LLM via llm_factory.create_llm_provider() — requires "
+             "MINIMAX_API_KEY / LLM_API_KEY in .env, or local ollama.",
     )
     parser.add_argument(
         "--seed",
