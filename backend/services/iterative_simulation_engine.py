@@ -6,8 +6,13 @@ Implements: US-044
 """
 
 import asyncio
+import os
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
+
+# KG-OPT-P0: 跨 iteration 共享同一 run_id 的 feature flag
+# 默认开启：让 dedup 边界扩展到整个迭代周期。
+SHARED_RUN_ID_FLAG = "STRATEGICMIND_SHARED_RUN_ID"
 
 from ..interfaces.llm_provider import ILLMProvider
 from .simulation_runner import SimulationRunner
@@ -49,6 +54,12 @@ class IterativeSimulationEngine:
         self.config = config or {}
         self.max_iterations = self.config.get("max_iterations", 5)
         self.convergence_threshold = self.config.get("convergence_threshold", 0.85)
+        # KG-OPT-P0: 共享 run_id 开关。读取顺序 self.config -> env -> default true
+        _shared_raw = self.config.get(
+            "shared_run_id",
+            str(os.environ.get(SHARED_RUN_ID_FLAG, "true")).lower(),
+        )
+        self.shared_run_id = str(_shared_raw).lower() in ("1", "true", "yes", "on")
     
     async def run(
         self,
@@ -71,12 +82,15 @@ class IterativeSimulationEngine:
         supplementary_docs = []
         
         for iteration in range(1, self.max_iterations + 1):
+            # KG-OPT-P0: 共享 run_id 时跨 iteration 共用 "iter_main"，扩展 dedup 边界
+            shared_id = "iter_main" if self.shared_run_id else f"iter_{iteration}"
             # Step 1: Run simulation
             sim_results = await self.simulation_runner.start(
-                run_id=f"iter_{iteration}",
+                run_id=shared_id,
                 config={
                     "seed_documents": seed_documents + supplementary_docs,
                     "max_rounds": 5,
+                    "iteration": iteration,  # 供下游 report_agent 做 group_by
                 }
             )
             

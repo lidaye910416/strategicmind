@@ -100,6 +100,38 @@ BELIEF_SHIFT_THROTTLE_SEC: float = 0.5
 _belief_shift_last_emit: Dict[Tuple[int, str], float] = {}
 
 
+# ---------------------------------------------------------------------------
+# KG-OPT-P0 [double-write-eliminated]: STRATEGICMIND_NO_DOUBLE_WRITE
+#
+# 历史问题: 旧实现中 _on_progress 会在每轮对每条 action 调一次
+# MemoryWriteback.write_action, 与 LoopEngine v2 的 memory_writer.write_round
+# 形成双写. 修复后只保留 epi.save() 一次性 flush.
+# 默认开启 (True), 通过 env STRATEGICMIND_NO_DOUBLE_WRITE=0 关闭走旧路径.
+# ---------------------------------------------------------------------------
+_NO_DOUBLE_WRITE_ENV = "STRATEGICMIND_NO_DOUBLE_WRITE"
+
+
+def _no_double_write() -> bool:
+    """读取 STRATEGICMIND_NO_DOUBLE_WRITE (default True).
+
+    每次调用重新读 env — 匹配 backend.config.manager 中 feature_flags 的
+    "monkeypatch.setenv 在测试中即时生效" 行为, 避免重启 orchestrator.
+    """
+    try:
+        from backend.config.manager import _parse_bool
+    except Exception:  # 极端情况下 config 不可用, 退化为本地解析
+        def _parse_bool(value, default: bool = False) -> bool:
+            if value is None:
+                return default
+            if not isinstance(value, str):
+                return bool(value)
+            return value.strip().lower() in ("1", "true", "yes", "on")
+    return _parse_bool(
+        os.environ.get(_NO_DOUBLE_WRITE_ENV, "1"),
+        default=True,
+    )
+
+
 def _classify_belief_shift(update: Dict[str, Any]) -> float:
     """从 belief_update dict 中提取 magnitude (|new_value - old_value|) — 用于 shift 判定.
 
@@ -978,33 +1010,46 @@ class PipelineOrchestrator:
             # (e.g. an older run loaded from a stale checkpoint) we
             # silently skip — the legacy SSE path is unaffected.
             #
-            # We prefer the LIVE objects in evt["_actions_objects"] so
-            # v2 ad-hoc attributes (action_id, post_content, evidence,
-            # in_reply_to, metadata) survive — they are NOT in
-            # StrategicAction.to_dict's canonical shape.
+            # KG-OPT-P0 [double-write-eliminated]: 默认走新路径, 仅保留
+            # epi.save() 一次性 flush; engine.write_round 才是唯一写入源.
+            # flag=False 时回退到旧的双写循环 (兼容历史测试/部署).
             try:
-                writer = run.artifacts.get("_memory_writeback")
-                actions_live = evt.get("_actions_objects") or []
-                if writer is not None and actions_live:
-                    for act in actions_live:
-                        try:
-                            writer.write_action(act, state_after=None)
-                        except Exception:
-                            # One action's mirror failure must not
-                            # break the round — the EpisodicMemory
-                            # path still records what it can.
-                            continue
-                    # Persist the EpisodicMemory file at round boundary
-                    # so a crash mid-run leaves a consistent on-disk
-                    # snapshot (the prior-art system does the equivalent
-                    # via Zep's episode-commit on each batch — see
-                    # ws4gdxlm1).
+                if _no_double_write():
+                    # 新路径: 只刷 EpisodicMemory 文件, 不再 per-action 写.
                     epi = run.artifacts.get("_episodic_memory")
                     if epi is not None:
                         try:
                             epi.save()
                         except Exception:
                             pass
+                else:
+                    # 旧路径: per-action 写 + 末尾 epi.save() (保留原行为)
+                    # We prefer the LIVE objects in evt["_actions_objects"] so
+                    # v2 ad-hoc attributes (action_id, post_content, evidence,
+                    # in_reply_to, metadata) survive — they are NOT in
+                    # StrategicAction.to_dict's canonical shape.
+                    writer = run.artifacts.get("_memory_writeback")
+                    actions_live = evt.get("_actions_objects") or []
+                    if writer is not None and actions_live:
+                        for act in actions_live:
+                            try:
+                                writer.write_action(act, state_after=None)
+                            except Exception:
+                                # One action's mirror failure must not
+                                # break the round — the EpisodicMemory
+                                # path still records what it can.
+                                continue
+                        # Persist the EpisodicMemory file at round boundary
+                        # so a crash mid-run leaves a consistent on-disk
+                        # snapshot (the prior-art system does the equivalent
+                        # via Zep's episode-commit on each batch — see
+                        # ws4gdxlm1).
+                        epi = run.artifacts.get("_episodic_memory")
+                        if epi is not None:
+                            try:
+                                epi.save()
+                            except Exception:
+                                pass
             except Exception:
                 # Outer guard — writer wiring or evt malformed.
                 pass
@@ -1299,29 +1344,44 @@ class PipelineOrchestrator:
                 # run.artifacts so we share its EpisodicMemory file +
                 # knowledge_store handle. global_round is the absolute
                 # round index across the multi-year extension.
+                #
+                # KG-OPT-P0 [double-write-eliminated]: 默认走新路径, 仅保留
+                # epi.save() 一次性 flush. 跨年 run 不实例化 v2 engine, 故
+                # epi.save() 是唯一保留的副作用, 仍保证跨年崩溃恢复一致性.
                 try:
-                    writer = run.artifacts.get("_memory_writeback")
-                    actions_live = evt.get("_actions_objects") or []
-                    if writer is not None and actions_live:
-                        for act in actions_live:
-                            # Ensure the action carries the global round
-                            # so Episodes from advance-year don't collide
-                            # with the original run's by reusing round
-                            # indices.
-                            try:
-                                act.round_num = int(global_round)
-                            except Exception:
-                                pass
-                            try:
-                                writer.write_action(act, state_after=None)
-                            except Exception:
-                                continue
+                    if _no_double_write():
+                        # 新路径: 只刷 EpisodicMemory 文件, 不再 per-action 写
+                        # 也不再 mutate act.round_num (没有 write_action 喂数据)
                         epi = run.artifacts.get("_episodic_memory")
                         if epi is not None:
                             try:
                                 epi.save()
                             except Exception:
                                 pass
+                    else:
+                        # 旧路径: per-action 写 + 末尾 epi.save() (保留原行为)
+                        writer = run.artifacts.get("_memory_writeback")
+                        actions_live = evt.get("_actions_objects") or []
+                        if writer is not None and actions_live:
+                            for act in actions_live:
+                                # Ensure the action carries the global round
+                                # so Episodes from advance-year don't collide
+                                # with the original run's by reusing round
+                                # indices.
+                                try:
+                                    act.round_num = int(global_round)
+                                except Exception:
+                                    pass
+                                try:
+                                    writer.write_action(act, state_after=None)
+                                except Exception:
+                                    continue
+                            epi = run.artifacts.get("_episodic_memory")
+                            if epi is not None:
+                                try:
+                                    epi.save()
+                                except Exception:
+                                    pass
                 except Exception:
                     pass
 

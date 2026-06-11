@@ -34,19 +34,37 @@ class FeatureFlags:
     cosmic_graph: bool = False
 
 
-def _parse_bool(value, default: bool = False) -> bool:
-    """Coerce a string env value to bool.
+_TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
+_FALSY_STRINGS = frozenset({"0", "false", "no", "off"})
 
-    Truthy (case-insensitive): ``1``, ``true``, ``yes``, ``on``.
-    Falsy: ``0``, ``false``, ``no``, ``off``, empty string, anything else
-    (including ``"2"`` — only the four spellings above are honoured).
-    ``None`` (env unset) returns ``default``.
+
+def parse_bool(value, default: bool = False) -> bool:
+    """Coerce a value to bool using a strict, explicit rule set.
+
+    - ``None`` (e.g. env var unset) returns ``default``.
+    - Non-string values return ``bool(value)`` (e.g. ``True``/``False``/numbers).
+    - Strings are ``strip().lower()``-normalised first.
+    - Strings in ``{"1", "true", "yes", "on"}`` return ``True``.
+    - Strings in ``{"0", "false", "no", "off"}`` return ``False``.
+    - Any other string (including empty string) returns ``default``.
+
+    Public, module-level function intended to be imported by other modules:
+        from backend.config.manager import parse_bool
     """
     if value is None:
         return default
     if not isinstance(value, str):
         return bool(value)
-    return value.strip().lower() in ("1", "true", "yes", "on")
+    normalized = value.strip().lower()
+    if normalized in _TRUTHY_STRINGS:
+        return True
+    if normalized in _FALSY_STRINGS:
+        return False
+    return default
+
+
+# Backward-compatible alias for existing internal callers.
+_parse_bool = parse_bool
 
 
 def feature_flags() -> FeatureFlags:
