@@ -109,6 +109,15 @@ class Entity:
         Returns:
             Entity instance with `_norm_key` set and (if a store hit occurred)
             `uuid` matching the existing entity.
+
+        Note (KG-OPT-C1): 该 classmethod 保持同步签名以兼容现有调用方
+        （``EntityExtractor._parse_entity_response`` 在同步路径中构造
+        Entity）。读侧的 ``dict.get`` 是原子的，HIT 路径无 race；MISS 路径
+        分配的 uuid 在后续 ``store.insert_entity`` 锁内被覆盖（first-wins
+        语义由 ``insert_entity`` 的 ``async with self._index_lock`` 守护）。
+        锁内分配 API 见 :py:meth:`LocalKnowledgeStore.locked_lookup_or_reserve_uuid`，
+        已可在 async 调用方处直接 ``await`` 使用 —— 模型层保留同步路径
+        是为了不破坏现有 48 个测试。
         """
         key = make_entity_key(name, entity_type)
         existing_uuid: Optional[str] = None

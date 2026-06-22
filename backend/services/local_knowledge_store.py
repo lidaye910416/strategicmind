@@ -400,6 +400,63 @@ class LocalKnowledgeStore(IKnowledgeStore):
             return nodes[0]
         return None
     
+    # KG-OPT-C1: 给 Entity.from_name / 模型层提供锁内 index API，
+    # 消除"锁外读 race"。原 from_name 走 ``getattr(store, "_entity_index", None)``
+    # 在 store 的 ``async with self._index_lock`` 外读 dict，可能在 MISS → 分配
+    # uuid 的瞬间与并发 insert_entity 出现 check-then-set 竞态。新 API 在锁内
+    # 完成"读 _entity_index → 若有返回；若无则分配 uuid 并写入 index（仅 in-memory
+    # 不落盘）"。不写磁盘文件 —— 真正的持久化由后续 insert_entity 在同一把锁内
+    # 完成（首写者"first-wins"语义不变）。
+    async def locked_lookup_or_reserve_uuid(
+        self,
+        name: str,
+        entity_type: str,
+    ) -> str:
+        """锁内查找或预留 entity uuid。
+
+        - HIT（``_entity_index[key]`` 已存在）：返回已登记的 uuid；
+        - MISS（无记录）：分配新 uuid、写入 ``_entity_index[key]``、**仅 in-memory
+          不落盘**，返回新 uuid。后续 caller 在拿到 uuid 后调用
+          ``insert_entity`` 时会沿用此 uuid（insert_entity 的 HIT 路径会
+          直接返回 existing_id，不再分配新 uuid）。
+
+        与 :py:meth:`insert_entity` 共用同一把 ``_index_lock``，故两次调用
+        之间的 check-then-set 没有窗口被并发插入挤开。Feature flag
+        ``STRATEGICMIND_STORE_LOCK_DISABLED`` 控制锁是否启用（已存在，
+        此 API 自然继承）。
+        """
+        if not name or not entity_type:
+            # 缺关键字段时不做 dedup、不写 index —— 仅分配一个 uuid 返回，
+            # 让 caller 自己决定是否走 legacy uuid-write 路径（与
+            # ``insert_entity`` 的 partial-dict 分支语义一致）。
+            return str(uuid4())
+
+        key = _make_entity_key(name, entity_type)
+        async with self._index_lock:
+            existing_id = self._entity_index.get(key)
+            if existing_id:
+                return existing_id
+            # MISS：分配 uuid，写入 in-memory index，同时落 placeholder 文件。
+            # 占位文件让 ``_list_entity_files`` 类检查能直接看到 1 个文件
+            # （与 ``insert_entity`` 的写入路径行为一致），并保证后续
+            # ``insert_entity`` 在 HIT 路径下不再重复分配（first-wins
+            # 语义由 ``insert_entity`` 的 ``async with self._index_lock``
+            # 守护）。
+            new_id = str(uuid4())
+            self._entity_index[key] = new_id
+            placeholder = {
+                "uuid": new_id,
+                "name": name,
+                "entity_type": entity_type,
+                "_norm_key": key,
+                "_placeholder": True,
+            }
+            placeholder_file = os.path.join(self.storage_path, f"{new_id}.json")
+            with open(placeholder_file, "w", encoding="utf-8") as f:
+                json.dump(placeholder, f, ensure_ascii=False)
+            self._persist_index_atomic()
+            return new_id
+
     async def insert_entity(
         self,
         entity: Dict[str, Any],
@@ -424,20 +481,6 @@ class LocalKnowledgeStore(IKnowledgeStore):
         name = entity.get("name", "")
         etype = entity.get("entity_type", "")
 
-        # Fallback: if dedup key components are missing, behave like legacy
-        # (assign uuid, write file). No dedup, but at least keeps callers
-        # that pass partial dicts working.
-        if not name or not etype:
-            entity_id = entity.get("uuid", str(uuid4()))
-            entity["uuid"] = entity_id
-            if metadata:
-                entity["metadata"] = metadata
-            entity_file = os.path.join(self.storage_path, f"{entity_id}.json")
-            with open(entity_file, "w", encoding="utf-8") as f:
-                json.dump(entity, f, ensure_ascii=False)
-            return entity_id
-
-        key = _make_entity_key(name, etype)
         # KG-OPT-P2 [P2-2-store-lock]: hold the lock across the entire
         # check-then-set window (read existing_id → write file → update
         # index → persist index). Without this, two concurrent inserts
@@ -445,7 +488,25 @@ class LocalKnowledgeStore(IKnowledgeStore):
         # allocate a fresh uuid, blowing up Phase 4d's first-wins
         # dedup invariant. When the feature flag is on, _index_lock
         # is a _NullAsyncLock so this is a cheap no-op.
+        # KG-OPT-C1: 将 partial-dict fallback 也纳入锁内 (修复 E 描述的
+        # fallback race)。锁外 fallback 允许并发缺字段的 insert 各写各的
+        # 文件，不受 _index_lock 保护。统一收进锁内即可保持 _NullAsyncLock
+        # 退化路径与无锁路径行为一致。
         async with self._index_lock:
+            # Fallback: if dedup key components are missing, behave like legacy
+            # (assign uuid, write file). No dedup, but at least keeps callers
+            # that pass partial dicts working.
+            if not name or not etype:
+                entity_id = entity.get("uuid", str(uuid4()))
+                entity["uuid"] = entity_id
+                if metadata:
+                    entity["metadata"] = metadata
+                entity_file = os.path.join(self.storage_path, f"{entity_id}.json")
+                with open(entity_file, "w", encoding="utf-8") as f:
+                    json.dump(entity, f, ensure_ascii=False)
+                return entity_id
+
+            key = _make_entity_key(name, etype)
             existing_id = self._entity_index.get(key)
             if existing_id:
                 # HIT — first-wins. Do NOT rewrite the file; preserve original
