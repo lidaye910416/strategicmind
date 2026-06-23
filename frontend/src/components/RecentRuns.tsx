@@ -25,6 +25,7 @@ import api from '../services/api'
 import { APP_ROUTES, RECENT_RUNS } from '../i18n/zh'
 import { formatErrorMessage } from '../lib/formatError'
 import { flags } from '../lib/featureFlags'
+import { selectAllByRecency } from '../lib/runFilters'
 
 interface ConfigSummary {
   years: number | null
@@ -154,7 +155,9 @@ export default function RecentRuns() {
     try {
       const r = await api.get('/pipeline/runs')
       const list: Run[] = (r.data.runs || []) as Run[]
-      setRuns(list)
+      // N6 修复: 用共享 sort helper (selectAllByRecency) 替代内联 sort,
+      // 与 useCurrentRunView 的 queryFn 保持同一份 "updated_at desc" 排序定义。
+      setRuns(selectAllByRecency(list))
       // 清理已不存在的选中项
       setSelected((prev) => prev.filter((id) => list.some((x) => x.run_id === id)))
     } catch (e: any) {

@@ -29,7 +29,8 @@ import type {
 import Stat from './Stat'
 import DeptMini from './DeptMini'
 import DepartmentGraph from '../DepartmentGraph'
-import RealtimeKnowledgeGraph from '../graph/RealtimeGraph'
+import RealtimeGraph from '../graph/RealtimeGraph'
+import { useCurrentGraph } from '../../store/hooks/useCurrentRunView'
 import EntityTypeLegend from '../EntityTypeLegend'
 import BeliefEvolutionChart from '../BeliefEvolutionChart'
 import SimulationNetworkGraph from '../SimulationNetworkGraph'
@@ -109,17 +110,20 @@ function InnerWorkbenchContentImpl({
 }: InnerWorkbenchContentProps) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabId>('realtime')
+  // Bug #3 修复: 内部实时图数据来自 useCurrentGraph, 跟 Dashboard / Simulation
+  // 共享同一份 selector (live + REST fallback)。
+  const currentGraph = useCurrentGraph()
+  const liveGraphNodeCount = currentGraph.nodes.length
 
   // ---- Tab content renderers ----
 
   /** Tab 1: 实时图谱 */
   const renderRealtimeTab = () => (
     <div className="space-y-3">
-      {graphNodes.length > 0 || runId ? (
+      {liveGraphNodeCount > 0 || runId ? (
         <section id="graph" className="card p-3 scroll-mt-28 relative">
-          <RealtimeKnowledgeGraph
+          <RealtimeGraph
             runId={runId}
-            live
             height={360}
             title={WORKBENCH.realtimeGraphTitle}
             refreshIntervalMs={graphRefreshIntervalMs}

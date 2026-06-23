@@ -17,7 +17,7 @@ import api from '../services/api'
 import SimulationRoundProgress from '../components/SimulationRoundProgress'
 import RoundTimeline from '../components/RoundTimeline'
 import BeliefEvolutionChart from '../components/BeliefEvolutionChart'
-import AgentClusterView from '../components/AgentClusterView'
+import AgentListView from '../components/agent/AgentListView'
 import StakeholderMap from '../components/StakeholderMap'
 import NotificationToast from '../components/NotificationToast'
 import Hero from '../components/layout/Hero'
@@ -226,7 +226,7 @@ export default function Simulation() {
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-500 dark:text-ink-400 uppercase tracking-wider mb-2">
                       <Users size={12} /> 阵营分布
                     </div>
-                    <AgentClusterView simulationId={runId} />
+                    <AgentListView runId={runId} variant="full" />
                   </div>
                 </div>
                 <div className="card p-5 mt-4">
