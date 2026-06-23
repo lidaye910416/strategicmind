@@ -23,10 +23,25 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+# KG-OPT-STAGING-FIX: 允许 .env 覆盖路径, 让 staging-lite 可用
+# Resolve a directory: prefer an env var (if set, even empty is falsy so we
+# only honor a non-empty value), fallback to the given default. Relative env
+# values are anchored to CWD so callers can pass paths like "var/uploads".
+def _resolve_or_default(env_key: str, default_path) -> Path:
+    val = os.environ.get(env_key)
+    if val:
+        p = Path(val)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        return p
+    return default_path
+
 # Pin dirs to absolute paths so the orchestrator and the API agree
-UPLOAD_DIR = BACKEND_DIR / "uploads"
-REPORTS_DIR = BACKEND_DIR / "data" / "reports"
-PIPELINE_CKPT_DIR = BACKEND_DIR / "data" / "pipelines"
+UPLOAD_DIR = _resolve_or_default("UPLOAD_FOLDER", BACKEND_DIR / "uploads")
+REPORTS_DIR = _resolve_or_default("REPORTS_DIR", BACKEND_DIR / "data" / "reports")
+PIPELINE_CKPT_DIR = _resolve_or_default(
+    "PIPELINE_CHECKPOINT_DIR", BACKEND_DIR / "data" / "pipelines"
+)
 for d in (UPLOAD_DIR, REPORTS_DIR, PIPELINE_CKPT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
