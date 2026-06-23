@@ -844,13 +844,47 @@ class PipelineOrchestrator:
         if not agents:
             return {"current_round": 0, "round_results": [], "skipped": "no agents rehydrated"}
 
-        belief_engine = BeliefEngine()
-        propagation = PropagationLayer()
-        sim_loop = SimulationLoop(
-            belief_engine=belief_engine,
-            propagation_layer=propagation,
-            llm_provider=self.llm_provider,
-        )
+        # === N4 修复点: 沿用代码已有的 STRATEGICMIND_LOOP_ENGINE_V2 后缀 ===
+        from backend.config.manager import get_feature_flags
+        flags = get_feature_flags()
+
+        if flags.loop_engine_v2:
+            # v2 path: LoopEngine with full DecisionContext injection
+            from backend.services.loop.engine import LoopEngine
+            from backend.services.loop.llm_adapter import LoopEngineLLMAdapter
+            from backend.services.loop.scheduler import AgentScheduler
+
+            llm_client = LoopEngineLLMAdapter(
+                llm_provider=self.llm_provider,
+                knowledge_store=self.knowledge_store,
+            )
+            scheduler = AgentScheduler()
+            # N3: 传入 orchestrator 已构造的 memory_writer, 而非用默认空 EpisodicMemory
+            pre_wired_writer = run.artifacts.get("_memory_writeback")
+            from backend.services.loop.clock import SimClock
+            loop_engine = LoopEngine(
+                run_id=run.run_id,
+                clock=SimClock(),
+                agents=agents,
+                knowledge_store=self.knowledge_store,
+                event_bus=self._resolve_global_bus(),
+                config=sim_config,
+                llm_client=llm_client,
+                scheduler=scheduler,
+                memory_writer=pre_wired_writer,
+                total_rounds=int(sim_config.get("max_rounds") or 12),
+            )
+            scheduler.bind_to_loop(loop_engine)
+            sim_loop = loop_engine  # 后续变量名兼容
+        else:
+            # v1 path (deprecated) — 1 release 后删除
+            belief_engine = BeliefEngine()
+            propagation = PropagationLayer()
+            sim_loop = SimulationLoop(
+                belief_engine=belief_engine,
+                propagation_layer=propagation,
+                llm_provider=self.llm_provider,
+            )
         # P4 LOOP: 接入 MarketEnvironmentAgent（每 4 轮季度演化）+ ExternalShockSimulator（每 3 轮按用户外部因素注入）
         # 设计目标: "按年份循环迭代 + 内外部环境变化"
         user_params = run.config.get("user_params") or {}

@@ -566,23 +566,23 @@ async def run_with_shocks(
 ):
     """
     Run simulation with external shock integration.
-    
+
     Implements: US-098 (integrate shock injection)
     """
     from .external_shock_simulator import ExternalShockSimulator
     from .business_metrics_tracker import BusinessMetricsTracker
-    
+
     shock_sim = ExternalShockSimulator({"base_probability": shock_probability})
     metrics_tracker = None  # Would be injected
-    
+
     results = await self.run(agents, max_rounds, simulated_hours)
-    
+
     # Inject shocks for each round
     for round_data in results.get("round_results", []):
         round_num = round_data.get("round_num", 0)
         context = {"agents": agents, "round": round_num}
         shock = shock_sim.inject_shock(context, round_num=round_num)
-        
+
         if shock:
             # Apply shock effects to belief engine
             for topic in shock.affected_topics:
@@ -596,7 +596,101 @@ async def run_with_shocks(
                         round_num=round_num,
                         agent=agent,
                     )
-            
+
             round_data["shock_events"] = [shock.to_dict()]
-    
+
     return results
+
+
+# ---------------------------------------------------------------------------
+# Bug #2: STRATEGICMIND_LOOP_ENGINE_V2 env var dispatch for pipeline mode
+# ---------------------------------------------------------------------------
+
+async def run_pipeline_mode_v2(
+    self,
+    agents: List['StrategicAgent'],
+    max_rounds: int = 10,
+    simulated_hours: int = 72,
+) -> Dict[str, Any]:
+    """v2 LoopEngine pipeline mode (Bug #2 fix).
+
+    Delegates to ``LoopEngine.run()`` so the simulation uses the
+    typed LLMClient protocol, the 4-slice prompt context, and
+    MemoryWriteback per-action feedback loop. v1 ``run_pipeline_mode``
+    is preserved for backward compat.
+    """
+    from backend.config.manager import get_feature_flags
+    from backend.services.loop.engine import LoopEngine
+    from backend.services.loop.llm_adapter import LoopEngineLLMAdapter
+    from backend.services.loop.clock import SimClock
+
+    flags = get_feature_flags()
+    if not flags.loop_engine_v2:
+        return await run_pipeline_mode(self, agents, max_rounds, simulated_hours)
+
+    llm_client = LoopEngineLLMAdapter(
+        llm_provider=getattr(self, "llm_provider", None),
+        knowledge_store=getattr(self, "knowledge_store", None),
+    )
+    engine = LoopEngine(
+        run_id=getattr(self, "run_id", "adhoc"),
+        clock=SimClock(),
+        agents=agents,
+        knowledge_store=getattr(self, "knowledge_store", None),
+        event_bus=getattr(self, "event_bus", None),
+        config=getattr(self, "config", {}) or {},
+        llm_client=llm_client,
+        total_rounds=max_rounds,
+    )
+    results = await engine.run()
+    return {
+        "current_round": len(results),
+        "total_rounds": engine.total_rounds,
+        "round_results": [
+            {
+                "round_num": r.round_num,
+                "actions_count": len(r.actions),
+            }
+            for r in results
+        ],
+        "mode": "pipeline_v2",
+    }
+
+
+async def run_with_shocks_v2(
+    self,
+    agents: List['StrategicAgent'],
+    max_rounds: int = 10,
+    simulated_hours: int = 72,
+    shock_probability: float = 0.1,
+):
+    """v2 LoopEngine with shock integration (Bug #2 fix).
+
+    v2 EventInjector handles shock injection. Delegates to
+    ``LoopEngine.run()``; the orchestrator-side market_event / shock
+    side effects still fire as before.
+    """
+    from backend.config.manager import get_feature_flags
+    from backend.services.loop.engine import LoopEngine
+    from backend.services.loop.llm_adapter import LoopEngineLLMAdapter
+    from backend.services.loop.clock import SimClock
+
+    flags = get_feature_flags()
+    if not flags.loop_engine_v2:
+        return await run_with_shocks(self, agents, max_rounds, simulated_hours, shock_probability)
+
+    llm_client = LoopEngineLLMAdapter(
+        llm_provider=getattr(self, "llm_provider", None),
+        knowledge_store=getattr(self, "knowledge_store", None),
+    )
+    engine = LoopEngine(
+        run_id=getattr(self, "run_id", "adhoc"),
+        clock=SimClock(),
+        agents=agents,
+        knowledge_store=getattr(self, "knowledge_store", None),
+        event_bus=getattr(self, "event_bus", None),
+        config=getattr(self, "config", {}) or {},
+        llm_client=llm_client,
+        total_rounds=max_rounds,
+    )
+    return await engine.run()

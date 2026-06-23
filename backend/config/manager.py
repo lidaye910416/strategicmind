@@ -83,6 +83,13 @@ def is_cosmic_graph_enabled() -> bool:
     return feature_flags().cosmic_graph
 
 
+# Alias used by N4 doc unification — both ``feature_flags()`` and
+# ``get_feature_flags()`` return a fresh snapshot so monkeypatch.setenv
+# in tests is honoured.
+def get_feature_flags() -> FeatureFlags:
+    return feature_flags()
+
+
 @dataclass
 class LLMConfig:
     """LLM provider configuration"""

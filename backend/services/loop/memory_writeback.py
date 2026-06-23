@@ -39,12 +39,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import time
 import warnings
 from dataclasses import dataclass, field
 import dataclasses
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+# KG-OPT-P1 [eg-008-metrics]: named logger so counters emit visible lines
+# (root logger must be set to INFO via backend.app.__init__ basicConfig).
+_logger = logging.getLogger("strategicmind.metrics")
 
 from ...models.action_type import (
     ActionType,
@@ -340,6 +345,9 @@ class MemoryWriteback:
             "episode_dedup_hits": 0,
             "ws_dedup_hits": 0,
             "in_reply_to_skipped": 0,
+            # Bug #2 (post_content 兜底) + N3 健康度指标
+            "template_episode_skipped": 0,
+            "episode_writes_per_round": 0,
         }
     )
 
@@ -366,12 +374,24 @@ class MemoryWriteback:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    # Bug #2: minimum length below which post_content is treated as
+    # template pollution (avoid feeding empty / stub text back to LLM).
+    MIN_POST_CONTENT_LEN = 40
+
     def write_action(
         self,
         action: StrategicAction,
         state_after: Optional[WorldState] = None,
     ) -> Dict[str, Any]:
-        """Persist one action and return a summary ``{episode_id, edges}``."""
+        """Persist one action and return a summary ``{episode_id, edges}``.
+
+        Bug #2 root cause 2.6 (post_content 兜底) + 2.7 (template pollution):
+        v1 路径 12 轮几乎所有 ``post_content`` 都为空, ``Episode.text``
+        退化为 ``"[btype] actor round N"`` 模板, 喂回 LLM 的
+        ``recent_episodes`` 都是垃圾. 修复: 严格 < 40 字符的
+        ``post_content`` / ``public_description`` 视为模板, 跳过 + 计数,
+        避免污染 KG.
+        """
         if action is None:
             return {"episode_id": None, "edges": []}
         # v2 attributes live on the action as ad-hoc attributes
@@ -401,10 +421,29 @@ class MemoryWriteback:
         actor_id = str(action.actor_id or "")
         episode_id = str(action_id)
         btype = get_business_type(action)
-        post_content = getattr(action, "post_content", "") or ""
-        text = (post_content or action.public_description or "").strip()
-        if not text:
-            text = f"[{btype.value}] {actor_id} round {action.round_num}"
+        # === Bug #2 修复点: post_content 严格长度 + 模板跳过 ===
+        post_content = (getattr(action, "post_content", "") or "").strip()
+        if not post_content:
+            post_content = (action.public_description or "").strip()
+
+        if not post_content or len(post_content) < self.MIN_POST_CONTENT_LEN:
+            # 关键: 跳过写, 计数 +1, 防止模板 episode 污染
+            # recent_episodes 召回.
+            self._dedup_metrics["template_episode_skipped"] += 1
+            self._dedup_metrics["episode_writes_per_round"] += 1
+            _logger.info(
+                "memory_writeback template_episode_skipped=%d actor=%s round=%d",
+                self._dedup_metrics["template_episode_skipped"],
+                actor_id, action.round_num,
+            )
+            return {
+                "episode_id": None,
+                "edges": [],
+                "business_type": btype.value,
+                "skipped": "template_pollution",
+            }
+
+        text = post_content  # 已经是 stripped + >= MIN_POST_CONTENT_LEN chars
 
         # KG-OPT-P0 [eg-008]: Natural-key 1h 滚动窗口去重。
         # 同 actor + btype + md5(text) 在 1h 内的重复内容复用
@@ -477,6 +516,10 @@ class MemoryWriteback:
                 propagation_channels=[c.value for c in action.propagation_channels],
                 created_at=time.time(),
             )
+
+        # Bug #2 N3: count successful writes (post-template-check pass-through)
+        # so callers can verify per-round writeback actually happened.
+        self._dedup_metrics["episode_writes_per_round"] += 1
 
         edges: List[Dict[str, Any]] = []
 

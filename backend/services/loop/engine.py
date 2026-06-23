@@ -183,9 +183,27 @@ class LoopEngine:
         # Wire a default in-process EpisodicMemory when the caller
         # didn't supply one. The engine never depends on the env.
         if self.memory_writer is None:
+            # === N3 修复点 ===
+            # 默认构造的 EpisodicMemory 没接 knowledge_store / mirror, 写出来的 episode
+            # 不会回流到 report agent 用的 KG. orchestrator 注入时一定要传已经
+            # wired 好的 memory_writer; 我们这里做一次防御性 mirror 兜底.
             self.memory_writer = MemoryWriteback(
-                memory=EpisodicMemory.for_run(self.run_id)
+                memory=EpisodicMemory.for_run(self.run_id),
+                knowledge_store=self.knowledge_store,
+                run_id=self.run_id,
+                mirror_enabled=True,  # N3: 开 mirror, 兜底不污染
             )
+        else:
+            # 若 orchestrator 注入了一个 memory_writer 但没开 mirror, 兜底打开
+            # (single source of truth: episode 必须能回流到 report agent 的 KG).
+            try:
+                if getattr(self.memory_writer, "knowledge_store", None) is None:
+                    self.memory_writer.knowledge_store = self.knowledge_store
+                if not getattr(self.memory_writer, "mirror_enabled", False):
+                    self.memory_writer.mirror_enabled = True
+            except Exception:
+                # Defensive: some writers may not accept these assignments.
+                pass
 
     # ------------------------------------------------------------------
     # Public entry-point
@@ -343,9 +361,17 @@ class LoopEngine:
         # Set the explicit v2 type so the resolver dispatches correctly
         # (the LLM may have used a v1 type that happens to map back
         # to a different v2 type).
-        # We try to detect v2 from metadata first, then from action_type
-        # string match. We do NOT overwrite an explicit tag.
-        if not (action.metadata or {}).get("business_type"):
+        # We try to detect v2 from ad-hoc attr (LoopEngineLLMAdapter) first,
+        # then metadata, then from action_type string match. We do NOT
+        # overwrite an explicit tag.
+        existing_btype = getattr(action, "business_type", None)
+        if existing_btype:
+            try:
+                btype = BusinessActionType(str(existing_btype))
+                set_business_type(action, btype)
+            except ValueError:
+                pass
+        elif not (action.metadata or {}).get("business_type"):
             try:
                 btype = BusinessActionType(str(action.action_type.value))
                 set_business_type(action, btype)
@@ -353,6 +379,20 @@ class LoopEngine:
                 # The LLM returned a v1-only type — leave the resolver
                 # to fall back to from_v1().
                 pass
+
+        # === N3 修复点: per-action writeback, 让 feedback loop 真正闭合 ===
+        # Bug #2 root cause 2.7: 之前 v1 路径完全不调 MemoryWriteback.write_action,
+        # recent_episodes 永远是空. 现在 _decide_action 末尾立即 write_action, 让
+        # 12 轮 × N agents 都有 episode 落盘. _execute_round 现有的
+        # write_round 调用保留作 PERFORMED/CAUSED 边批量收尾.
+        if self.memory_writer is not None:
+            try:
+                self.memory_writer.write_action(action, state_after=self.world_state)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "LoopEngine._decide_action writeback failed for %s: %s",
+                    agent.agent_id, exc,
+                )
         return action
 
     def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:

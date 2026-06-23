@@ -183,7 +183,8 @@ class AgentScheduler:
         round_num: int,
         *,
         seed: Optional[int] = None,
-    ) -> List[StrategicAgent]:
+        force_one_action_per_round_minimum: Optional[bool] = None,
+    ) -> List[StrategicAction]:
         """Like :meth:`select_active` but guarantees >=1 agent per round.
 
         When ``force_one_action_per_round_minimum`` is on (default) and
@@ -192,9 +193,18 @@ class AgentScheduler:
         *closest* to satisfied (we drop the business-hours requirement
         but keep the day-gate, so the board still only acts on
         quarter boundaries and CFO still only on day 1/30).
+
+        Bug #2: caller can override the policy toggle per-call so the
+        engine's force-minimum semantics don't drift between
+        wired/unwired paths.
         """
+        use_force = (
+            self.force_one_action_per_round_minimum
+            if force_one_action_per_round_minimum is None
+            else bool(force_one_action_per_round_minimum)
+        )
         eligible = self.select_active(agents, clock, seed=seed)
-        if eligible or not self.force_one_action_per_round_minimum or not agents:
+        if eligible or not use_force or not agents:
             return eligible
         # Fall back to "weakest gate"
         candidates: List[tuple] = []
@@ -220,6 +230,22 @@ class AgentScheduler:
             return [agents[0]]
         candidates.sort(key=lambda pair: pair[0], reverse=True)
         return [candidates[0][1]]
+
+    def bind_to_loop(self, loop_engine: Any) -> None:
+        """Wire this scheduler as the activation source for a LoopEngine.
+
+        Bug #2 root cause 2.4: v1 ``SimulationLoop.get_active_agents`` used
+        round-robin + influence threshold, ignoring the 5 time gates
+        (CFO季末/Sales任何/Board跨年/Engineer事件/Marketing轮转).
+
+        Mirrors MiroFish's typed scheduler protocol — the engine only
+        ever asks ``select_active_or_force()`` for the activation list.
+        """
+        loop_engine.scheduler = self
+        # Defensive: also re-export the policy toggle so the engine's
+        # force-minimum semantics don't drift between wired/unwired paths.
+        self.force_one_action_per_round_minimum = True
+        return None  # explicit; engine mutates its own field
 
     # ------------------------------------------------------------------
     # Helpers — produce a no-op action for a forced round

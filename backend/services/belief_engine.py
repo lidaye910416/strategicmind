@@ -8,11 +8,16 @@ This is a core component of the strategic simulation engine, replacing
 the lack of belief tracking in simpler simulators.
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+import logging
+from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
 from ..models.strategic_agent import StrategicAgent, BeliefState, BeliefPosition, FactBelief, TrustLevel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,6 +31,50 @@ class BeliefUpdate:
     update_source: str
     round_num: int
     evidence: List[str]
+
+
+# ---------------------------------------------------------------------------
+# BeliefEffectProposal — pydantic-validated LLM-side belief/trust deltas.
+# ---------------------------------------------------------------------------
+
+
+class BeliefEffectProposal(BaseModel):
+    """LLM 同步返回的 belief / trust 变化建议, 替代 v1 硬编码 trust_effects.
+
+    Bug #2 root cause 2.3: v1 ``_update_beliefs`` 写死 ``new_value=0.5``,
+    把 LLM 给的 ``target_positions`` 全部丢弃; ``trust_effects`` 是常量表.
+    本 dataclass 让 LLM 同时返回 position_deltas + trust_deltas, 由
+    ``apply_action_effects`` 消费.
+
+    Anti-MiroFish anti-pattern 3.3: pydantic 校验失败 ->
+    ``BeliefEngine._proposal_parse_failures`` +1, 该 round belief
+    不更新, 不让一条坏 LLM 响应拖垮整轮.
+    """
+
+    position_deltas: Dict[str, float] = Field(default_factory=dict)
+    trust_deltas: Dict[str, float] = Field(default_factory=dict)
+    reasoning: str = ""
+
+    @field_validator("position_deltas", "trust_deltas")
+    @classmethod
+    def _clamp_each(cls, v: Dict[str, float]) -> Dict[str, float]:
+        # MiroFish 30% stringified-JSON bug 防御.
+        if not isinstance(v, dict):
+            raise ValueError("expected dict[str, float]")
+        return {str(k): max(-1.0, min(1.0, float(val))) for k, val in v.items()}
+
+    @classmethod
+    def safe_parse(cls, raw: Any) -> "BeliefEffectProposal":
+        """Defensive: empty / non-dict / non-numeric values -> empty proposal."""
+        try:
+            return cls.model_validate(raw or {})
+        except (ValidationError, TypeError, ValueError) as exc:
+            logger.warning("BeliefEffectProposal parse failure: %s", exc)
+            try:
+                BeliefEngine._proposal_parse_failures += 1
+            except Exception:
+                pass
+            return cls(reasoning=f"parse_fallback: {exc}")
 
 
 class ConvergenceResult:
@@ -76,6 +125,9 @@ class BeliefEngine:
         """Initialize BeliefEngine"""
         # Store belief history for analysis
         self._belief_history: Dict[str, List[BeliefUpdate]] = {}
+        # Bug #2: track pydantic parse failures for BeliefEffectProposal
+        # so a bad LLM response doesn't silently corrupt a round.
+        self._proposal_parse_failures: int = 0
     
     def update_belief(
         self,
@@ -311,24 +363,65 @@ class BeliefEngine:
         action_type: str,
         target_positions: Dict[str, float],
         round_num: int,
+        proposal: Optional["BeliefEffectProposal"] = None,
     ) -> List[BeliefUpdate]:
         """
         Apply the belief effects of another agent's action.
-        
-        This is called when an agent observes another agent's action
-        and may update their beliefs based on it.
-        
+
+        v2 path (``proposal`` is provided): use the LLM's proposed
+        position_deltas + trust_deltas. Replaces v1 hardcoded
+        ``trust_effects`` table and the silent ``target_positions``
+        discard (Bug #2 root cause 2.3).
+
+        v1 path (no ``proposal``): preserve the original behaviour
+        with the constant trust_effects table. Existing call-sites
+        that pass only the legacy args continue to work.
+
         Args:
-            agent: Agent whose beliefs may be updated
-            action_type: Type of action observed
-            target_positions: Belief positions influenced by this action
-            round_num: Current simulation round
-            
+            agent: Agent whose beliefs may be updated.
+            action_type: Type of action observed (v1 enum or v2 string).
+            target_positions: Legacy v1 position deltas (used in v1 path).
+            round_num: Current simulation round.
+            proposal: Optional v2 ``BeliefEffectProposal`` with
+                LLM-proposed deltas; when present, takes precedence
+                over the legacy arguments.
+
         Returns:
-            List of belief updates applied
+            List of belief updates applied.
         """
-        updates = []
-        
+        updates: List[BeliefUpdate] = []
+
+        if proposal is not None:
+            # v2 path — use LLM-suggested deltas.
+            for topic, delta in (proposal.position_deltas or {}).items():
+                current = float(agent.beliefs.get_position(topic) or 0.0)
+                new_pos = max(-1.0, min(1.0, current + float(delta)))
+                upd = self.update_belief(
+                    agent_id=agent.agent_id,
+                    topic=str(topic),
+                    new_value=new_pos,
+                    update_source=f"action_{action_type}",
+                    round_num=round_num,
+                    confidence=0.8,
+                )
+                updates.append(upd)
+            # Trust deltas from the LLM (v1 had a hardcoded table).
+            for other_id, delta in (proposal.trust_deltas or {}).items():
+                if other_id == agent.agent_id:
+                    continue
+                if other_id not in agent.beliefs.trust_levels:
+                    agent.beliefs.trust_levels[other_id] = TrustLevel(
+                        agent_id=other_id, trust_score=0.5, last_updated=round_num,
+                    )
+                current_trust = float(
+                    agent.beliefs.trust_levels[other_id].trust_score
+                )
+                new_trust = max(-1.0, min(1.0, current_trust + float(delta)))
+                agent.beliefs.trust_levels[other_id].trust_score = new_trust
+                agent.beliefs.trust_levels[other_id].last_updated = round_num
+            return updates
+
+        # v1 path — preserved for backward compat.
         # Update trust based on action type
         trust_effects = {
             "MAKE_STATEMENT": 0.05,
@@ -338,12 +431,12 @@ class BeliefEngine:
             "TRADE_ASSET": 0.0,
             "PROPOSE_DEAL": 0.1,
         }
-        
+
         for topic, position_change in target_positions.items():
             # Apply position update
             current_pos = agent.beliefs.get_position(topic) or 0.0
             new_pos = current_pos + position_change
-            
+
             update = self.update_belief(
                 agent_id=agent.agent_id,
                 topic=topic,
@@ -353,7 +446,7 @@ class BeliefEngine:
                 confidence=0.8,  # Observed actions have high confidence
             )
             updates.append(update)
-        
+
         return updates
     
     def get_belief_summary(self, agent: StrategicAgent) -> Dict:
