@@ -29,7 +29,7 @@ import type {
 import Stat from './Stat'
 import DeptMini from './DeptMini'
 import DepartmentGraph from '../DepartmentGraph'
-import RealtimeKnowledgeGraph from '../RealtimeKnowledgeGraph'
+import RealtimeKnowledgeGraph from '../graph/RealtimeGraph'
 import EntityTypeLegend from '../EntityTypeLegend'
 import BeliefEvolutionChart from '../BeliefEvolutionChart'
 import SimulationNetworkGraph from '../SimulationNetworkGraph'

@@ -480,14 +480,58 @@ class EntityExtractor:
             # KG-OPT-P1 [P1-A1]: 排序 key 改为主 = signal_density（高在前）、
             # 次 = summary 长度（长在前）做 tiebreaker。两者都已经是
             # float/int 可比较类型，clamp 后不会越界。
-            if self._use_hard_cap and len(entities) > MAX_ENTITIES:
-                entities.sort(
+            # Agent 3A v2 N-fix: 软降级桶独立计数
+            # 旧实现: 软降级桶 (fallback entities) 与 whitelist 实体混在同一 list
+            # 参与 MAX_ENTITIES 排序, 长尾 fallback 挤掉真实高 signal primary.
+            # 新实现: 分桶 -> primary 独立排序截断 -> fallback 独立排序截断 -> 拼接.
+            if self._use_hard_cap and entities:
+                _whitelist = _LOCAL_ENTITY_TYPE_WHITELIST()
+                _fallback_type = _LOCAL_ENTITY_TYPE_FALLBACK()
+
+                primary: list = []
+                fallback: list = []
+                for e in entities:
+                    et = getattr(e, "entity_type", None)
+                    if et in _whitelist:
+                        primary.append(e)
+                    else:
+                        # 软降级: 标 fallback + name 前缀, 计数到 _softdemote_count
+                        if et != _fallback_type:
+                            try:
+                                setattr(e, "entity_type", _fallback_type)
+                                if hasattr(e, "attributes") and e.attributes is not None:
+                                    e.attributes.setdefault("__is_fallback", True)
+                                    e.attributes.setdefault("original_entity_type", et)
+                                else:
+                                    e.attributes = {"__is_fallback": True, "original_entity_type": et}
+                                cur_name = getattr(e, "name", "") or ""
+                                if not cur_name.startswith("[fallback] "):
+                                    e.name = "[fallback] " + cur_name
+                            except Exception:
+                                pass
+                            self._softdemote_count += 1
+                        fallback.append(e)
+
+                # primary 桶按 signal_density 降序, 取 MAX_ENTITIES
+                primary.sort(
                     key=lambda e: (
                         -float((e.attributes or {}).get("signal_density", 0.5)),
                         -(len(e.summary or "")),
-                    ),
+                    )
                 )
-                entities = entities[:MAX_ENTITIES]
+                primary = primary[:MAX_ENTITIES]
+
+                # fallback 桶独立 MAX_FALLBACK_ENTITIES (10) 截断
+                from .kg_prompts import MAX_FALLBACK_ENTITIES as _MAX_FALLBACK_ENTITIES
+                fallback.sort(
+                    key=lambda e: (
+                        -float((e.attributes or {}).get("signal_density", 0.5)),
+                        -(len(e.summary or "")),
+                    )
+                )
+                fallback = fallback[:_MAX_FALLBACK_ENTITIES]
+
+                entities = primary + fallback
 
             return entities
 

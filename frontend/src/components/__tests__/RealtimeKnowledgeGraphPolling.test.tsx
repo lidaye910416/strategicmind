@@ -31,7 +31,7 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: any) => React.createElement(React.Fragment, null, children),
 }))
 
-import RealtimeKnowledgeGraph from '../RealtimeKnowledgeGraph'
+import RealtimeKnowledgeGraph from '../graph/RealtimeGraph'
 
 function makeSnapshotResponse(nodeCount = 0) {
   const nodes = Array.from({ length: nodeCount }, (_, i) => ({

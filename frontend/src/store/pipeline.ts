@@ -209,6 +209,8 @@ interface PipelineState {
   graphEdges: GraphEdgeData[]
   /** GRAPH_BUILDING 阶段进度（含 phase/nodes/edges/new_entities/new_relations） */
   graphProgress: GraphProgress
+  /** Agent 3A v2: 驱逐环容量上限, 默认 MAX_GRAPH_NODES (1000). UI slider 可调整. */
+  graphCapacity: number
   /** 推演回合数组（按 round 升序）。SSE round_completed 追加；REST /network-frames 整批 seed */
   simRounds: SimRound[]
   /** feature2 (GraphDiff): 每轮推演结束时的图谱快照 (round → { nodes, edges }) */
@@ -262,6 +264,8 @@ interface PipelineState {
   setGraphSnapshot: (nodes: GraphNodeData[], edges: GraphEdgeData[], progress?: GraphProgress) => void
   /** 追加单条实体（entity_emerged 事件） */
   appendGraphNode: (node: GraphNodeData) => void
+  /** Agent 3A v2: 调整驱逐环容量 (UI slider 入口) */
+  setGraphCapacity: (n: number) => void
   /** 追加单条关系（relationship_formed 事件） */
   appendGraphEdge: (edge: GraphEdgeData) => void
   /** 更新图谱阶段进度（graph_progress 事件） */
@@ -517,6 +521,8 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   graphNodes: [],
   graphEdges: [],
   graphProgress: { phase: 'idle', nodes: 0, edges: 0 },
+  // Agent 3A v2: 驱逐环容量, 默认 1000 (与 MAX_GRAPH_NODES 对齐)
+  graphCapacity: MAX_GRAPH_NODES,
   simRounds: [],
   graphSnapshots: {},
   // must-tier v2: 实时事件初始值
@@ -798,10 +804,35 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     })
   },
   setGraphSnapshot: (nodes, edges, progress) => {
-    set({
-      graphNodes: [...nodes],
-      graphEdges: [...edges],
-      graphProgress: progress ?? { phase: 'completed', nodes: nodes.length, edges: edges.length },
+    set((s) => {
+      // Agent 3A v2 N1 修复: setGraphSnapshot 必须走与 appendGraphNode 一致的
+      // signal-density eviction, 否则 SSE snapshot / REST fallback 一次塞 1000+ 节点,
+      // 1000 cap 形同虚设. 详见 docs/bugs/01-kg-node-explosion.md §2.6.
+      const cap = s.graphCapacity ?? MAX_GRAPH_NODES
+      let accepted = nodes
+      let evicted = 0
+
+      if (nodes.length > cap) {
+        accepted = [...nodes]
+          .sort(
+            (a, b) =>
+              ((b as any).signal_density ?? 0.5) -
+              ((a as any).signal_density ?? 0.5),
+          )
+          .slice(0, cap)
+        evicted = nodes.length - accepted.length
+      }
+
+      return {
+        graphNodes: accepted,
+        graphEdges: edges,
+        graphProgress: {
+          ...s.graphProgress,
+          ...(progress ?? {}),
+          evicted: ((s.graphProgress as any).evicted ?? 0) + evicted,
+          nodes: accepted.length,
+        },
+      }
     })
   },
 
@@ -811,18 +842,79 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     set((s) => {
       // 已存在则跳过（保留先来位置）
       if (s.graphNodes.some((n) => String(n.id) === id)) return s
-      // Hard cap: 静默丢弃超出 MAX_GRAPH_NODES 的节点，避免浏览器崩溃。
-      // UI 层可读 s.graphProgress.overflow / s.graphProgress.total_seen 显示提示。
-      if (s.graphNodes.length >= MAX_GRAPH_NODES) {
+
+      const incomingDensity = (node as any).signal_density ?? 0.5
+      const cap = s.graphCapacity ?? MAX_GRAPH_NODES
+
+      // Case 1: 未满, 直接插入 (维持降序)
+      if (s.graphNodes.length < cap) {
+        const next = [...s.graphNodes, node].sort(
+          (a, b) => ((b as any).signal_density ?? 0.5) - ((a as any).signal_density ?? 0.5),
+        )
         return {
+          graphNodes: next,
+          graphProgress: { ...s.graphProgress, nodes: next.length },
+        }
+      }
+
+      // Case 2: 已满, 找最低 density 节点
+      let minIdx = 0
+      let minDensity = (s.graphNodes[0] as any).signal_density ?? 0.5
+      for (let i = 1; i < s.graphNodes.length; i++) {
+        const d = (s.graphNodes[i] as any).signal_density ?? 0.5
+        if (d < minDensity) {
+          minDensity = d
+          minIdx = i
+        }
+      }
+
+      // Case 2a: incoming 比最低高, 替换最低
+      if (incomingDensity > minDensity) {
+        const next = [...s.graphNodes]
+        next[minIdx] = node
+        // 维持降序 (新节点可能不在正确位置)
+        next.sort(
+          (a, b) => ((b as any).signal_density ?? 0.5) - ((a as any).signal_density ?? 0.5),
+        )
+        return {
+          graphNodes: next,
           graphProgress: {
             ...s.graphProgress,
-            overflow: ((s.graphProgress as any).overflow ?? 0) + 1,
+            evicted: ((s.graphProgress as any).evicted ?? 0) + 1,
+            nodes: next.length,
           },
         }
       }
-      const next = [...s.graphNodes, node]
-      return { graphNodes: next, graphProgress: { ...s.graphProgress, nodes: next.length } }
+
+      // Case 2b: incoming 不比最低高, 丢弃
+      return {
+        graphProgress: {
+          ...s.graphProgress,
+          overflow: ((s.graphProgress as any).overflow ?? 0) + 1,
+        },
+      }
+    })
+  },
+
+  setGraphCapacity: (n: number) => {
+    // Agent 3A v2: 暴露容量给未来 UI slider, 暂不接 UI
+    const cap = Math.max(50, Math.min(2000, Math.floor(n)))
+    set((s) => {
+      let next = s.graphNodes
+      if (next.length > cap) {
+        next = [...next]
+          .sort(
+            (a, b) =>
+              ((b as any).signal_density ?? 0.5) -
+              ((a as any).signal_density ?? 0.5),
+          )
+          .slice(0, cap)
+      }
+      return {
+        graphCapacity: cap,
+        graphNodes: next,
+        graphProgress: { ...s.graphProgress, nodes: next.length },
+      }
     })
   },
 

@@ -75,6 +75,68 @@ def _get_max_relations_per_doc() -> Optional[int]:
 MAX_ENTITIES_PER_DOC = _get_max_entities_per_doc()
 MAX_RELATIONS_PER_DOC = _get_max_relations_per_doc()
 
+# --- Agent 3A v2 N-fix: global signal-density 二次截断 -------------------------
+# 旧 per-doc cap 只保护 LLM payload 大小, 不保护用户阅读面.
+# 5 doc × 25 entity + 12 轮 emergence 节点累加轻松破 1000, 必须二次截断.
+GLOBAL_TARGET_ENV_VAR = "STRATEGICMIND_KG_GLOBAL_TARGET"
+DEFAULT_GLOBAL_TARGET = 200
+MAX_FALLBACK_ENTITIES = 10
+USES_SECONDARY_POOL_ENV_VAR = "STRATEGICMIND_KG_USES_SECONDARY_POOL"
+
+
+def _get_global_target() -> int:
+    return int(_os.environ.get(GLOBAL_TARGET_ENV_VAR, str(DEFAULT_GLOBAL_TARGET)))
+
+
+def _uses_secondary_pool() -> bool:
+    return parse_bool(_os.environ.get(USES_SECONDARY_POOL_ENV_VAR), default=True)
+
+
+def _global_signal_truncate(entities: list, target: int, whitelist: frozenset) -> list:
+    """按 whitelist 优先级 + signal_density 全局排序后截断.
+
+    Args:
+        entities: 已通过 per-doc cap 的实体列表.
+        target: 全局目标节点数 (env: STRATEGICMIND_KG_GLOBAL_TARGET, 默认 200).
+        whitelist: ontology.WHITELIST_TYPES (frozenset).
+
+    Returns:
+        截断后的实体列表, 长度 <= target.
+        - primary 桶 (whitelist 命中) 优先, 按 signal_density 降序.
+        - fallback 桶 (whitelist 未命中) 作为 tail, 至多 MAX_FALLBACK_ENTITIES (10) 个.
+    """
+    if not entities or target <= 0:
+        return []
+
+    primary = [e for e in entities if getattr(e, "entity_type", None) in whitelist]
+    fallback = [e for e in entities if getattr(e, "entity_type", None) not in whitelist]
+
+    primary.sort(
+        key=lambda e: (
+            -_signal_score(e),
+            -len(getattr(e, "name", "") or ""),
+        )
+    )
+    fallback.sort(
+        key=lambda e: (
+            -_signal_score(e),
+            -len(getattr(e, "name", "") or ""),
+        )
+    )
+
+    primary_quota = min(len(primary), target)
+    fallback_quota = min(len(fallback), MAX_FALLBACK_ENTITIES, max(0, target - primary_quota))
+
+    kept = primary[:primary_quota] + fallback[:fallback_quota]
+    try:
+        _logger.info(
+            "KG global_truncate: in=%d primary=%d fallback=%d -> kept=%d (target=%d)",
+            len(entities), len(primary), len(fallback), len(kept), target,
+        )
+    except Exception:
+        pass
+    return kept
+
 # KG-OPT-P0 [_signal_score]: 实体类型白名单。frozenset 保证 O(1) 查询与不可变。
 # 这 8 个类型对应 prompt 中提示 LLM 重点抽取的"高信号动作类型"——其余类型
 # (如 "Unknown" 默认值) 在 STRATEGICMIND_USE_HARD_CAP=true 路径下被静默丢弃。
@@ -333,15 +395,73 @@ class GraphBuilderService:
             if max_relations_per_doc is not None and len(relations) > max_relations_per_doc:
                 relations = relations[:max_relations_per_doc]
 
-            # Store entities
+            # Tag entities with source doc for deferred progress emit
             for entity in entities:
+                try:
+                    setattr(entity, "_source_doc", doc.doc_id)
+                    setattr(entity, "_doc_type", doc.doc_type.value)
+                except Exception:
+                    pass
+            # Store entities (deferred — global truncate happens after per-doc loop)
+            all_entities.extend(entities)
+
+            # Store relations
+            for relation in relations:
+                await self.knowledge_store.insert_relation({
+                    "source_id": relation.source,
+                    "target_id": relation.target,
+                    "relation_type": relation.relation_type,
+                    "attributes": relation.attributes,
+                })
+                all_relations.append(relation)
+
+        # Agent 3A v2 N-fix: global signal-density 二次截断, 在 knowledge_store
+        # 持久化前执行. 5 doc × 25 + 12 轮 emergence 累加轻松破 1000.
+        if _use_hard_cap() and _uses_secondary_pool() and all_entities:
+            _target = _get_global_target()
+            _whitelist = _get_whitelist()
+            _kept = _global_signal_truncate(all_entities, _target, _whitelist)
+            evicted_count = len(all_entities) - len(_kept)
+            try:
+                _logger.info(
+                    "KG global_truncate: before=%d after=%d evicted=%d target=%d",
+                    len(all_entities), len(_kept), evicted_count, _target,
+                )
+            except Exception:
+                pass
+            # 二次截断后真正写入 store, 避免无效 IO
+            for entity in _kept:
                 entity_id = await self.knowledge_store.insert_entity(
                     entity.to_dict(),
-                    metadata={"source_doc": doc.doc_id, "doc_type": doc.doc_type.value}
+                    metadata={"source_doc": getattr(entity, "_source_doc", None),
+                              "doc_type": getattr(entity, "_doc_type", None)}
                 )
                 entity.uuid = entity_id
-                all_entities.append(entity)
-                # should-tier: per-entity callback for live SSE emit
+                if progress_callback is not None:
+                    try:
+                        ent_dict = entity.to_dict() if hasattr(entity, "to_dict") else {}
+                        progress_callback({
+                            "type": "entity_emerged",
+                            "entity": {
+                                "id": entity_id or ent_dict.get("id"),
+                                "name": ent_dict.get("name"),
+                                "label": ent_dict.get("name") or ent_dict.get("label"),
+                                "type": ent_dict.get("type") or ent_dict.get("entity_type"),
+                            },
+                            "doc_id": getattr(entity, "_source_doc", None),
+                        })
+                    except Exception:
+                        pass
+            all_entities = _kept  # 替换 in-memory, 返回值反映真实持久化量
+        else:
+            # 旧路径: 直接持久化, 保留 entity_emerged SSE emit
+            for entity in all_entities:
+                entity_id = await self.knowledge_store.insert_entity(
+                    entity.to_dict(),
+                    metadata={"source_doc": getattr(entity, "_source_doc", None),
+                              "doc_type": getattr(entity, "_doc_type", None)}
+                )
+                entity.uuid = entity_id
                 if progress_callback is not None:
                     try:
                         ent_dict = entity.to_dict() if hasattr(entity, "to_dict") else {
@@ -356,23 +476,12 @@ class GraphBuilderService:
                                 "name": ent_dict.get("name"),
                                 "label": ent_dict.get("name") or ent_dict.get("label"),
                                 "type": ent_dict.get("type") or ent_dict.get("entity_type"),
-                                "source_doc": doc.doc_id,
+                                "source_doc": getattr(entity, "_source_doc", None),
                             },
-                            "doc_id": doc.doc_id,
+                            "doc_id": getattr(entity, "_source_doc", None),
                         })
                     except Exception:
-                        # Callback failure must not break build pipeline
                         pass
-
-            # Store relations
-            for relation in relations:
-                await self.knowledge_store.insert_relation({
-                    "source_id": relation.source,
-                    "target_id": relation.target,
-                    "relation_type": relation.relation_type,
-                    "attributes": relation.attributes,
-                })
-                all_relations.append(relation)
 
         return {
             "documents_processed": len(seed_documents),

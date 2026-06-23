@@ -1,36 +1,36 @@
 /**
- * RealtimeKnowledgeGraph_v3 — thin shim that mounts the new Cosmic Observatory
- * graph sub-components.
+ * RealtimeGraph — 工作台风格的实时增长知识图谱 (canonical merged implementation).
  *
- * Replaces RealtimeKnowledgeGraph.tsx (the 692-line hand-rolled rAF force loop)
- * with the new layered design:
- *   - useD3Force: d3-forceSimulation with settle detection + freeze toggle
- *   - GraphCanvas: dot-grid Cosmic Observatory visual layer (palette.ts colors)
- *   - EdgePath: quadratic Bezier edges with fan-curvature
- *   - FilterBar: chip-row + search filter
- *   - NodeDetailPanel: 280px slide-over detail panel
+ * 数据源（FE3 P3-C：统一 EventSource 入口）：
+ *   1. Store selector: useGraphNodes() / useGraphEdges() / useGraphPhase()
+ *   2. REST: /api/pipeline/<run_id>/graph-snapshot（启动时一次性拉全量，seedGraph 写入 store）
+ *   3. Store 派生 status / currentStage（决定 building 状态）
  *
- * Drop-in shim:
- *   - Accepts the same props as the OLD component (runId / live / height /
- *     title / fallback / refreshIntervalMs)
- *   - Connects to the same SSE data source (store pipeline via useGraphStream)
- *   - Emits the same callbacks (onNodeClick) the old component does
+ * Agent 3A v2 修复:
+ *   - d3-force simulation 替代 v1 手写 rAF O(n²) 循环（useD3Force hook）
+ *   - 包含 v1 提取的 edgeHelpers (renderEdge, countSelfLoops, renderSelfLoopBadge)
+ *   - N2 fix: force effect 解绑 polling tick, simulation 持久化, nodes/edges 变化
+ *     只触发 simulation.nodes() + alpha(0.3).restart(), 不再每 30s 重建 O(n²)
+ *   - N1: 配合 store 的 setGraphSnapshot cap, 整体上限 = graphCapacity
  *
- * TODO: Swap the import in Workbench.tsx and LiveRunPanel.tsx from
- *       './RealtimeKnowledgeGraph' to './RealtimeKnowledgeGraph_v3' once
- *       this shim is verified end-to-end.
+ * 动效：
+ *   - 新节点：opacity 0→1 + scale 0.3→1（"破壳"）
+ *   - 新边：stroke-dasharray 由 0→长度（"绘制"）
+ *   - 已有节点/边保留位置（基于 ID 复用）
+ *
+ * 配色：12 种实体类型固定调色板
  */
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import {
   Network, ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Loader2,
   Maximize2, Minimize2, Hash, Snowflake, Play,
 } from 'lucide-react'
-import api from '../services/api'
-import { GraphCanvas } from './graph/GraphCanvas'
-import { useD3Force, type ForceNode, type ForceEdge } from './graph/useD3Force'
-import { FilterBar, applyFilter } from './graph/FilterBar'
-import { NodeDetailPanel } from './graph/NodeDetailPanel'
-import { getPalette } from './graph/palette'
+import api from '../../services/api'
+import { useD3Force, type ForceNode, type ForceEdge } from './useD3Force'
+import { FilterBar, applyFilter } from './FilterBar'
+import { NodeDetailPanel } from './NodeDetailPanel'
+import { GraphCanvas } from './GraphCanvas'
+import { getPalette } from './palette'
 import {
   useGraphNodes,
   useGraphEdges,
@@ -40,42 +40,31 @@ import {
   usePipelineStore,
   type GraphNodeData,
   type GraphEdgeData,
-} from '../store/pipeline'
+} from '../../store/pipeline'
+import { renderEdge, countSelfLoops, renderSelfLoopBadge, type SimNode, type SimEdge } from './edgeHelpers'
 
-/** The OLD component's prop shape. Re-declared here so the shim is self-contained. */
-export interface RealtimeKnowledgeGraphV3Props {
+const DEFAULT_WIDTH = 900
+
+/** Props the consumers use to drop-in replace RealtimeKnowledgeGraph. */
+export interface RealtimeGraphProps {
   runId?: string | null
   live?: boolean
   height?: number
   title?: string
-  /** Fallback data used when runId is null (Dashboard / preview) */
+  /** Fallback data when runId is null (Dashboard / preview) */
   fallback?: { nodes: GraphNodeData[]; edges: GraphEdgeData[] } | null
-  /**
-   * SSE 兜底轮询: When > 0, every N ms re-pull graph-snapshot.
-   * Defaults to 0 (SSE-only). Mirrors the OLD component's behavior.
-   */
+  /** SSE fallback polling: when > 0, every N ms re-pull graph-snapshot. */
   refreshIntervalMs?: number
-  /** Optional: click callback. The OLD component didn't export one, but
-   *  consumers can opt in here. */
   onNodeClick?: (nodeId: string, node: GraphNodeData) => void
 }
 
-const DEFAULT_WIDTH = 900
-
 /**
- * RealtimeKnowledgeGraph_v3
- *
- * A thin wrapper that:
- *   1. Reads graph data from the same store the old component used
- *      (useGraphNodes / useGraphEdges / useGraphPhase)
- *   2. Hydrates the store on mount (runId -> graph-snapshot REST)
- *   3. Pipes store data into useD3Force (with settle + freeze)
- *   4. Mounts GraphCanvas + FilterBar + NodeDetailPanel
+ * RealtimeGraph — merged canonical implementation (v3 d3-force + v1 edgeHelpers + N2 fix).
  */
-export default function RealtimeKnowledgeGraph_v3({
+export default function RealtimeGraph({
   runId, live = true, height = 480, title = '实时知识图谱', fallback = null,
   refreshIntervalMs = 0, onNodeClick,
-}: RealtimeKnowledgeGraphV3Props) {
+}: RealtimeGraphProps) {
   const [hovered, setHovered] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -85,7 +74,7 @@ export default function RealtimeKnowledgeGraph_v3({
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState<string>('')
 
-  // ---- Same data source the OLD component used ----
+  // ---- Same data source the v3 component used ----
   const storeGraphNodes = useGraphNodes()
   const storeGraphEdges = useGraphEdges()
   const graphPhase = useGraphPhase()
@@ -110,14 +99,7 @@ export default function RealtimeKnowledgeGraph_v3({
     return []
   }, [storeGraphEdges, fallback])
 
-  // ---- Map store/fallback nodes to ForceNode shape (with stable positions) ----
-  // We maintain a "position pool" keyed by id. New nodes are seeded with
-  // deterministic x/y in a circle; existing nodes reuse the same object
-  // reference so d3-force preserves x/y/vx/vy across renders.
-  //
-  // The useMemo deps are based on `nodeIdSignature` (a string of ids), NOT on
-  // the rawNodes array ref, so a store ref change that doesn't add new ids
-  // returns the same memoized result.
+  // ---- Position pool keyed by id ----
   const positionPoolRef = useRef<Map<string, ForceNode>>(new Map())
   const edgePoolRef = useRef<Map<string, ForceEdge>>(new Map())
 
@@ -139,13 +121,10 @@ export default function RealtimeKnowledgeGraph_v3({
       const id = String(node.id)
       const existing = pool.get(id)
       if (existing) {
-        // Reuse the same object reference so d3-force keeps x/y/vx/vy.
-        // Refresh mutable fields from the latest store payload.
         const refreshed = { ...existing, ...(node as any) } as ForceNode
         pool.set(id, refreshed)
         return refreshed
       }
-      // Brand new node — seed with deterministic angle around center.
       const angle = n > 0 ? (i / n) * Math.PI * 2 - Math.PI / 2 : 0
       const radius = 180 * (0.6 + ((i * 7) % 5) * 0.1)
       const fresh: ForceNode = {
@@ -160,7 +139,6 @@ export default function RealtimeKnowledgeGraph_v3({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeIdSignature, W, H])
 
-  // ---- Map store/fallback edges to ForceEdge shape (id-pooled) ----
   const edges: ForceEdge[] = useMemo(() => {
     const pool = edgePoolRef.current
     return rawEdges.map((e, i) => {
@@ -184,7 +162,6 @@ export default function RealtimeKnowledgeGraph_v3({
   }, [edgeIdSignature])
 
   // ---- Reset position pool on runId change ----
-  // Prevents stale id positions from a previous run leaking into a new run.
   useEffect(() => {
     positionPoolRef.current.clear()
     edgePoolRef.current.clear()
@@ -193,18 +170,19 @@ export default function RealtimeKnowledgeGraph_v3({
     setZoom(1)
   }, [runId])
 
-  // ---- Filter: type chips + search ----
+  // ---- Filter ----
   const visibleIds = useMemo(() => applyFilter(nodes, selectedTypes, search), [nodes, selectedTypes, search])
 
   // ---- d3-force simulation (with settle + freeze) ----
-  const [tick, setTick] = useState(0)  // forces re-render on each animation frame
+  // N2 fix: useD3Force 内部 simulation 持久化, polling tick 不再 cancel+rebuild 300 iter O(n²)
+  const [tick, setTick] = useState(0)
   const { settled, freeze, unfreeze } = useD3Force(nodes, edges, {
     width: W, height: H,
     enabled: nodes.length > 0,
     onTick: () => setTick((t) => (t + 1) % 1_000_000),
   })
 
-  // ---- Stats & stage label (mirrors old behavior) ----
+  // ---- Stats & stage label ----
   useEffect(() => {
     if (graphPhase === 'completed') {
       setStageLabel('图谱构建完成')
@@ -221,12 +199,9 @@ export default function RealtimeKnowledgeGraph_v3({
     }
   }, [status, rawNodes.length])
 
-  // ---- Mount-time REST hydrate (seed store + local state) ----
+  // ---- Mount-time REST hydrate ----
   useEffect(() => {
-    if (!runId) {
-      // No-op when fallback already in effect
-      return
-    }
+    if (!runId) return
     let cancelled = false
     ;(async () => {
       try {
@@ -243,7 +218,7 @@ export default function RealtimeKnowledgeGraph_v3({
     return () => { cancelled = true }
   }, [runId, seedGraphAction])
 
-  // ---- SSE 兜底轮询 (mirrors old component) ----
+  // ---- SSE 兜底轮询 ----
   const seedGraphRef = useRef(seedGraphAction)
   useEffect(() => { seedGraphRef.current = seedGraphAction }, [seedGraphAction])
 
@@ -279,7 +254,7 @@ export default function RealtimeKnowledgeGraph_v3({
     }
   }, [onNodeClick, rawNodes])
 
-  // ---- Selected node (resolved back to the latest store node) ----
+  // ---- Selected node ----
   const selectedNode: ForceNode | null = useMemo(() => {
     if (!selectedId) return null
     return nodes.find((n) => n.id === selectedId) ?? null
@@ -289,14 +264,11 @@ export default function RealtimeKnowledgeGraph_v3({
     ? 'fixed inset-4 z-50 card p-0 flex flex-col bg-slate-950 shadow-2xl'
     : 'card p-0 flex flex-col'
 
-  // Filter to renderable nodes/edges (filter dims via opacity in the canvas, but
-  // we also pass the visible set so that deeply hidden ones can be culled)
-  void visibleIds  // (currently used by GraphCanvas via opacity logic; we just need to compute it so the chips are reactive)
-  void tick        // (re-render trigger)
+  void visibleIds
+  void tick
 
   return (
     <div className={containerCls} style={maximized ? {} : { minHeight: height + 80 }}>
-      {/* Header */}
       <div className="flex items-center justify-between p-3 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-fuchsia-500/20 to-violet-500/20 inline-flex items-center justify-center text-fuchsia-400">
@@ -322,21 +294,21 @@ export default function RealtimeKnowledgeGraph_v3({
               className="btn-ghost h-7 w-7 p-0"
               onClick={() => setShowLabels((v) => !v)}
               title="标签"
-              data-testid="v3-toggle-labels"
+              data-testid="realtime-graph-toggle-labels"
             >
               {showLabels ? <Eye size={12} /> : <EyeOff size={12} />}
             </button>
             <button
               className="btn-ghost h-7 w-7 p-0"
               onClick={() => setZoom((z) => Math.min(2, z + 0.2))}
-              data-testid="v3-zoom-in"
+              data-testid="realtime-graph-zoom-in"
             >
               <ZoomIn size={12} />
             </button>
             <button
               className="btn-ghost h-7 w-7 p-0"
               onClick={() => setZoom((z) => Math.max(0.5, z - 0.2))}
-              data-testid="v3-zoom-out"
+              data-testid="realtime-graph-zoom-out"
             >
               <ZoomOut size={12} />
             </button>
@@ -344,7 +316,7 @@ export default function RealtimeKnowledgeGraph_v3({
               className="btn-ghost h-7 w-7 p-0"
               onClick={() => (settled ? unfreeze() : freeze())}
               title={settled ? '解冻布局' : '冻结布局'}
-              data-testid="v3-freeze-toggle"
+              data-testid="realtime-graph-freeze-toggle"
             >
               {settled ? <Play size={12} /> : <Snowflake size={12} />}
             </button>
@@ -352,7 +324,7 @@ export default function RealtimeKnowledgeGraph_v3({
               className="btn-ghost h-7 w-7 p-0"
               onClick={() => setZoom(1)}
               title="重置"
-              data-testid="v3-reset"
+              data-testid="realtime-graph-reset"
             >
               <RotateCcw size={12} />
             </button>
@@ -360,7 +332,7 @@ export default function RealtimeKnowledgeGraph_v3({
               className="btn-ghost h-7 w-7 p-0"
               onClick={() => setMaximized((v) => !v)}
               title="最大化"
-              data-testid="v3-maximize"
+              data-testid="realtime-graph-maximize"
             >
               {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
             </button>
@@ -368,7 +340,6 @@ export default function RealtimeKnowledgeGraph_v3({
         </div>
       </div>
 
-      {/* Filter bar */}
       <FilterBar
         nodes={nodes}
         selectedTypes={selectedTypes}
@@ -377,11 +348,10 @@ export default function RealtimeKnowledgeGraph_v3({
         onSearchChange={setSearch}
       />
 
-      {/* Canvas + side panel container */}
       <div
         className="relative overflow-hidden border-t border-white/5 flex-1"
         style={{ minHeight: height, background: '#0B1020' }}
-        data-testid="v3-graph-container"
+        data-testid="realtime-graph-container"
       >
         <GraphCanvas
           nodes={nodes}
@@ -398,7 +368,6 @@ export default function RealtimeKnowledgeGraph_v3({
           onClick={handleClick}
         />
 
-        {/* Empty state */}
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
             <Network size={36} className="mb-2 opacity-30" />
@@ -406,7 +375,6 @@ export default function RealtimeKnowledgeGraph_v3({
           </div>
         )}
 
-        {/* Entity type legend (palette.ts colors) */}
         {nodes.length > 0 && (
           <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1.5 pointer-events-none">
             {uniqueTypes(rawNodes).slice(0, 8).map((type) => {
@@ -417,10 +385,7 @@ export default function RealtimeKnowledgeGraph_v3({
                   key={type}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-900/80 backdrop-blur-sm"
                 >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: p.ring }}
-                  />
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.ring }} />
                   <span className="text-slate-200">{type}</span>
                   <span className="text-slate-400 font-mono">{count}</span>
                 </span>
@@ -429,7 +394,6 @@ export default function RealtimeKnowledgeGraph_v3({
           </div>
         )}
 
-        {/* Detail slide-over */}
         <NodeDetailPanel
           node={selectedNode}
           edges={edges}
@@ -440,7 +404,6 @@ export default function RealtimeKnowledgeGraph_v3({
   )
 }
 
-/** Pure helper: unique node types in encounter order. */
 function uniqueTypes(nodes: GraphNodeData[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -454,5 +417,6 @@ function uniqueTypes(nodes: GraphNodeData[]): string[] {
   return out
 }
 
-// Re-export ForceNode / ForceEdge so consumers can import from one place
-export type { ForceNode, ForceEdge } from './graph/useD3Force'
+// Re-export pure helpers for testability / advanced consumers
+export { renderEdge, countSelfLoops, renderSelfLoopBadge }
+export type { SimNode, SimEdge }

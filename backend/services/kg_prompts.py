@@ -76,6 +76,11 @@ DEFAULT_ENTITY_TYPE_FALLBACK: str = "Concept"
 MAX_ENTITIES_HINT: int = 25
 MAX_RELATIONS_HINT: int = 40
 
+# Agent 3A v2 N-fix: 软降级桶（fallback entities）的独立截断上限。
+# 与 MAX_ENTITIES_HINT 不同, fallback 桶保留 whitelist 之外被软降级
+# 的 entity 名称/类型线索; 太多 fallback 会污染下游命名空间, 默认 10.
+MAX_FALLBACK_ENTITIES: int = 10
+
 # KG-OPT-P2 [P2-1-prompt-template]: 角色/泛型跳过提示，仅用于 prompt 注入。
 # 中文只保留多字精确后缀（避免 "一般" / "常见" 这种高频 bigram 误伤正常实体）。
 # 英文只保留与中文一一对应的精确后缀，删除 "directors" 等噪声大的项。

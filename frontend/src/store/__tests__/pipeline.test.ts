@@ -252,4 +252,78 @@ describe('usePipelineStore', () => {
     expect(st.yearAdvanced).toMatchObject({ year: 2, rounds_added: 12 })
     expect(st.status).toBe('completed')
   })
+
+  // ---- Agent 3A v2 N1/N2 — Bug #1 KG 修复验证 ----
+
+  it('appendGraphNode 满容量时驱逐最低 density 节点', () => {
+    usePipelineStore.setState({ graphCapacity: 1000 } as any)
+    const s = usePipelineStore.getState()
+    for (let i = 0; i < 500; i++) s.appendGraphNode({ id: `lo-${i}`, signal_density: 0.1 } as any)
+    for (let i = 0; i < 500; i++) s.appendGraphNode({ id: `mid-${i}`, signal_density: 0.5 } as any)
+    for (let i = 0; i < 500; i++) s.appendGraphNode({ id: `hi-${i}`, signal_density: 0.9 } as any)
+    const ids = usePipelineStore.getState().graphNodes.map((n) => n.id)
+    expect(ids.filter((id: string) => id.startsWith('lo-'))).toHaveLength(0)
+    expect(ids.filter((id: string) => id.startsWith('hi-'))).toHaveLength(500)
+    expect((usePipelineStore.getState().graphProgress as any).evicted).toBeGreaterThan(0)
+  })
+
+  it('appendGraphNode 未满时直接插入并维持降序', () => {
+    const s = usePipelineStore.getState()
+    s.appendGraphNode({ id: 'a', signal_density: 0.3 } as any)
+    s.appendGraphNode({ id: 'b', signal_density: 0.9 } as any)
+    s.appendGraphNode({ id: 'c', signal_density: 0.6 } as any)
+    const ids = usePipelineStore.getState().graphNodes.map((n) => n.id)
+    expect(ids).toEqual(['b', 'c', 'a'])
+  })
+
+  it('appendGraphNode incoming 密度不足时 overflow++', () => {
+    usePipelineStore.setState({ graphCapacity: 1000 } as any)
+    const s = usePipelineStore.getState()
+    for (let i = 0; i < 1000; i++) {
+      s.appendGraphNode({ id: `h-${i}`, signal_density: 0.9 } as any)
+    }
+    s.appendGraphNode({ id: 'low', signal_density: 0.1 } as any)
+    expect((usePipelineStore.getState().graphProgress as any).overflow).toBe(1)
+    expect(usePipelineStore.getState().graphNodes.find((n) => n.id === 'low')).toBeUndefined()
+  })
+
+  it('setGraphSnapshot_evicts: 一次填 1500 节点 -> 截断到 cap 并按 density 排序 (N1)', () => {
+    usePipelineStore.setState({ graphCapacity: 1000 } as any)
+    const s = usePipelineStore.getState()
+    const nodes = Array.from({ length: 1500 }, (_, i) => ({
+      id: `n-${i}`,
+      signal_density: i < 500 ? 0.1 : i < 1000 ? 0.5 : 0.9,
+    })) as any
+    s.setGraphSnapshot(nodes, [], undefined as any)
+    const state = usePipelineStore.getState()
+    expect(state.graphNodes).toHaveLength(1000)
+    const densities = state.graphNodes.map((n) => (n as any).signal_density ?? 0.5)
+    expect(densities.every((d: number) => d >= 0.5)).toBe(true)
+    expect((state.graphProgress as any).evicted).toBe(500)
+  })
+
+  it('setGraphSnapshot 不超过 cap 时全收', () => {
+    const s = usePipelineStore.getState()
+    const nodes = Array.from({ length: 500 }, (_, i) => ({
+      id: `n-${i}`,
+      signal_density: 0.5,
+    })) as any
+    s.setGraphSnapshot(nodes, [], undefined as any)
+    expect(usePipelineStore.getState().graphNodes).toHaveLength(500)
+    expect((usePipelineStore.getState().graphProgress as any).evicted).toBe(0)
+  })
+
+  it('setGraphCapacity 收缩时按 density evict', () => {
+    const s = usePipelineStore.getState()
+    const nodes = Array.from({ length: 800 }, (_, i) => ({
+      id: `n-${i}`,
+      signal_density: i / 1000,
+    })) as any
+    s.setGraphSnapshot(nodes, [], undefined as any)
+    s.setGraphCapacity(200)
+    const state = usePipelineStore.getState()
+    expect(state.graphNodes).toHaveLength(200)
+    const minDensity = Math.min(...state.graphNodes.map((n) => (n as any).signal_density ?? 0))
+    expect(minDensity).toBeGreaterThanOrEqual(0.6)
+  })
 })

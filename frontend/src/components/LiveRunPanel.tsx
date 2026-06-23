@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePipelineStore } from '../store/pipeline'
-import RealtimeKnowledgeGraph from './RealtimeKnowledgeGraph'
+import RealtimeKnowledgeGraph from './graph/RealtimeGraph'
 import SimulationNetworkGraph from './SimulationNetworkGraph'
 import RoundTimeline from './RoundTimeline'
 import StageCards from './StageCards'

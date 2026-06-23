@@ -16,8 +16,8 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import React from 'react'
-import { renderEdge, countSelfLoops, renderSelfLoopBadge } from '../RealtimeKnowledgeGraph'
-import type { SimNode, SimEdge } from '../RealtimeKnowledgeGraph'
+import { renderEdge, countSelfLoops, renderSelfLoopBadge } from '../graph/RealtimeGraph'
+import type { SimNode, SimEdge } from '../graph/RealtimeGraph'
 
 // 测试用最小节点 / 边
 function makeNode(id: string, x = 100, y = 100, size = 12): SimNode {

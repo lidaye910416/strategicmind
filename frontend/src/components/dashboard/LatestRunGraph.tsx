@@ -20,7 +20,7 @@ import { motion } from 'framer-motion'
 import { Network, AlertCircle } from 'lucide-react'
 import api from '../../services/api'
 import { DASHBOARD } from '../../i18n/zh'
-import RealtimeKnowledgeGraph from '../RealtimeKnowledgeGraph'
+import RealtimeKnowledgeGraph from '../graph/RealtimeGraph'
 
 interface Run {
   run_id: string
