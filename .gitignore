@@ -21,3 +21,14 @@ data/reports/run_*.md.meta.json
 # Vite dev cache
 .vite/
 frontend/node_modules/.vite/
+
+# Frontend deps (also tracked in index from a historical `git add -A` — see
+# docs/decisions/ when one exists; not removing 17k entries in this cleanup).
+frontend/node_modules/
+
+# Local secrets
+.env
+
+# Ad-hoc verification scripts (not part of test suite)
+frontend/verify_*.mjs
+frontend/_*.mjs
