@@ -115,6 +115,31 @@ def _first_target(action: StrategicAction) -> Optional[str]:
     return ids[0] if ids else None
 
 
+def _get_target_positions(action: StrategicAction) -> Dict[str, float]:
+    """Return LLM-supplied target_positions for ``action``.
+
+    The v2 LLM adapter (LoopEngineLLMAdapter) attaches the LLM's
+    ``target_positions`` (topic -> position in [-1, 1]) as an ad-hoc
+    attribute on the StrategicAction, with a metadata-dict fallback
+    if the dataclass is frozen. Returns an empty dict when absent so
+    callers can default to legacy hardcoded deltas.
+    """
+    raw = getattr(action, "target_positions", None)
+    if raw:
+        try:
+            return {str(k): float(v) for k, v in raw.items()}
+        except (TypeError, ValueError):
+            pass
+    md = _safe_metadata(action)
+    fallback = md.get("target_positions")
+    if fallback:
+        try:
+            return {str(k): float(v) for k, v in fallback.items()}
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # Profiles — one per BusinessActionType
 # ---------------------------------------------------------------------------
@@ -210,9 +235,16 @@ def _pivot_strategy(state: WorldState, action: StrategicAction) -> None:
         v = float(state.budget_ledger.get(k, 0.0) or 0.0)
         transfer += v * abs(delta)
     transfer = round(transfer, 4)
+    # Capture the divisor BEFORE the loop — re-evaluating sum() after
+    # each from_key mutation shrinks the divisor and breaks conservation
+    # (Bug F15).
+    divisor = max(
+        sum(float(state.budget_ledger.get(x, 0.0) or 0.0) for x in from_keys),
+        1e-9,
+    )
     for k in from_keys:
         v = float(state.budget_ledger.get(k, 0.0) or 0.0)
-        state.budget_ledger[k] = round(v - transfer * (v / max(sum(float(state.budget_ledger.get(x, 0.0) or 0.0) for x in from_keys), 1e-9)), 4)
+        state.budget_ledger[k] = round(v - transfer * (v / divisor), 4)
     for k in to_keys:
         v = float(state.budget_ledger.get(k, 0.0) or 0.0)
         state.budget_ledger[k] = round(v + transfer * (1.0 / max(len(to_keys), 1)), 4)
@@ -315,15 +347,38 @@ def _leak_information(state: WorldState, action: StrategicAction) -> None:
 
 
 def _make_statement(state: WorldState, action: StrategicAction) -> None:
-    """MAKE_STATEMENT — trust + position delta only (no structural slice)."""
+    """MAKE_STATEMENT — trust + position delta only (no structural slice).
+
+    If the LLM supplied ``target_positions`` (topic -> position in
+    [-1, 1]), each value is applied to ``state.beliefs[actor].positions[topic]``
+    (clamped). If absent, falls back to the legacy hardcoded
+    ``position_delta=0.05`` / ``confidence_delta=0.02``.
+    """
     actor = action.actor_id
     target_vec = state.beliefs.setdefault(actor, _empty_belief())
-    position_delta = 0.05
-    confidence_delta = 0.02
+    target_positions = _get_target_positions(action)
     topic = (action.metadata or {}).get("topic", "general")
-    pos = target_vec.positions.get(topic, 0.0) + position_delta
-    target_vec.positions[topic] = max(-1.0, min(1.0, pos))
-    target_vec.confidence[topic] = min(1.0, target_vec.confidence.get(topic, 0.5) + confidence_delta)
+    if target_positions:
+        # Apply LLM-supplied positions, clamped to [-1, 1].
+        for t, raw in target_positions.items():
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            target_vec.positions[t] = max(-1.0, min(1.0, value))
+            # Light confidence bump per touched topic; mirrors legacy 0.02.
+            target_vec.confidence[t] = min(
+                1.0, target_vec.confidence.get(t, 0.5) + 0.02
+            )
+    else:
+        # Legacy behavior: single hardcoded delta on the metadata topic.
+        position_delta = 0.05
+        confidence_delta = 0.02
+        pos = target_vec.positions.get(topic, 0.0) + position_delta
+        target_vec.positions[topic] = max(-1.0, min(1.0, pos))
+        target_vec.confidence[topic] = min(
+            1.0, target_vec.confidence.get(topic, 0.5) + confidence_delta
+        )
     state.add_event({
         "type": BusinessActionType.MAKE_STATEMENT.value,
         "actor": actor,
@@ -338,12 +393,30 @@ def _brief_board(state: WorldState, action: StrategicAction) -> None:
     The board action is logged as an event; belief/confidence on the
     actor bumps a tiny amount to reflect self-reinforcement of the
     public position.
+
+    If the LLM supplied ``target_positions`` (topic -> position in
+    [-1, 1]), apply them to ``state.beliefs[actor].positions[topic]``
+    (clamped) and bump confidence on each touched topic by the legacy
+    0.01 amount. Otherwise, fall back to the legacy single
+    ``board_confidence`` bump.
     """
     actor = action.actor_id
     target_vec = state.beliefs.setdefault(actor, _empty_belief())
-    target_vec.confidence["board_confidence"] = min(
-        1.0, target_vec.confidence.get("board_confidence", 0.5) + 0.01
-    )
+    target_positions = _get_target_positions(action)
+    if target_positions:
+        for t, raw in target_positions.items():
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            target_vec.positions[t] = max(-1.0, min(1.0, value))
+            target_vec.confidence[t] = min(
+                1.0, target_vec.confidence.get(t, 0.5) + 0.01
+            )
+    else:
+        target_vec.confidence["board_confidence"] = min(
+            1.0, target_vec.confidence.get("board_confidence", 0.5) + 0.01
+        )
     state.add_event({
         "type": BusinessActionType.BRIEF_BOARD.value,
         "actor": actor,

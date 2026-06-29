@@ -31,7 +31,7 @@ const defaultProps = {
   params: {
     years: 3,
     time_step: 'quarter' as const,
-    departments: ['销售', '技术'],
+    departments: ['销售', '技术'] as ('市场' | '产品' | '技术' | '销售' | '财务' | 'HR' | '法务' | '运营')[],
     external_factors: [],
     n_stakeholders: 12,
     emergence_policy: 'moderate' as const,

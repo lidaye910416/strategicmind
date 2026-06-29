@@ -84,14 +84,17 @@ describe('usePipelineStore', () => {
     expect(nodes[0].label).toBe('A')  // 保留先来位置
   })
 
-  it('appendSimRound 同 round 去重', () => {
+  it('appendSimRound 同 round 去重 + first-wins dedup (F21)', () => {
     const { appendSimRound } = usePipelineStore.getState()
-    appendSimRound({ round: 1, actions_count: 5 })
-    appendSimRound({ round: 1, actions_count: 99 })  // 同 round
+    appendSimRound({ round: 1, actions_count: 5, belief_updates_count: 0 } as any)
+    appendSimRound({ round: 1, actions_count: 99 } as any)  // 同 round, first wins
     appendSimRound({ round: 2, actions_count: 3 })
     const rs = usePipelineStore.getState().simRounds
     expect(rs).toHaveLength(2)
-    expect(rs[0].actions_count).toBe(5)  // 保留先来
+    // F21: 重复 round 的 payload 是 first-wins dedup — 先到的 actions_count=5 保留
+    expect(rs[0].actions_count).toBe(5)
+    // belief_updates_count 是先到的字段, 保留
+    expect(rs[0].belief_updates_count).toBe(0)
     expect(rs.map((r) => r.round).sort((a, b) => a - b)).toEqual([1, 2])
   })
 

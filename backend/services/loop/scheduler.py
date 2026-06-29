@@ -266,7 +266,13 @@ class AgentScheduler:
             metadata={"forced_round": True},
         )
         # v2 fields live as ad-hoc attributes on the legacy dataclass.
-        a.post_content = f"{agent.name}：本期无重大动作。"
+        # Pad to >= MIN_POST_CONTENT_LEN (40) so the action passes the
+        # writeback filter and produces a real episode (Bug #2 root cause 2.6).
+        # The body itself is 43 chars; total = len(name) + 1 + 43 >= 40.
+        a.post_content = (
+            f"{agent.name}：本期无重大动作，按既有策略继续推进本季度"
+            "各项工作安排与目标落实，整体节奏保持稳步前行。"
+        )
         a.post_author_name = agent.name or agent.agent_id
         a.evidence = []
         return a

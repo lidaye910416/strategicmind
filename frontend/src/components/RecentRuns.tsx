@@ -26,29 +26,14 @@ import { APP_ROUTES, RECENT_RUNS } from '../i18n/zh'
 import { formatErrorMessage } from '../lib/formatError'
 import { flags } from '../lib/featureFlags'
 import { selectAllByRecency } from '../lib/runFilters'
+import type { Run } from '../types/run'
 
-interface ConfigSummary {
-  years: number | null
-  time_step: string | null
-  departments: string[]
-  departments_count: number
-  external_factors_count: number
-  report_style: string | null
-  simulation_hours: number | null
-}
+// ConfigSummary is intentionally not redeclared locally; consumers
+// that need the strict shape cast at the use site:
+//   const summary = run.config_summary as unknown as ConfigSummary
+// Keeping a single source of truth in types/run.ts.
 
-interface Run {
-  run_id: string
-  status: string
-  progress?: number
-  completed_stages?: string[]
-  current_stage?: string
-  started_at?: number
-  updated_at?: number
-  config_summary?: ConfigSummary
-  // 兼容老接口（无 config_summary 时退化用）
-  config?: { report_style?: string; simulation_hours?: number; user_params?: any }
-}
+
 
 const STATUS_STYLES: Record<string, { dot: string; bar: string; bg: string; label: string; icon: any; color: string }> = {
   completed: { dot: 'bg-emerald-500', bar: 'bg-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/30', label: '已完成', icon: Check, color: 'text-emerald-600' },

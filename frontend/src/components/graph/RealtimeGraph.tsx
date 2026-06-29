@@ -199,6 +199,21 @@ export default function RealtimeGraph({
     }
   }, [status, rawNodes.length])
 
+  // ---- Fallback hydrate when runId=null: seed store so other consumers ----
+  // ---- (e.g. NetworkPanel reading useGraphNodes()) see fallback data ----
+  // ---- F8 fix: previously fallback was only consumed locally via useMemo, ----
+  // ---- leaving the global store empty when runId is null. ----
+  useEffect(() => {
+    // Only seed from fallback when there's no live run (runId = null/undefined).
+    if (runId) return
+    if (!fallback) return
+    // Don't re-seed if the store already has data (idempotent across remounts
+    // and avoids clobbering real SSE data on subsequent runId transitions).
+    const currentNodes = usePipelineStore.getState().graphNodes
+    if (currentNodes.length > 0) return
+    seedGraphAction(fallback.nodes, fallback.edges)
+  }, [runId, fallback, seedGraphAction])
+
   // ---- Mount-time REST hydrate ----
   useEffect(() => {
     if (!runId) return

@@ -9,6 +9,11 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act, cleanup } from '@testing-library/react'
 import RealtimeGraph from '../RealtimeGraph'
 
+// `global` is a Node/browser builtin; in jsdom + strict TS settings
+// it is not always present in the type lib. Declare a minimal local
+// alias to satisfy tsc without pulling in @types/node.
+const g: any = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : undefined)
+
 // mock zustand store — 用一个可变对象代替真实 store
 const mockState: any = {
   graphNodes: [],
@@ -56,18 +61,18 @@ describe('RealtimeGraph N2 — force effect 解绑 polling tick', () => {
     mockState.graphProgress = {}
     mockState.setGraphCapacity.mockClear()
     rafCount = 0
-    origRAF = global.requestAnimationFrame
-    origCAF = global.cancelAnimationFrame
-    global.requestAnimationFrame = vi.fn(() => {
+    origRAF = g.requestAnimationFrame
+    origCAF = g.cancelAnimationFrame
+    g.requestAnimationFrame = vi.fn(() => {
       rafCount += 1
       return rafCount
     }) as any
-    global.cancelAnimationFrame = vi.fn() as any
+    g.cancelAnimationFrame = vi.fn() as any
   })
 
   afterEach(() => {
-    global.requestAnimationFrame = origRAF
-    global.cancelAnimationFrame = origCAF
+    g.requestAnimationFrame = origRAF
+    g.cancelAnimationFrame = origCAF
   })
 
   test('force_effect_does_not_rebind_on_tick: 节点引用变化不会触发指数级 rAF 增长', async () => {

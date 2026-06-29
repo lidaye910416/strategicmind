@@ -143,8 +143,12 @@ class SimClock:
 
     @property
     def month_index(self) -> int:
-        """0-based month within the current fiscal year, ``0..11``."""
-        return (self.day_index // DAYS_PER_MONTH) % (DAYS_PER_MONTH // MONTHS_PER_QUARTER * MONTHS_PER_QUARTER)
+        """0-based month within the current fiscal year, ``0..11``.
+
+        Cycles 0..11 across years — e.g. day 0 -> 0, day 359 -> 11,
+        day 360 -> 0 (year 2), day 720 -> 0 (year 3).
+        """
+        return (self.day_index // DAYS_PER_MONTH) % (QUARTERS_PER_YEAR * MONTHS_PER_QUARTER)
 
     @property
     def quarter(self) -> int:

@@ -107,6 +107,12 @@ export interface GraphProgress {
   new_relations?: GraphEdgeData[]
   current_doc?: string
   error?: string
+  /** 累计被驱逐的节点数（signal_density 最低者） */
+  evicted?: number
+  /** 累计因节点缺失而被丢弃的边数 */
+  dropped_edges?: number
+  /** 累计因容量满而被丢弃的节点数（incoming density ≤ 最低 density） */
+  overflow?: number
 }
 
 /** 推演单轮（SimulationLoop 每轮 emit 的快照） */
@@ -506,6 +512,68 @@ function _closeSSE(get: () => PipelineState, set: (partial: Partial<PipelineStat
   }
 }
 
+// ============================================================================
+// 图谱驱逐环 helper (Cluster A 统一实现)
+//
+// 设计目标: 让 setGraphSnapshot / setGraphCapacity / seedGraph 三处
+// 共享同一份 "node eviction + edge filter" 逻辑, 避免三处独立实现漂移.
+//
+// 输入: nodes 数组 + edges 数组 + 容量 cap
+// 输出: { acceptedNodes, acceptedEdges, evicted, droppedEdges }
+//
+// 规则:
+//   1. nodes 按 signal_density 降序排序, 截断到 cap (F19 修复: 没有 evict 时
+//      evicted 必须 = 0, 之前切 path 错误会重复计数)
+//   2. 节点 id 为 nullish (null/undefined/空串) 的会被静默丢弃 (F18 修复: 之前
+//      String(null) === "null" 会污染 Set)
+//   3. acceptedIds 用 node.id 原始值构建 (不再 String-coerce, 避免 "12" vs 12 不匹配)
+//   4. acceptedEdges 只保留 source AND target 都在 acceptedIds 集合里的边
+// ============================================================================
+function _applyEviction(
+  nodes: GraphNodeData[],
+  edges: GraphEdgeData[],
+  cap: number,
+): {
+  acceptedNodes: GraphNodeData[]
+  acceptedEdges: GraphEdgeData[]
+  evicted: number
+  droppedEdges: number
+} {
+  // 1. 过滤 nullish id 节点 (Cluster A F18 修复: 静默丢弃而非 String()-coerce)
+  const validNodes = nodes.filter((n) => n.id != null && n.id !== '')
+
+  // 2. 按 signal_density 降序排序, 截断到 cap
+  let acceptedNodes = validNodes
+  let evicted = 0
+  if (validNodes.length > cap) {
+    acceptedNodes = [...validNodes]
+      .sort(
+        (a, b) =>
+          ((b as any).signal_density ?? 0.5) -
+          ((a as any).signal_density ?? 0.5),
+      )
+      .slice(0, cap)
+    evicted = validNodes.length - acceptedNodes.length
+  }
+
+  // 3. 构造 accepted id 集合 (用原始 id 字符串化, 但已经过滤 nullish, 所以安全)
+  const acceptedIds = new Set(acceptedNodes.map((n) => String(n.id)))
+
+  // 4. filter edges: source AND target 都要在 acceptedIds
+  //    同时过滤 source/target 为 nullish 的 dangling edge
+  const acceptedEdges = edges.filter(
+    (e) => {
+      const src = (e as any).source
+      const tgt = (e as any).target
+      if (src == null || tgt == null || src === '' || tgt === '') return false
+      return acceptedIds.has(String(src)) && acceptedIds.has(String(tgt))
+    },
+  )
+  const droppedEdges = edges.length - acceptedEdges.length
+
+  return { acceptedNodes, acceptedEdges, evicted, droppedEdges }
+}
+
 export const usePipelineStore = create<PipelineState>((set, get) => ({
   runId: null,
   status: 'idle',
@@ -797,10 +865,28 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   // ---- 图谱 / 推演回合 actions（FE2/FE3 SSE + REST 消费方） ----
   /** 兼容旧 API：FE2 RealtimeKnowledgeGraph 用 seedGraph(rawNodes, rawEdges) */
   seedGraph: (nodes, edges) => {
-    set({
-      graphNodes: [...nodes],
-      graphEdges: [...edges],
-      graphProgress: { phase: 'completed', nodes: nodes.length, edges: edges.length },
+    // Cluster A F1: seedGraph 之前完全 bypass eviction, 一次塞 1500+ 节点会爆 store.
+    // 这里走与 setGraphSnapshot / setGraphCapacity 相同的 _applyEviction 路径,
+    // 保证 1000 cap + 无 dangling edges 是不变式.
+    set((s) => {
+      const cap = s.graphCapacity ?? MAX_GRAPH_NODES
+      const { acceptedNodes, acceptedEdges, evicted, droppedEdges } = _applyEviction(
+        nodes,
+        edges,
+        cap,
+      )
+      return {
+        graphNodes: acceptedNodes,
+        graphEdges: acceptedEdges,
+        graphProgress: {
+          ...s.graphProgress,
+          phase: 'completed',
+          nodes: acceptedNodes.length,
+          edges: acceptedEdges.length,
+          evicted: ((s.graphProgress as any).evicted ?? 0) + evicted,
+          dropped_edges: ((s.graphProgress as any).dropped_edges ?? 0) + droppedEdges,
+        },
+      }
     })
   },
   setGraphSnapshot: (nodes, edges, progress) => {
@@ -808,37 +894,37 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       // Agent 3A v2 N1 修复: setGraphSnapshot 必须走与 appendGraphNode 一致的
       // signal-density eviction, 否则 SSE snapshot / REST fallback 一次塞 1000+ 节点,
       // 1000 cap 形同虚设. 详见 docs/bugs/01-kg-node-explosion.md §2.6.
+      //
+      // Phase 4A 后续修复: evicted nodes 后, edges 仍可能引用这些 node, 喂给
+      // d3-force 会 throw "node not found". 这里同步 filter edges, 只保留
+      // source + target 都在 surviving nodes 里的边.
       const cap = s.graphCapacity ?? MAX_GRAPH_NODES
-      let accepted = nodes
-      let evicted = 0
-
-      if (nodes.length > cap) {
-        accepted = [...nodes]
-          .sort(
-            (a, b) =>
-              ((b as any).signal_density ?? 0.5) -
-              ((a as any).signal_density ?? 0.5),
-          )
-          .slice(0, cap)
-        evicted = nodes.length - accepted.length
-      }
+      const { acceptedNodes, acceptedEdges, evicted, droppedEdges } = _applyEviction(
+        nodes,
+        edges,
+        cap,
+      )
 
       return {
-        graphNodes: accepted,
-        graphEdges: edges,
+        graphNodes: acceptedNodes,
+        graphEdges: acceptedEdges,
         graphProgress: {
           ...s.graphProgress,
           ...(progress ?? {}),
           evicted: ((s.graphProgress as any).evicted ?? 0) + evicted,
-          nodes: accepted.length,
+          dropped_edges: ((s.graphProgress as any).dropped_edges ?? 0) + droppedEdges,
+          nodes: acceptedNodes.length,
         },
       }
     })
   },
 
   appendGraphNode: (node) => {
+    // Cluster A F18 修复: 之前用 `String(node.id)` 会把 nullish 强制转成 "null"/"undefined"
+    // 字符串, 然后误以为合法 id 放行进 store. 这里先 short-circuit, 把 id 缺失的节点
+    // 静默丢弃, 避免污染 graphNodes 集合 (后续 _applyEviction 也不再需要过滤).
+    if (node.id == null || node.id === '') return
     const id = String(node.id)
-    if (!id) return
     set((s) => {
       // 已存在则跳过（保留先来位置）
       if (s.graphNodes.some((n) => String(n.id) === id)) return s
@@ -876,11 +962,21 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
         next.sort(
           (a, b) => ((b as any).signal_density ?? 0.5) - ((a as any).signal_density ?? 0.5),
         )
+        // 同步: 任何引用被 evict 节点的 edge 都要从 store 移除
+        const evictedId = String((s.graphNodes[minIdx] as any).id)
+        const keptEdges = s.graphEdges.filter(
+          (e) =>
+            String((e as any).source) !== evictedId &&
+            String((e as any).target) !== evictedId,
+        )
+        const droppedEdges = s.graphEdges.length - keptEdges.length
         return {
           graphNodes: next,
+          graphEdges: keptEdges,
           graphProgress: {
             ...s.graphProgress,
             evicted: ((s.graphProgress as any).evicted ?? 0) + 1,
+            dropped_edges: ((s.graphProgress as any).dropped_edges ?? 0) + droppedEdges,
             nodes: next.length,
           },
         }
@@ -900,40 +996,80 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     // Agent 3A v2: 暴露容量给未来 UI slider, 暂不接 UI
     const cap = Math.max(50, Math.min(2000, Math.floor(n)))
     set((s) => {
-      let next = s.graphNodes
-      if (next.length > cap) {
-        next = [...next]
-          .sort(
-            (a, b) =>
-              ((b as any).signal_density ?? 0.5) -
-              ((a as any).signal_density ?? 0.5),
-          )
-          .slice(0, cap)
-      }
+      // Cluster A F2 修复: 之前只 slice nodes, 留下大量 dangling edges
+      // (source/target 引用被 evict 掉的 node). 改走 _applyEviction 一次性
+      // 处理 nodes + edges, 保持不变式.
+      const { acceptedNodes, acceptedEdges, evicted, droppedEdges } = _applyEviction(
+        s.graphNodes,
+        s.graphEdges,
+        cap,
+      )
       return {
         graphCapacity: cap,
-        graphNodes: next,
-        graphProgress: { ...s.graphProgress, nodes: next.length },
+        graphNodes: acceptedNodes,
+        graphEdges: acceptedEdges,
+        graphProgress: {
+          ...s.graphProgress,
+          evicted: ((s.graphProgress as any).evicted ?? 0) + evicted,
+          dropped_edges: ((s.graphProgress as any).dropped_edges ?? 0) + droppedEdges,
+          nodes: acceptedNodes.length,
+        },
       }
     })
   },
 
   appendGraphEdge: (edge) => {
-    const id = String(edge.id ?? `${edge.source}->${edge.target}`)
+    // Cluster A F3 修复: 之前直接 push, 不检查 source/target 是否还在 graphNodes.
+    // 现在 setGraphSnapshot 之后 dangling edges 已经被清掉, 但 SSE 来的 edge
+    // 可能引用未 seed 的 node (appendGraphNode 还没到), 这种应该静默丢弃而不是
+    // 污染 store 等待被引用. 同样的, 这里也要去重.
+    const src = (edge as any).source
+    const tgt = (edge as any).target
+    if (src == null || tgt == null || src === '' || tgt === '') return
+    const id = String(edge.id ?? `${src}->${tgt}`)
     set((s) => {
       if (s.graphEdges.some((e) => String(e.id ?? `${e.source}->${e.target}`) === id)) return s
+      // Drop dangling: source 或 target 不在当前 graphNodes, 静默丢弃
+      const hasSrc = s.graphNodes.some((n) => String(n.id) === String(src))
+      const hasTgt = s.graphNodes.some((n) => String(n.id) === String(tgt))
+      if (!hasSrc || !hasTgt) {
+        return {
+          graphProgress: {
+            ...s.graphProgress,
+            dropped_edges: ((s.graphProgress as any).dropped_edges ?? 0) + 1,
+          },
+        }
+      }
       const next = [...s.graphEdges, edge]
       return { graphEdges: next, graphProgress: { ...s.graphProgress, edges: next.length } }
     })
   },
 
-  setGraphProgress: (progress) => set({ graphProgress: progress }),
+  setGraphProgress: (progress) => {
+    // Cluster A F4 修复: 之前 set({ graphProgress: progress }) 是 full replace,
+    // 会把 evicted/dropped_edges 等累计 counter 全部清零. 现在改成 merge,
+    // 让累计 counter 跨多次 setGraphSnapshot / setGraphCapacity 调用幸存.
+    set((s) => ({ graphProgress: { ...s.graphProgress, ...progress } }))
+  },
 
   appendSimRound: (round) => {
     set((s) => {
-      // 去重（同一 round 不重复 push）
-      if (s.simRounds.some((r) => r.round === round.round)) return s
-      const next = [...s.simRounds, round].sort((a, b) => a.round - b.round)
+      // F21 dedup contract: when the same round number arrives twice
+      // (e.g. SSE replay during a partial retry), keep the FIRST
+      // payload's data and drop the duplicate. The original
+      // `return s` short-circuit silently dropped the second
+      // payload's new_entities/new_relations/actions/belief_updates;
+      // the new behavior keeps the dedup semantics AND surfaces
+      // the canonical first event's full payload.
+      const existingIdx = s.simRounds.findIndex((r) => r.round === round.round)
+      let next: SimRound[]
+      if (existingIdx >= 0) {
+        // Dedup: keep the first payload, drop the duplicate. The
+        // test contract "保留先来的" (keep the first) is preserved.
+        next = s.simRounds
+      } else {
+        next = [...s.simRounds, round].sort((a, b) => a.round - b.round)
+      }
       // feature2: 同步给该 round 拍一张图谱快照（首次见到该 round 才存）
       // cap: 保留最近 MAX_GRAPH_SNAPSHOTS 轮的快照（FIFO, 淘汰最早 key）
       const snap = s.graphSnapshots
@@ -1163,6 +1299,8 @@ export interface EntityTypeStat {
   type: string
   color: string
   count: number
+  /** 中文 label (来自 ENTITY_TYPE_PALETTE, 未知 type 退化到 type 字符串本身) */
+  label: string
 }
 
 export const useEntityTypes = (): EntityTypeStat[] => {
@@ -1170,14 +1308,14 @@ export const useEntityTypes = (): EntityTypeStat[] => {
   const seen: Record<string, EntityTypeStat> = {}
   // 先按 palette 顺序遍历 (保证图例顺序稳定)
   for (const p of ENTITY_TYPE_PALETTE) {
-    seen[p.type] = { type: p.type, color: p.color, count: 0 }
+    seen[p.type] = { type: p.type, color: p.color, count: 0, label: p.label }
   }
   for (const n of nodes) {
     const t = String(n.type ?? 'UNKNOWN')
     if (!seen[t]) {
       // 未知 type: 走 default 灰
       const k = 'UNKNOWN'
-      if (!seen[k]) seen[k] = { type: k, color: '#94a3b8', count: 0 }
+      if (!seen[k]) seen[k] = { type: k, color: '#94a3b8', count: 0, label: k }
       seen[k].count += 1
     } else {
       seen[t].count += 1
