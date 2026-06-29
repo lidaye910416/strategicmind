@@ -226,6 +226,15 @@ def _test_retrieval_hook() -> int:
         async def stream_chat(self, messages, **kwargs):
             yield "{}"
 
+        async def completion(self, prompt, **kwargs):
+            return "{}"
+
+        def get_model_name(self) -> str:
+            return "capturing-mock"
+
+        def is_available(self) -> bool:
+            return True
+
     class _FakeStore:
         def __init__(self, kg):
             self.kg_index = kg
