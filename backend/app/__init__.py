@@ -33,6 +33,7 @@ from .api.report import report_bp  # noqa: E402
 from .api.provider import provider_bp  # noqa: E402
 from .api.company import company_bp  # noqa: E402  # noqa: E402
 from .api.seed import seed_bp  # noqa: E402
+from .api.interview import interview_bp  # noqa: E402
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -65,6 +66,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(provider_bp)
     app.register_blueprint(company_bp)
     app.register_blueprint(seed_bp)
+    app.register_blueprint(interview_bp)
 
     # Health check
     @app.route("/api/health", methods=["GET"])

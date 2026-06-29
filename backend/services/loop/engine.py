@@ -19,11 +19,14 @@ returns a list of :class:`RoundResult` objects, each with
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
 import uuid
 import dataclasses
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence
 
 from ...models.action_type import (
@@ -225,10 +228,47 @@ class LoopEngine:
             payload = result.to_event()
             payload["total_rounds"] = self.total_rounds
             self._emit_event("round_completed", payload)
+            # G9: Append the per-round trace to a JSONL file under
+            # ``backend/data/interviews/<run_id>.jsonl`` so the wizard's
+            # Step 5 and the per-round /api/interview trace endpoint
+            # share a single source of truth. Toggleable via
+            # ``STRATEGICMIND_TRACE_DISABLE=1`` (testing only).
+            self._append_round_jsonl(result)
             results.append(result)
             # Advance the clock by hours_per_round (default 24h).
             self.clock.advance(self.hours_per_round)
         return results
+
+    # ------------------------------------------------------------------
+    # G9: per-round JSONL writer
+    # ------------------------------------------------------------------
+    def _append_round_jsonl(self, result: "RoundResult") -> None:
+        """Append one JSONL line for ``result`` to ``<run_id>.jsonl``.
+
+        Skipped when ``STRATEGICMIND_TRACE_DISABLE=1`` so tests can
+        turn the writer off without monkey-patching. Storage path is
+        ``backend/data/interviews/<run_id>.jsonl``; the directory is
+        created lazily so callers don't need to pre-create it.
+        """
+        if os.environ.get("STRATEGICMIND_TRACE_DISABLE") == "1":
+            return
+        try:
+            # backend/ is the parent of services/, so backend/ == ..services
+            backend_dir = Path(__file__).resolve().parents[2]
+            target_dir = backend_dir / "data" / "interviews"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / f"{self.run_id}.jsonl"
+            record = {
+                "round": int(result.round_num),
+                "ts": result.ended_at or time.time(),
+                "actions": [a.to_dict() for a in result.actions],
+                "beliefs": {},
+                "world_state_slice": dict(result.world_state_snapshot or {}),
+            }
+            with target.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("G9: failed to append round JSONL for %s: %s", self.run_id, exc)
 
     # ------------------------------------------------------------------
     # Internals

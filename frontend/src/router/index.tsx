@@ -21,6 +21,8 @@ const Report = lazy(() => import('../views/Report'))
 const Workbench = lazy(() => import('../views/Workbench'))
 // PR-3 P2-1：多 run 横向对比页（featureFlags.compareRuns = false 时也加载但渲染提示）
 const CompareRuns = lazy(() => import('../views/CompareRuns'))
+// Goal G9: 5-step wizard (GraphBuild → EnvSetup → Simulation → Report → Interaction)
+const Process = lazy(() => import('../views/Process'))
 
 /** 路由级 loading 占位（避免切换白屏） */
 function RouteSkeleton() {
@@ -40,6 +42,12 @@ function WorkbenchRouteWithKey() {
   return <Workbench key={runId} />
 }
 
+/** Process wizard — same remount discipline, keyed by runId. */
+function ProcessRouteWithKey() {
+  const { runId } = useParams<{ runId: string }>()
+  return <Process key={runId} />
+}
+
 export default function AppRoutes() {
   return (
     <Suspense fallback={<RouteSkeleton />}>
@@ -53,6 +61,8 @@ export default function AppRoutes() {
         <Route path="/workbench" element={<Workbench />} />
         {/* Workbench 强制 remount：切 run 时丢弃旧 store 订阅、SSE、轮询等 */}
         <Route path="/workbench/:runId" element={<WorkbenchRouteWithKey />} />
+        {/* Goal G9: 5-step wizard, ?step=N (1..5) deep-links each step. */}
+        <Route path="/process/:runId" element={<ProcessRouteWithKey />} />
         {/* PR-3 P2-1：多 run 横向对比页（?runs=id1,id2,id3 最多 3 个） */}
         <Route path={APP_ROUTES.compare} element={<CompareRuns />} />
         <Route
