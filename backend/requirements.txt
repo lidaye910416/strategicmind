@@ -1,0 +1,6 @@
+# StrategicMind backend dependencies
+#
+# G7 (kg_engine) requires networkx for the in-house nano-graphRAG adapter
+# (KGIndex graph index). Pin to >=3.0 to lock in the modern API surface
+# (node_link_data / is_isomorphic / Graph.neighbors are all stable on 3.x).
+networkx>=3.0
