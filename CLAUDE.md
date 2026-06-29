@@ -91,14 +91,18 @@
 
 ## 🔧 关键设计模式
 
-### 5 目标映射
-| 目标 | 实施位置 |
-|---|---|
-| G1 前后端链接 | `backend/app/__init__.py` CORS + `frontend/vite.config.ts` proxy `/api` |
-| G2 Dashboard ↔ Workbench 同步 | `backend/app/api/pipeline.py` SSE 双轨 + `frontend/src/store/hooks/useGraphStream.ts` |
-| G3 公司经营 + 多轮参数 | `backend/services/strategic_config_generator.py` 接收 user_params + `_generate_with_user_params` |
-| G4 历史任务不丢 | `backend/app/api/pipeline.py` `/runs` 端点 + `frontend/src/components/RecentRuns.tsx` |
-| G5 多年循环 | `POST /<id>/advance-year` + `market_event` 触发 + `ExternalShockSimulator` 接入 |
+### 9 目标映射（含 MiroFish 对齐 G6-G9）
+| 目标 | 实施位置 | 文件 |
+|---|---:|---|
+| G1 前后端链接 | `backend/app/__init__.py` CORS + `frontend/vite.config.ts` proxy `/api` | — |
+| G2 Dashboard ↔ Workbench 同步 | `backend/app/api/pipeline.py` SSE 双轨 + `frontend/src/store/hooks/useGraphStream.ts` | — |
+| G3 公司经营 + 多轮参数 | `backend/services/strategic_config_generator.py` 接收 user_params + `_generate_with_user_params` | — |
+| G4 历史任务不丢 | `backend/app/api/pipeline.py` `/runs` 端点 + `frontend/src/components/RecentRuns.tsx` | — |
+| G5 多年循环 | `POST /<id>/advance-year` + `market_event` 触发 + `ExternalShockSimulator` 接入 | — |
+| **G6 修 3 个 console bug** | `RoundTimeline.tsx` hook 重排 + `simulation.py` 加 `GET /api/simulation/<id>` + `pipeline.ts` 切 `createWithEqualityFn` | [`goals/G6-fix-3-bugs.md`](goals/G6-fix-3-bugs.md) |
+| **G7 KG 切 nano-graphRAG 替身** | 新建 `backend/services/kg_engine/` package（NetworkX + JSON），pin `networkx>=3.0` 进 `backend/requirements.txt`，`STRATEGICMIND_PROFILE_RETRIEVAL` flag 控 PROFILE_GENERATION；A/B harness `scripts/eval_profile_retrieval.py` | [`goals/G7-kg-engine.md`](goals/G7-kg-engine.md) |
+| **G8 Workbench 切 atomic selector slices** | `usePipelineStore` 拆 4 slice（graph/sim/config/ui）+ `RoundTimeline` 改 `React.memo` + `InnerWorkbenchContent` 拆 6 tab panel 去掉 22+ prop drill | [`goals/G8-atomic-slices.md`](goals/G8-atomic-slices.md) |
+| **G9 5 步 wizard + agent interview IPC** | 新 `views/Process.tsx` + 6 wizard step + 新 `backend/app/api/interview.py` blueprint + `loop/engine.py:227` 后挂 JSONL writer | [`goals/G9-wizard-ipc.md`](goals/G9-wizard-ipc.md) |
 
 ### 测试约定
 - `backend/tests/integration/` — 后端集成 (启动 run, 验证端点)
@@ -167,3 +171,46 @@ cd frontend && npm run test
 | G3 | 公司经营 + 多轮参数 | ✅ | max_rounds=12 (1y×month) + 9 dept slot agents + report 含 external_factors |
 | G4 | 历史任务不丢 | ✅ | /runs 持久化扫描 + RecentRuns 卡片 + 复制配置 |
 | G5 | 多年循环 | ✅ | /advance-year 端点 + market_event + 9 季度扰动 |
+| **G6** | 修 3 console bug (hook+404+zustand) | ⏳ PENDING | [`goals/G6-fix-3-bugs.md`](goals/G6-fix-3-bugs.md) — 推演 console 0 错误 + 0 404 |
+| **G7** | KG 切 `kg_engine` (NetworkX 替身) | ⏳ PENDING | [`goals/G7-kg-engine.md`](goals/G7-kg-engine.md) — `pytest backend/services/kg_engine/` 全绿 + A/B harness 报告 |
+| **G8** | Workbench atomic selector slices | ⏳ PENDING | [`goals/G8-atomic-slices.md`](goals/G8-atomic-slices.md) — `tsc --noEmit` 0 新错 + 22+ props 减到 ≤4 |
+| **G9** | 5 步 wizard + interview IPC | ⏳ PENDING | [`goals/G9-wizard-ipc.md`](goals/G9-wizard-ipc.md) — `/process/<id>?step=N` 跑通 + SSE interview_token |
+
+---
+
+## 📚 文档索引 (新结构 2026-06-23)
+
+完整文档在 `docs/`, 核心入口:
+
+- 入口: [`docs/README.md`](docs/README.md) — 找什么的速查
+- 决策: [`docs/decisions/`](docs/decisions/) — WHY 选 A 不选 B (ADR, 5-15 行/条)
+- 架构: [`docs/architecture/`](docs/architecture/) — 系统当前长什么样 (WHAT IS)
+- Bug: [`docs/bugs/`](docs/bugs/) — 3 P0 bug 诊断 (全部 ✅ FIXED)
+- 实现: [`docs/features/`](docs/features/) — DONE 的具体 spec (含 commit 链接)
+- 工作流: [`docs/runs/2026-06-23-p0-bug-fix.md`](docs/runs/2026-06-23-p0-bug-fix.md) — 这次 workflow 完整故事
+- 运维: [`docs/operations/`](docs/operations/) — 启停 / 数据
+- 归档: [`docs/archive/`](docs/archive/) — 过期文档 (不应用于新代码)
+
+**核心约定**: 未来做类似选择前, 先看 `decisions/`. 文档状态 (FIXED/DONE/PLANNED/ARCHIVED) 在文件顶部 status 头, 一眼可见.
+
+---
+
+## 📖 docs/ 按需读取 (避免重复争论)
+
+**Trigger**: 任务涉及**非显然设计决策** (即"在 A 和 B 之间选"). 满足即查, 否则不查.
+
+**怎么查** (满足 trigger 后):
+1. `ls docs/decisions/ADR-*.md` 扫一眼 (1 秒, 7 个文件)
+2. 任务涉及模块 grep ADR 列表 → 命中 → 读 ADR → **遵循 (不再论证, 不再选)**
+3. 未命中 → 自由决策. 若决策**非显然**, 实施完写 ADR-NNN.md (5-15 行, 模板见 `docs/decisions/README.md`)
+
+**不查场景** (节省时间):
+- 修 typo / 格式化 / 加测试用例
+- 跑测试 / 启服务 / 查状态 / 部署
+- 用户说"按 X 改" (明确指令, 无选型)
+- 1 行 hotfix / 数据清理
+
+**示例**:
+- "用 evict-by-signal 替代 FIFO" → 触发 → `ls docs/decisions/` → 命中 `ADR-001` → 遵循, 不论证
+- "重命名 `setGraphSnapshot` 内部变量" → 不触发 (无选型, 用户明确指令)
+- "新功能: agent 协作" → 触发 → 检查 ADR-003 (跨页面架构) 是否适用, 决定 follow or 写新 ADR-008
