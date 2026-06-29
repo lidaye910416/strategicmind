@@ -77,33 +77,38 @@ StrategicMind's KG is an in-memory dict built by the GRAPH_BUILDING stage and re
 
 ### 5.2 Scope
 **In:**
-- New `backend/services/kg/nano_graphrag.py`: `KGIndex` class with `add_entity`, `add_relation`, `neighbors`, `retrieval(query, k=5)` (BFS + lexical overlap), persisted to `backend/data/knowledge_graphs/<run_id>.json`.
-- New adapter `backend/services/kg/builder.py`: a thin wrapper that GRAPH_BUILDING calls instead of the in-memory dict; same `entity_id, neighbors` interface.
-- PROFILE_GENERATION gains an optional retrieval step gated by `STRATEGICMIND_PROFILE_RETRIEVAL=1`; prompt template adds a "retrieved context" block.
+- New package `backend/services/kg_engine/` with `graph_index.py` (`KGIndex` class — name does NOT collide with the PyPI `nano-graphrag` package). Methods: `add_entity`, `add_relation`, `neighbors`, `retrieval(query, k=5)` (BFS + lexical overlap), persisted to `backend/data/knowledge_graphs/<run_id>.json`.
+- New adapter `backend/services/kg_engine/builder.py`: a thin wrapper that GRAPH_BUILDING calls instead of the in-memory dict; same `entity_id, neighbors` interface.
+- PROFILE_GENERATION (currently in `backend/services/strategic_profile_generator.py`) gains an optional retrieval step gated by `STRATEGICMIND_PROFILE_RETRIEVAL=1`; prompt template adds a "retrieved context" block.
 - A/B eval script `backend/scripts/eval_profile_retrieval.py` comparing prompt-only vs. retrieval-grounded on 5 fixture runs.
 - Feature flag `STRATEGICMIND_PROFILE_RETRIEVAL=0` (default off); rollout via flag-flip.
+- **Bootstrap dependency:** create `backend/requirements.txt` pinning `networkx>=3.0` (currently no requirements file or pyproject.toml exists in backend/).
 
 **Out:** Zep, Neo4j, Postgres, ontology versioning, dynamic schema inference.
 
 ### 5.3 Architecture narrative
-The KG interface contract is `(entity_id, neighbors(entity_id, depth=2), retrieval(query, k)) → list[KGEntity]`. Today's `services/kg.py:KGStore` returns neighbors from an in-memory `defaultdict`; the swap is to `nano_graphrag.KGIndex.neighbors` which queries a `networkx.Graph` persisted to JSON. The orchestrator's `GRAPH_BUILDING` stage calls `kg_index.add_entity()` for each extracted entity and `add_relation()` for each extracted edge; the JSON snapshot is the only state holder. PROFILE_GENERATION reads the same `kg_index.retrieval(query, k)` API. Because the public contract is stable, `services/orchestrator.py` and the 7 stage handlers are unchanged. The A/B script writes a small markdown report to `data/reports/eval_<ts>.md` so we can compare retrieval hit-rate and a 5-question sanity check before flag-flip.
+The KG interface contract is `(entity_id, neighbors(entity_id, depth=2), retrieval(query, k)) → list[KGEntity]`. Today's `LocalKnowledgeStore` (at `backend/services/local_knowledge_store.py`) returns neighbors from an in-memory dict; the swap is to `kg_engine.graph_index.KGIndex.neighbors` which queries a `networkx.Graph` persisted to JSON. The orchestrator's `GRAPH_BUILDING` stage (`services/pipeline_orchestrator.py`, NOT `services/orchestrator.py` which does not exist) calls `kg_index.add_entity()` for each extracted entity and `add_relation()` for each extracted edge; the JSON snapshot is the only state holder. PROFILE_GENERATION (`services/strategic_profile_generator.py`, NOT `strategic_config_generator.py`) reads the same `kg_index.retrieval(query, k)` API. Because the public contract is stable, `services/pipeline_orchestrator.py` and the 7 stage handlers are unchanged. The A/B script writes a small markdown report to `data/reports/eval_<ts>.md` so we can compare retrieval hit-rate and a 5-question sanity check before flag-flip.
 
 ### 5.4 Files
 | Path | Action | Intent |
 |---|---|---|
-| `backend/services/kg/nano_graphrag.py` | create | `KGIndex` class: NetworkX + JSON persistence + BFS retrieval |
-| `backend/services/kg/builder.py` | create | Adapter wrapping `KGIndex` with the same shape as the current in-memory KG |
-| `backend/services/strategic_config_generator.py` | modify | Read `STRATEGICMIND_PROFILE_RETRIEVAL`; inject retrieved context into the profile prompt |
+| `backend/services/kg_engine/__init__.py` | create | Package marker (namespace `kg_engine` to avoid PyPI `nano-graphrag` collision) |
+| `backend/services/kg_engine/graph_index.py` | create | `KGIndex` class: NetworkX + JSON persistence + BFS retrieval |
+| `backend/services/kg_engine/builder.py` | create | Adapter wrapping `KGIndex` with the same shape as `LocalKnowledgeStore`'s public API |
+| `backend/services/strategic_profile_generator.py` | modify | Read `STRATEGICMIND_PROFILE_RETRIEVAL`; inject retrieved context into the profile prompt |
 | `backend/scripts/eval_profile_retrieval.py` | create | A/B harness: prompt-only vs. retrieval-grounded on 5 fixture runs |
-| `backend/services/kg/__tests__/test_nano_graphrag.py` | create | Unit: add/neighbors/retrieval/persistence roundtrip |
+| `backend/services/kg_engine/tests/__init__.py` | create | Test package |
+| `backend/services/kg_engine/tests/test_graph_index.py` | create | Unit: add/neighbors/retrieval/persistence roundtrip |
+| `backend/requirements.txt` | create | Pin `networkx>=3.0` (required by `kg_engine`; does not exist yet) |
 
 ### 5.5 Interfaces
-- `KGIndex.add_entity(entity: KGEntity) -> None`
-- `KGIndex.add_relation(src_id, rel, dst_id) -> None`
-- `KGIndex.neighbors(entity_id, depth=2) -> list[KGEntity]`
-- `KGIndex.retrieval(query: str, k: int = 5) -> list[KGEntity]`
-- `KGIndex.persist(path) -> None` / `KGIndex.load(path) -> KGIndex`
+- `kg_engine.graph_index.KGIndex.add_entity(entity: KGEntity) -> None`
+- `kg_engine.graph_index.KGIndex.add_relation(src_id, rel, dst_id) -> None`
+- `kg_engine.graph_index.KGIndex.neighbors(entity_id, depth=2) -> list[KGEntity]`
+- `kg_engine.graph_index.KGIndex.retrieval(query: str, k: int = 5) -> list[KGEntity]`
+- `kg_engine.graph_index.KGIndex.persist(path) -> None` / `kg_engine.graph_index.KGIndex.load(path) -> KGIndex`
 - Env: `STRATEGICMIND_PROFILE_RETRIEVAL=0|1` (default 0)
+- PyPI import to AVOID: `from nano_graphrag import GraphRAG` — using that package would pull in openai/tiktoken/graspologic/nano-vectordb. Our `kg_engine` is in-house, not a wrapper around it.
 
 ### 5.6 Tests
 1. `add_entity` → `neighbors` roundtrip on a 10-node fixture.
@@ -214,7 +219,7 @@ Closes the UX parity gap with MiroFish. The 7 backend stages collapse to 5 user-
 - New wizard view `views/Process.tsx` at `/process/:runId` with 5 steps driven by `?step=N`.
 - New `components/wizard/{WizardShell,StepHeader,StepNav,Step1..Step5}.tsx`.
 - New backend blueprint `backend/app/api/interview.py` with 4 routes (see §7.6).
-- Per-round JSONL writer hooked into `LoopEngine` at `services/loop/engine.py:211`; persisted to `backend/data/interviews/<run_id>.jsonl`.
+- Per-round JSONL writer hooked into `LoopEngine.run()` AFTER the existing `_emit_event("round_completed", payload)` call at `services/loop/engine.py:227`; persisted to `backend/data/interviews/<run_id>.jsonl`.
 - Conversation transcript at `backend/data/interviews/<run_id>_<agent_id>.jsonl`.
 - Reuse `services/agent_interview.py:AgentInterviewService` (no rewrite).
 - `Step5Interaction.tsx`: agent sidebar + chat panel + transcript history, polling every 2s.
@@ -315,7 +320,7 @@ The per-round JSONL writer is added as a small adapter in `services/loop/engine.
 
 ## 8. Cross-cutting
 
-**SSE event compatibility:** the 7 internal stage names (SEED_PARSING → SIMULATION_RUNNING) and EventBus event names are preserved verbatim. G9 adds 3 new event types on the **interview** SSE channel only (`interview_token`, `interview_done`, `round_appended`); no new event types on the **pipeline** SSE channel. **Env vars:** new: `STRATEGICMIND_PROFILE_RETRIEVAL` (G7, default 0), `STRATEGICMIND_TRACE_DISABLE` (G9, default 0). Existing: `STRATEGICMIND_LLM_OVERRIDE` unchanged. **Feature flags:** G7 retrieval off by default; G9 JSONL writer off via `STRATEGICMIND_TRACE_DISABLE=1` in tests. **Seed doc:** none required (existing `uploads/*.txt` fixtures still apply). **Deployment:** single process; no new external services; no new dependencies beyond `networkx` (G7) which is already in `requirements.txt`. **Rollback:** G6/G8/G9 are mechanical frontend changes — revert the PR. G7 is gated by `STRATEGICMIND_PROFILE_RETRIEVAL=0`; flip off to roll back without redeploy.
+**SSE event compatibility:** the 7 internal stage names (SEED_PARSING → SIMULATION_RUNNING) and EventBus event names are preserved verbatim. G9 adds 3 new event types on the **interview** SSE channel only (`interview_token`, `interview_done`, `round_appended`); no new event types on the **pipeline** SSE channel. **Env vars:** new: `STRATEGICMIND_PROFILE_RETRIEVAL` (G7, default 0), `STRATEGICMIND_TRACE_DISABLE` (G9, default 0). Existing: `STRATEGICMIND_LLM_OVERRIDE` unchanged. **Feature flags:** G7 retrieval off by default; G9 JSONL writer off via `STRATEGICMIND_TRACE_DISABLE=1` in tests. **Seed doc:** none required (existing `uploads/*.txt` fixtures still apply). **Deployment:** single process; no new external services. **New dependencies (G7 only):** `networkx>=3.0`, currently **not pinned anywhere** — G7 must create `backend/requirements.txt` as part of its first PR. **Rollback:** G6/G8/G9 are mechanical frontend changes — revert the PR. G7 is gated by `STRATEGICMIND_PROFILE_RETRIEVAL=0`; flip off to roll back without redeploy.
 
 ## 9. Verification plan (human steps)
 
