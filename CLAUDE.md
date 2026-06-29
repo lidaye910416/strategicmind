@@ -171,7 +171,7 @@ cd frontend && npm run test
 | G3 | 公司经营 + 多轮参数 | ✅ | max_rounds=12 (1y×month) + 9 dept slot agents + report 含 external_factors |
 | G4 | 历史任务不丢 | ✅ | /runs 持久化扫描 + RecentRuns 卡片 + 复制配置 |
 | G5 | 多年循环 | ✅ | /advance-year 端点 + market_event + 9 季度扰动 |
-| **G6** | 修 3 console bug (hook+404+zustand) | ⏳ PENDING | [`goals/G6-fix-3-bugs.md`](goals/G6-fix-3-bugs.md) — 推演 console 0 错误 + 0 404 |
+| **G6** | 修 3 console bug (hook+404+zustand) | ✅ DONE (commit `0dbb1e13`) | [`goals/G6-fix-3-bugs.md`](goals/G6-fix-3-bugs.md) — `curl /api/simulation/run_755516f8` → 200 (5 keys) + vitest 7/7 (RoundTimeline hookOrder 2 + pipeline.shallow 5) |
 | **G7** | KG 切 `kg_engine` (NetworkX 替身) | ⏳ PENDING | [`goals/G7-kg-engine.md`](goals/G7-kg-engine.md) — `pytest backend/services/kg_engine/` 全绿 + A/B harness 报告 |
 | **G8** | Workbench atomic selector slices | ⏳ PENDING | [`goals/G8-atomic-slices.md`](goals/G8-atomic-slices.md) — `tsc --noEmit` 0 新错 + 22+ props 减到 ≤4 |
 | **G9** | 5 步 wizard + interview IPC | ⏳ PENDING | [`goals/G9-wizard-ipc.md`](goals/G9-wizard-ipc.md) — `/process/<id>?step=N` 跑通 + SSE interview_token |

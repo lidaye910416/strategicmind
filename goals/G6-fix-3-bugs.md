@@ -1,6 +1,6 @@
 # Goal G6 — Fix the 3 showstopper console bugs
 
-> Status: PENDING · Owner: claude (autonomous) · Depends on: — · Blocks: G7, G8, G9
+> Status: ✅ DONE (commit `0dbb1e13`) · Depends on: — · Blocks: G7, G8, G9 unblocked
 
 ## What this goal proves
 
