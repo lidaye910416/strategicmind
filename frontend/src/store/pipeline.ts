@@ -15,7 +15,7 @@
  *
  * Implements: US-061, US-062
  */
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
 import http from '../services/http'
 import { formatErrorMessage } from '../lib/formatError'
@@ -574,7 +574,7 @@ function _applyEviction(
   return { acceptedNodes, acceptedEdges, evicted, droppedEdges }
 }
 
-export const usePipelineStore = create<PipelineState>((set, get) => ({
+export const usePipelineStore = createWithEqualityFn<PipelineState>((set, get) => ({
   runId: null,
   status: 'idle',
   currentStage: 'IDLE',
@@ -1251,23 +1251,23 @@ export const useStageProgress = (): StageProgress => usePipelineStore((s) => {
   }
 }, shallow)
 export const useProgress = () => usePipelineStore((s) => s.progress)
-export const useSnapshot = () => usePipelineStore((s) => s.snapshot)
+export const useSnapshot = () => usePipelineStore((s) => s.snapshot, shallow)
 export const useError = () => usePipelineStore((s) => s.error)
 export const useIsStarting = () => usePipelineStore((s) => s.isStarting)
-export const useUploads = () => usePipelineStore((s) => s.uploads)
+export const useUploads = () => usePipelineStore((s) => s.uploads, shallow)
 export const useLastEventAt = () => usePipelineStore((s) => s.lastEventAt)
 // P3-A: 读取最近一次启动时的完整 config（含 user_params）；Workbench 用以知道"用户在 Dashboard 选了啥"
-export const useLastRunConfig = () => usePipelineStore((s) => s.lastRunConfig)
+export const useLastRunConfig = () => usePipelineStore((s) => s.lastRunConfig, shallow)
 
 // ---- FE2/FE3: 实时图谱 + 推演回合 atomic selectors ----
-export const useGraphNodes = () => usePipelineStore((s) => s.graphNodes)
-export const useGraphEdges = () => usePipelineStore((s) => s.graphEdges)
-export const useGraphProgress = () => usePipelineStore((s) => s.graphProgress)
-export const useSimRounds = () => usePipelineStore((s) => s.simRounds)
+export const useGraphNodes = () => usePipelineStore((s) => s.graphNodes, shallow)
+export const useGraphEdges = () => usePipelineStore((s) => s.graphEdges, shallow)
+export const useGraphProgress = () => usePipelineStore((s) => s.graphProgress, shallow)
+export const useSimRounds = () => usePipelineStore((s) => s.simRounds, shallow)
 /** 派生：图谱构建阶段（idle/starting/graph_building/completed） */
 export const useGraphPhase = () => usePipelineStore((s) => s.graphProgress.phase)
 // feature2: 图谱快照字典 + 单点查询
-export const useGraphSnapshots = () => usePipelineStore((s) => s.graphSnapshots)
+export const useGraphSnapshots = () => usePipelineStore((s) => s.graphSnapshots, shallow)
 
 // should-tier v3: 实体类型图例 (KnowledgeGraph 增强)
 // GraphPanel.vue:285-299 风格 10 色 palette
@@ -1373,18 +1373,18 @@ export const useNetworkFrames = (): NetworkFrameLive[] => {
 }
 
 // ---- must-tier v2: 实时事件 atomic selectors ----
-export const useMarketEvents = () => usePipelineStore((s) => s.marketEvents)
-export const useRecentShocks = () => usePipelineStore((s) => s.recentShocks)
-export const useYearAdvanced = () => usePipelineStore((s) => s.yearAdvanced)
+export const useMarketEvents = () => usePipelineStore((s) => s.marketEvents, shallow)
+export const useRecentShocks = () => usePipelineStore((s) => s.recentShocks, shallow)
+export const useYearAdvanced = () => usePipelineStore((s) => s.yearAdvanced, shallow)
 
 // ---- should-tier v3: 新增 atomic selectors ----
-export const useLatestMarketEvent = () => usePipelineStore((s) => s.latestMarketEvent)
-export const useActiveShock = () => usePipelineStore((s) => s.activeShock)
-export const useBeliefShifts = () => usePipelineStore((s) => s.beliefShifts)
-export const useRoundStartedBanner = () => usePipelineStore((s) => s.roundStartedBanner)
+export const useLatestMarketEvent = () => usePipelineStore((s) => s.latestMarketEvent, shallow)
+export const useActiveShock = () => usePipelineStore((s) => s.activeShock, shallow)
+export const useBeliefShifts = () => usePipelineStore((s) => s.beliefShifts, shallow)
+export const useRoundStartedBanner = () => usePipelineStore((s) => s.roundStartedBanner, shallow)
 
 // ---- must-tier v1: 报告风险矩阵 selector (live) ----
-export const useReportRisks = () => usePipelineStore((s) => s.reportRisks)
+export const useReportRisks = () => usePipelineStore((s) => s.reportRisks, shallow)
 
 // ---------------------------------------------------------------------------
 // Loop Engine v2 (T0.2) — influence / weight selectors + helpers

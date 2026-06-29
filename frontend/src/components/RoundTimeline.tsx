@@ -91,7 +91,45 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
     return undefined
   }, [simRoundsRaw?.length, data, paused, scrubbing])
 
-  if (!data) {
+  // G6 BUG (a) FIX: All useMemo hooks must sit ABOVE the early-return.
+  // React tracks hooks by call order; an early-return between hooks
+  // throws "Rendered more hooks than during the previous render".
+  // We lift all four useMemos here and have them safely return
+  // empty/null values when `data` is still null.
+
+  // P2-3 重放过滤：scrubTo > 0 时，只取 0..scrubTo 区间的回合
+  const visibleRounds = useMemo(() => {
+    if (!data) return [] as RoundData[]
+    if (!flags.timelineScrubber || scrubTo <= 0) return data.rounds
+    return data.rounds.filter((r) => r.round_num <= scrubTo)
+  }, [data, scrubTo])
+
+  // 当前回合：scrubbing 时跟随 scrubTo；否则按 selectedRound
+  const currentRound = useMemo<RoundData | null>(() => {
+    if (!data) return null
+    if (flags.timelineScrubber && scrubbing && scrubTo > 0) {
+      return visibleRounds[visibleRounds.length - 1] || data.rounds[0]
+    }
+    return data.rounds.find((r) => r.round_num === selectedRound) || data.rounds[0]
+  }, [data, visibleRounds, selectedRound, scrubTo, scrubbing])
+
+  // 动作类型分布
+  const typeDist = useMemo<[string, number][]>(() => {
+    if (!data) return []
+    const m: Record<string, number> = {}
+    data.rounds.forEach((r) => r.actions.forEach((a) => {
+      m[a.action_type] = (m[a.action_type] || 0) + 1
+    }))
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  }, [data])
+
+  // P2-2 趋势线数据 (从 useSimRounds 派生)
+  const trendData = useMemo(() => {
+    if (!data) return []
+    return buildRoundTimelineChartData(data.rounds)
+  }, [data])
+
+  if (!data || !currentRound) {
     return (
       <div className="card p-8 text-center">
         <div className="w-12 h-12 rounded-xl bg-ink-100 dark:bg-ink-800
@@ -105,20 +143,6 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
     )
   }
 
-  // P2-3 重放过滤：scrubTo > 0 时，只取 0..scrubTo 区间的回合
-  const visibleRounds = useMemo(() => {
-    if (!flags.timelineScrubber || scrubTo <= 0) return data.rounds
-    return data.rounds.filter((r) => r.round_num <= scrubTo)
-  }, [data.rounds, scrubTo])
-
-  // 当前回合：scrubbing 时跟随 scrubTo；否则按 selectedRound
-  const currentRound = useMemo(() => {
-    if (flags.timelineScrubber && scrubbing && scrubTo > 0) {
-      return visibleRounds[visibleRounds.length - 1] || data.rounds[0]
-    }
-    return data.rounds.find((r) => r.round_num === selectedRound) || data.rounds[0]
-  }, [data.rounds, visibleRounds, selectedRound, scrubTo, scrubbing])
-
   const totalActions = data.rounds.reduce((acc, r) => acc + r.actions.length, 0)
   const allActorIds = new Set<string>()
   data.rounds.forEach((r) => r.actions.forEach((a) => allActorIds.add(a.actor_id)))
@@ -126,18 +150,6 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
   // 平台分解统计
   const extCount = data.rounds.flatMap((r) => r.actions).filter((a) => classifyPlatform(a) === 'external').length
   const intCount = data.rounds.flatMap((r) => r.actions).filter((a) => classifyPlatform(a) === 'internal').length
-
-  // 动作类型分布
-  const typeDist = useMemo(() => {
-    const m: Record<string, number> = {}
-    data.rounds.forEach((r) => r.actions.forEach((a) => {
-      m[a.action_type] = (m[a.action_type] || 0) + 1
-    }))
-    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5)
-  }, [data])
-
-  // P2-2 趋势线数据 (从 useSimRounds 派生)
-  const trendData = useMemo(() => buildRoundTimelineChartData(data.rounds), [data.rounds])
 
   const maxScrubRound = data.rounds.length
   const isScrubbingActive = flags.timelineScrubber && scrubTo > 0

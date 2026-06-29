@@ -18,13 +18,21 @@ simulation_bp = Blueprint('simulation', __name__, url_prefix='/api/simulation')
 
 
 def _to_simulation_state(snap: dict) -> dict:
-    """Convert orchestrator pipeline snapshot to simulation endpoint shape."""
+    """Convert orchestrator pipeline snapshot to simulation endpoint shape.
+
+    G6: includes the G6-mandated keys ``sim_status`` and ``current_round_idx``
+    alongside the legacy ``status`` / ``current_round`` so that the frontend
+    Simulation view can consume both spellings without 404-shaped gaps.
+    """
     if not snap:
         return {}
+    current_round = _extract_round(snap)
     return {
         "run_id": snap.get("run_id"),
         "status": snap.get("status", "running"),
-        "current_round": _extract_round(snap),
+        "current_round": current_round,
+        "sim_status": snap.get("status", "running"),
+        "current_round_idx": current_round,
         "total_rounds": snap.get("config", {}).get("max_rounds", 10),
         "active_agents": 0,
         "stage": snap.get("current_stage"),
