@@ -14,7 +14,7 @@
  *   - P2-3 底部 scrubber 重放控件（flags.timelineScrubber 默认关）
  *     拖到 R3 即显示 R1-R3 累计事件；拖动时禁用 SSE/轮询更新（避免抖动）
  */
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, ChevronRight, Clock, Zap, Loader2, Activity,
@@ -401,3 +401,31 @@ function Stat({ label, value, icon: Icon }: { label: string; value: any; icon: a
     </div>
   )
 }
+
+// ============================================================================
+// G8: RoundTimelineMemo — React.memo wrapper with explicit default-arg.
+//
+// Goal: the parent tab panel (RealtimeTabPanel) only re-renders this
+// component when its simRounds-derived inputs change. Internal state
+// (selectedRound, scrubTo, paused, newCount) is isolated by memo, so
+// an unrelated slice mutation (e.g. yearAdvanced) does not propagate
+// to RoundTimeline at all.
+//
+// We use a custom equality function that ignores the simulationId
+// prop when undefined (the default-arg case) to prevent memo miss
+// when callers don't pass it explicitly.
+// ============================================================================
+function roundTimelinePropsAreEqual(prev: Props, next: Props) {
+  if ((prev.simulationId ?? null) === (next.simulationId ?? null)) return true
+  return false
+}
+
+// `memo` over a default-arg function erases Props; cast through NamedExoticComponent
+// to preserve the typed surface for callers (RoundTimelineMemo accepts Props).
+import type { NamedExoticComponent } from 'react'
+export const RoundTimelineMemo = memo(
+  RoundTimeline as (props: Props) => ReturnType<typeof RoundTimeline>,
+  roundTimelinePropsAreEqual,
+) as NamedExoticComponent<Props>
+export { RoundTimeline }
+export { roundTimelinePropsAreEqual }
