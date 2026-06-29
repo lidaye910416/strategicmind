@@ -34,7 +34,7 @@ Frontend shows "Rendered more hooks than during the previous render" in `RoundTi
 
 ### 4.2 Scope
 **In:**
-- (a) Lift `useMemo` at `RoundTimeline.tsx:109-112` and `useEffect` at line 82 above the `if (!data)` early return.
+- (a) Lift the 4 `useMemo` blocks at `RoundTimeline.tsx:109, 115, 131, 140` ABOVE the `if (!data)` early-return at line 94. (Note: the `useEffect` at line 82 is ALREADY above the early-return — the violation is that the 4 useMemos sit below it, making hook count differ between data-null and data-not-null renders.)
 - (b) Pin the 404 by capturing the request in DevTools, then add the missing backend route OR rename the caller (one-line fix).
 - (c) Swap `create` → `createWithEqualityFn` from `zustand/traditional` at `store/pipeline.ts:577`; add `shallow` to the 6 object/array-returning atomic selectors; keep scalar selectors single-arg.
 - 2 vitest regression tests: `RoundTimeline.hookorder.test.tsx`, `pipeline.shallow.test.ts`.
