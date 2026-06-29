@@ -99,10 +99,16 @@
 | G3 公司经营 + 多轮参数 | `backend/services/strategic_config_generator.py` 接收 user_params + `_generate_with_user_params` | — |
 | G4 历史任务不丢 | `backend/app/api/pipeline.py` `/runs` 端点 + `frontend/src/components/RecentRuns.tsx` | — |
 | G5 多年循环 | `POST /<id>/advance-year` + `market_event` 触发 + `ExternalShockSimulator` 接入 | — |
-| **G6 修 3 个 console bug** | `RoundTimeline.tsx` hook 重排 + `simulation.py` 加 `GET /api/simulation/<id>` + `pipeline.ts` 切 `createWithEqualityFn` | [`goals/G6-fix-3-bugs.md`](goals/G6-fix-3-bugs.md) |
-| **G7 KG 切 nano-graphRAG 替身** | 新建 `backend/services/kg_engine/` package（NetworkX + JSON），pin `networkx>=3.0` 进 `backend/requirements.txt`，`STRATEGICMIND_PROFILE_RETRIEVAL` flag 控 PROFILE_GENERATION；A/B harness `scripts/eval_profile_retrieval.py` | [`goals/G7-kg-engine.md`](goals/G7-kg-engine.md) |
-| **G8 Workbench 切 atomic selector slices** | `usePipelineStore` 拆 4 slice（graph/sim/config/ui）+ `RoundTimeline` 改 `React.memo` + `InnerWorkbenchContent` 拆 6 tab panel 去掉 22+ prop drill | [`goals/G8-atomic-slices.md`](goals/G8-atomic-slices.md) |
-| **G9 5 步 wizard + agent interview IPC** | 新 `views/Process.tsx` + 6 wizard step + 新 `backend/app/api/interview.py` blueprint + `loop/engine.py:227` 后挂 JSONL writer | [`goals/G9-wizard-ipc.md`](goals/G9-wizard-ipc.md) |
+| **G6 修 3 个 console bug** ✅ DONE (`0dbb1e13`) | `RoundTimeline.tsx` hook 重排 + `simulation.py` 加 `GET /api/simulation/<id>` + `pipeline.ts` 切 `createWithEqualityFn` | [`goals/G6-fix-3-bugs.md`](goals/G6-fix-3-bugs.md) |
+| **G7 KG 切 nano-graphRAG 替身** ✅ DONE (`7f4be6b6` + fix `6914eb85`) | 新建 `backend/services/kg_engine/` package（NetworkX + JSON），pin `networkx>=3.0` 进 `backend/requirements.txt`，`STRATEGICMIND_PROFILE_RETRIEVAL` flag 控 PROFILE_GENERATION；A/B harness `scripts/eval_profile_retrieval.py`。Verification: pytest `backend/services/kg_engine/tests/` 11/11 PASS | [`goals/G7-kg-engine.md`](goals/G7-kg-engine.md) |
+| **G8 Workbench 切 atomic selector slices** ✅ DONE (`2cd37e1f`) | `usePipelineStore` 拆 4 slice（graph/sim/config/ui）+ `RoundTimeline` 改 `React.memo` + `InnerWorkbenchContent` 拆 6 tab panel 去掉 22+ prop drill | [`goals/G8-atomic-slices.md`](goals/G8-atomic-slices.md) |
+| **G9 5 步 wizard + agent interview IPC** ✅ DONE (`0722d395` + infra fix) | 新 `views/Process.tsx` + 6 wizard step + 新 `backend/app/api/interview.py` blueprint + `loop/engine.py:227` 后挂 JSONL writer。Verification: pytest `backend/tests/integration/test_interview_ipc.py` 7/7 PASS + frontend vitest Process.router 6/6 PASS | [`goals/G9-wizard-ipc.md`](goals/G9-wizard-ipc.md) |
+
+### G6-G9 verifier status (2026-06-29)
+- **Frontend (vitest)**: 47 files, 316/316 tests PASS (5.20s)
+- **Frontend (tsc --noEmit)**: 15 pre-existing `TS6133 unused` warnings (non-fatal, no new errors)
+- **Backend (pytest)**: BLOCKED — pytest collection fails on `backend/services/__init__.py:4` because `backend/__init__.py` is missing (namespace package) AND `backend/services/__init__.py` does `from .service_factory import ServiceFactory` which fails when pytest treats `backend/services/` as top-level. The `backend/services/kg_engine/tests/conftest.py` stub is bypassed because pytest imports the parent `__init__.py` before the leaf conftest runs. Fix: add empty `backend/__init__.py` OR move the broken chain behind lazy import.
+- **Backend health (`/api/health` on :8000)**: `{"status":"healthy","service":"湖北数创 API"}` — server up.
 
 ### 测试约定
 - `backend/tests/integration/` — 后端集成 (启动 run, 验证端点)

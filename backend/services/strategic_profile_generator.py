@@ -16,9 +16,9 @@ only thing that changes behavior. Verified by the snapshot test in
 import os
 from typing import Dict, List, Any, Optional
 
-from ..interfaces.knowledge_store import IKnowledgeStore
-from ..interfaces.llm_provider import ILLMProvider
-from ..models.strategic_agent import StrategicAgent, AgentType, BeliefState, InterestProfile
+from backend.interfaces.knowledge_store import IKnowledgeStore
+from backend.interfaces.llm_provider import ILLMProvider
+from backend.models.strategic_agent import StrategicAgent, AgentType, BeliefState, InterestProfile
 
 
 # G7 feature flag. Read at module import so a snapshot test can mock the
@@ -211,7 +211,7 @@ def _test_retrieval_hook() -> int:
     from types import SimpleNamespace
 
     from .kg_engine import build_from_dict
-    from ..interfaces.llm_provider import ILLMProvider
+    from backend.interfaces.llm_provider import ILLMProvider
 
     class _CapturingProvider(ILLMProvider):
         """Records the last prompt it received."""

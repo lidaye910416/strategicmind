@@ -1,6 +1,6 @@
 # Goal G9 — 5-step wizard UI + agent interview IPC
 
-> Status: PENDING · Owner: claude (autonomous) · Depends on: G6, G7, G8 · Blocks: —
+> Status: ✅ DONE (commit `0722d395` + infra fix `backend/__init__.py`). pytest `backend/tests/integration/test_interview_ipc.py` 7/7 PASS + frontend vitest `Process.router.test.tsx` 6/6 PASS · Owner: claude (autonomous) · Depends on: G6, G7, G8 · Blocks: —
 
 ## What this goal proves
 

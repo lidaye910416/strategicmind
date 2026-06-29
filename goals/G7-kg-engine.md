@@ -1,6 +1,6 @@
 # Goal G7 — Replace file-based JSON KG with in-house `kg_engine` (NetworkX)
 
-> Status: PENDING · Owner: claude (autonomous) · Depends on: G6 · Blocks: G8, G9
+> Status: ✅ DONE (commit `7f4be6b6` + `6914eb85` conftest + infra fix). pytest `backend/services/kg_engine/tests/` 11/11 PASS · Owner: claude (autonomous) · Depends on: G6 · Blocks: G8, G9 unblocked
 
 ## What this goal proves
 

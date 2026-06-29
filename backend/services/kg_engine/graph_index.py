@@ -187,6 +187,11 @@ class KGIndex:
         dicts, ordered by BFS distance (closest first), with ties
         broken by entity id for determinism.
 
+        The source ``entity_id`` is NOT included in the result; this
+        matches the standard "neighbors of X" semantics where X is the
+        query target, not a neighbor of itself. Use ``get_entity``
+        or read the node attributes directly if you need the source.
+
         Empty list if the entity is unknown.
         """
         if not entity_id or not self._graph.has_node(entity_id):
@@ -195,7 +200,7 @@ class KGIndex:
             depth = 1
         seen: Set[str] = {entity_id}
         frontier: List[Tuple[str, int]] = [(entity_id, 0)]
-        by_distance: Dict[int, List[str]] = {0: [entity_id]}
+        by_distance: Dict[int, List[str]] = {}
         while frontier:
             new_frontier: List[Tuple[str, int]] = []
             for node, d in frontier:

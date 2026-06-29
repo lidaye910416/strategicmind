@@ -274,18 +274,52 @@ class _CapturingProvider:
 def retrieval_generator():
     """Build a fresh StrategicProfileGenerator + KGIndex for each test.
 
-    Imports the generator via direct file loading (the same trick the
-    test module uses for ``kg_engine``) to avoid triggering the broken
-    ``backend.services.__init__`` chain.
+    Loads ``strategic_profile_generator.py`` via ``spec_from_file_location``
+    and registers it as a real member of the ``backend.services`` package
+    (with ``submodule_search_locations`` set). This gives the file's
+    ``from backend.interfaces.X`` / ``from backend.models.X`` absolute
+    imports a proper parent package context so they resolve through
+    ``sys.modules``.
+
+    We use a private name (``_g7_strategic_profile_generator_for_test``)
+    to avoid polluting the real ``backend.services.strategic_profile_generator``
+    module — the tests need a fresh copy with their injected ``_FakeStore``
+    rather than the production singleton, so they intentionally bypass
+    the real module.
+
+    The original test author worried that ``backend.services.__init__``
+    was broken; we resolved that by adding ``backend/__init__.py`` and
+    cleaning up the relative-vs-absolute import in the generator itself.
     """
+    _PROJECT_ROOT = Path(__file__).resolve().parents[4]
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
+
+    # Purge any stale `backend*` modules left over from pytest's early
+    # collection. Pytest discovers ``backend/`` as a namespace package
+    # before our ``__init__.py`` is loaded into the right sys.modules
+    # key; clear those caches so the absolute imports below can re-bind
+    # ``backend`` as a real package via ``backend/__init__.py``.
+    _to_purge = [n for n in list(sys.modules) if n == "backend" or n.startswith("backend.")]
+    for _name in _to_purge:
+        sys.modules.pop(_name, None)
+
     _svc_dir = Path(__file__).resolve().parents[2]
     _profile_spec_path = _svc_dir / "strategic_profile_generator.py"
-    _spec = importlib.util.spec_from_file_location(
-        "_g7_strategic_profile_generator_for_test", str(_profile_spec_path)
+
+    _qualified_name = "_g7_strategic_profile_generator_for_test"
+    spec = importlib.util.spec_from_file_location(
+        _qualified_name,
+        str(_profile_spec_path),
+        submodule_search_locations=[
+            str(_PROJECT_ROOT / "backend"),
+            str(_PROJECT_ROOT / "backend" / "services"),
+        ],
     )
-    _mod = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_mod)
-    StrategicProfileGenerator = _mod.StrategicProfileGenerator
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[_qualified_name] = mod
+    spec.loader.exec_module(mod)
+    StrategicProfileGenerator = mod.StrategicProfileGenerator
 
     payload = _ten_node_fixture()
     kg = build_from_dict(payload["entities"], payload["relations"])
