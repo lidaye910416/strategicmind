@@ -271,7 +271,7 @@ class _CapturingProvider:
 
 
 @pytest.fixture
-def retrieval_generator():
+def retrieval_generator(request):
     """Build a fresh StrategicProfileGenerator + KGIndex for each test.
 
     Loads ``strategic_profile_generator.py`` via ``spec_from_file_location``
@@ -295,12 +295,23 @@ def retrieval_generator():
     if str(_PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(_PROJECT_ROOT))
 
+    # Snapshot ``backend*`` sys.modules entries BEFORE purging, so we can
+    # restore them in a finalizer. Without this, ``kg_engine`` tests leak
+    # bad state into the next pytest collection (e.g., when ``interview_ipc``
+    # runs after us in the same invocation, ``backend.services`` is left
+    # as a non-package and ``from backend.app import create_app`` fails).
+    _snapshot = {
+        n: sys.modules[n]
+        for n in list(sys.modules)
+        if n == "backend" or n.startswith("backend.")
+    }
+
     # Purge any stale `backend*` modules left over from pytest's early
     # collection. Pytest discovers ``backend/`` as a namespace package
     # before our ``__init__.py`` is loaded into the right sys.modules
     # key; clear those caches so the absolute imports below can re-bind
     # ``backend`` as a real package via ``backend/__init__.py``.
-    _to_purge = [n for n in list(sys.modules) if n == "backend" or n.startswith("backend.")]
+    _to_purge = list(_snapshot)
     for _name in _to_purge:
         sys.modules.pop(_name, None)
 
@@ -332,6 +343,26 @@ def retrieval_generator():
         "uuid": "compA",
         "entity_type": "organization",
     }
+
+    # Restore the originally-snapshotted ``backend*`` modules so that other
+    # test files collected in the same pytest invocation see the same import
+    # resolution they did before our namespace-purge. Without this restore,
+    # tests after us would see ``backend.services`` registered as our test
+    # module's parent, breaking ``from backend.app import create_app``.
+    def _restore_snapshot():
+        # Drop anything we caused to be re-registered, then put back the originals.
+        for _name in [
+            n for n in list(sys.modules)
+            if (n == "backend" or n.startswith("backend."))
+            and n not in _snapshot
+        ]:
+            sys.modules.pop(_name, None)
+        # Re-insert originals that may have been popped. Use dict items()
+        # snapshot for safe iteration even if other code mutates sys.modules.
+        for _name, _mod in list(_snapshot.items()):
+            sys.modules.setdefault(_name, _mod)
+
+    request.addfinalizer(_restore_snapshot)
     return gen, provider, store, entity
 
 
