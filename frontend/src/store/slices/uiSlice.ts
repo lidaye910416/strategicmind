@@ -21,6 +21,26 @@ import type {
   SimRound,
 } from '../pipeline'
 
+/**
+ * worldState — round_completed event 写入的"世界状态快照"。
+ *
+ * 来源: LoopEngine emit 的 SSE round_completed 事件 (Task 3 改了 event payload,
+ *       加 simulated_hours_elapsed / simulated_label / actions_this_round /
+ *       nodes_added / edges_added 5 字段).
+ * 用途: useRoundStream selector 派生 RoundStreamSnapshot (Task 5).
+ * 兼容: 旧 run 快照缺字段时 selector 返回 0 / '' 默认值 (不破 UI).
+ */
+export interface WorldStateSnapshot {
+  round_num?: number
+  total_rounds?: number
+  simulated_hours_elapsed?: number
+  simulated_label?: string
+  actions_this_round?: number
+  nodes_added?: number
+  edges_added?: number
+  [k: string]: any
+}
+
 export interface UiSliceState {
   // 字段
   runId: string | null
@@ -32,6 +52,8 @@ export interface UiSliceState {
   reportRisks: RiskItem[]
   _sseRef: EventSource | null
   _sseCloseTimer: number | null
+  /** G10: 当前 run 的世界状态 (round_completed 事件写入, useRoundStream 派生用) */
+  worldState: WorldStateSnapshot | null
 
   // actions
   setRunId: (runId: string | null) => void
@@ -40,6 +62,8 @@ export interface UiSliceState {
   setSnapshot: (snap: RunSnapshot) => void
   hydrateFromRunId: (runId: string, signal?: AbortSignal, active?: boolean) => Promise<boolean>
   dispose: () => void
+  /** G10: 更新 worldState (SSE round_completed handler 调用) */
+  setWorldState: (ws: WorldStateSnapshot | null) => void
 
   // SSE helpers (composite store only — not exported as part of public API)
   _openSSE: (runId: string, get: () => any, set: (p: any) => void) => void
@@ -145,6 +169,10 @@ export function makeSseHandlers() {
               new_relations: evtData.new_relations,
               ts: Date.now(),
             } as SimRound)
+            // G10: 写 worldState (Task 5 useRoundStream 派生用)
+            try {
+              get().setWorldState(evtData as WorldStateSnapshot)
+            } catch { /* ignore — old backend 缺字段时兜底 */ }
           } else if (evtType === 'market_event') {
             get().appendMarketEvent({
               type: evtData.type || 'UNKNOWN',
@@ -252,6 +280,7 @@ export const uiSlice: UiSliceCreator = (set, get) => {
     reportRisks: [],
     _sseRef: null,
     _sseCloseTimer: null,
+    worldState: null,
 
     setRunId: (runId) => {
       set({ runId })
@@ -261,6 +290,7 @@ export const uiSlice: UiSliceCreator = (set, get) => {
     setStatus: (status) => set({ status }),
     setProgress: (stage, progress) => set({ currentStage: stage, progress }),
     setSnapshot: (snap) => set({ snapshot: snap, runId: snap.run_id }),
+    setWorldState: (ws) => set({ worldState: ws }),
 
     hydrateFromRunId: async (runId, signal, active = true) => {
       if (!runId) return false
