@@ -143,13 +143,25 @@ export function makeSseHandlers() {
               error: evtData.error,
             } as GraphProgress)
             if (Array.isArray(evtData.new_entities)) {
-              for (const n of evtData.new_entities) get().appendGraphNode(n as GraphNodeData)
+              for (const n of evtData.new_entities) {
+                // Task 8: 记录 emerged_round = 当前 worldState.round_num
+                const wsRound = get().worldState?.round_num
+                const stamped: GraphNodeData = wsRound != null
+                  ? ({ ...(n as any), emerged_round: wsRound } as GraphNodeData)
+                  : (n as GraphNodeData)
+                get().appendGraphNode(stamped)
+              }
             }
             if (Array.isArray(evtData.new_relations)) {
               for (const e of evtData.new_relations) get().appendGraphEdge(e as GraphEdgeData)
             }
           } else if (evtType === 'entity_emerged' && evtData.entity) {
-            get().appendGraphNode(evtData.entity as GraphNodeData)
+            // Task 8: 记录 emerged_round = 当前 worldState.round_num
+            const wsRound = get().worldState?.round_num
+            const stamped: GraphNodeData = wsRound != null
+              ? ({ ...(evtData.entity as any), emerged_round: wsRound } as GraphNodeData)
+              : (evtData.entity as GraphNodeData)
+            get().appendGraphNode(stamped)
           } else if (evtType === 'relationship_formed' && evtData.relation) {
             get().appendGraphEdge(evtData.relation as GraphEdgeData)
           } else if (evtType === 'round_completed' || evtType === 'round_progress') {
