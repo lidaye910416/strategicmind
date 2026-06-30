@@ -181,8 +181,29 @@ class LoopEngine:
     seed: int = 0
     # Bookkeeping — last action_id per agent, for in_reply_to chaining.
     _last_action_id: Dict[str, str] = field(default_factory=dict)
+    # G10: KG delta tracking — baseline counts captured at the end of
+    # the previous round so each new payload reports the *delta*
+    # (nodes_added / edges_added) rather than absolute totals. Both
+    # counters start at 0; on round 1 the delta will reflect what
+    # ``memory_writer``/``EpisodicMemory`` accumulated during the run.
+    _last_node_count: int = 0
+    _last_edge_count: int = 0
+    # Internal failure counters — bumped when ``_count_nodes`` /
+    # ``_count_edges`` cannot introspect the knowledge store. These
+    # let operators spot upstream schema drift without crashing the
+    # round loop.
+    _metrics: Dict[str, int] = field(default_factory=dict)
+    # Cached time_step resolved from ``config`` at construction time.
+    _time_step: str = "month"
 
     def __post_init__(self) -> None:
+        # G10: resolve time_step once so the payload builder can call
+        # ``clock.simulated_label(round_num, self._time_step)`` cheaply.
+        cfg = self.config
+        if isinstance(cfg, dict):
+            self._time_step = str(cfg.get("time_step") or "month")
+        else:
+            self._time_step = str(getattr(cfg, "time_step", "month") or "month")
         # Wire a default in-process EpisodicMemory when the caller
         # didn't supply one. The engine never depends on the env.
         if self.memory_writer is None:
@@ -227,6 +248,10 @@ class LoopEngine:
             # UI's progress bar can compute ``round / total_rounds``.
             payload = result.to_event()
             payload["total_rounds"] = self.total_rounds
+            # G10: enrich the payload with 5 time-evolution fields so
+            # the Workbench UI can render a per-round timeline strip
+            # without re-deriving them on the frontend.
+            self._enrich_payload_with_time_fields(payload, result)
             self._emit_event("round_completed", payload)
             # G9: Append the per-round trace to a JSONL file under
             # ``backend/data/interviews/<run_id>.jsonl`` so the wizard's
@@ -441,6 +466,116 @@ class LoopEngine:
             self.event_bus.emit(self.run_id, event_type, data)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("LoopEngine event emit failed: %s", exc)
+
+    # ------------------------------------------------------------------
+    # G10: KG delta + time-evolution payload enrichment
+    # ------------------------------------------------------------------
+    def _enrich_payload_with_time_fields(
+        self, payload: Dict[str, Any], result: "RoundResult"
+    ) -> None:
+        """Mutate ``payload`` in place, adding 5 G10 fields.
+
+        Fields added:
+          * ``simulated_hours_elapsed`` — cumulative clock hours at emit
+            time (i.e. AFTER any prior rounds' ``clock.advance`` calls).
+          * ``simulated_label`` — human-readable round label such as
+            ``"Month 3"`` or ``"Q2 Year 1"`` produced by
+            :meth:`SimClock.simulated_label`.
+          * ``actions_this_round`` — number of StrategicAction objects
+            this round emitted.
+          * ``nodes_added`` / ``edges_added`` — KG delta since the last
+            round (or since ``run`` start on round 1).
+
+        Baseline counters (``_last_node_count`` / ``_last_edge_count``)
+        are bumped AFTER the payload is built so round 1's delta
+        captures what the memory_writer added during the round.
+        """
+        try:
+            hours = float(self.clock.total_hours)
+        except Exception:  # pragma: no cover - defensive
+            hours = 0.0
+        payload["simulated_hours_elapsed"] = hours
+        try:
+            payload["simulated_label"] = self.clock.simulated_label(
+                int(result.round_num), self._time_step,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("G10 simulated_label failed: %s", exc)
+            payload["simulated_label"] = f"Round {int(result.round_num)}"
+        payload["actions_this_round"] = len(result.actions or [])
+        current_nodes = self._count_nodes()
+        current_edges = self._count_edges()
+        payload["nodes_added"] = max(0, current_nodes - self._last_node_count)
+        payload["edges_added"] = max(0, current_edges - self._last_edge_count)
+        # Bump baselines AFTER the delta is computed so round N+1's
+        # payload reflects the *new* baseline.
+        self._last_node_count = current_nodes
+        self._last_edge_count = current_edges
+
+    def _count_nodes(self) -> int:
+        """Return current node count for the knowledge store.
+
+        Tries ``num_entities()`` (KGIndex API), then falls back to a
+        ``nodes`` dict / ``nodes`` list length for EpisodicMemory and
+        similar stores. On failure, increments a metric and returns
+        the last-known baseline so the delta is at least non-negative.
+        """
+        ks = self.knowledge_store
+        if ks is None:
+            return self._last_node_count
+        # Preferred API (KGIndex).
+        try:
+            fn = getattr(ks, "num_entities", None)
+            if callable(fn):
+                return int(fn())
+        except Exception as exc:  # pragma: no cover - defensive
+            self._metrics["node_count_failures"] = (
+                self._metrics.get("node_count_failures", 0) + 1
+            )
+            logger.warning("G10 _count_nodes(num_entities) failed: %s", exc)
+        # Fallback: nodes attribute (dict / list / set).
+        try:
+            nodes = getattr(ks, "nodes", None)
+            if nodes is not None:
+                return int(len(nodes))
+        except Exception as exc:  # pragma: no cover - defensive
+            self._metrics["node_count_failures"] = (
+                self._metrics.get("node_count_failures", 0) + 1
+            )
+            logger.warning("G10 _count_nodes(nodes) failed: %s", exc)
+        return self._last_node_count
+
+    def _count_edges(self) -> int:
+        """Return current edge count for the knowledge store.
+
+        Tries ``num_relations()`` (KGIndex API), then falls back to a
+        list-style ``edges`` attribute. On failure, increments a metric
+        and returns the last-known baseline.
+        """
+        ks = self.knowledge_store
+        if ks is None:
+            return self._last_edge_count
+        # Preferred API (KGIndex).
+        try:
+            fn = getattr(ks, "num_relations", None)
+            if callable(fn):
+                return int(fn())
+        except Exception as exc:  # pragma: no cover - defensive
+            self._metrics["edge_count_failures"] = (
+                self._metrics.get("edge_count_failures", 0) + 1
+            )
+            logger.warning("G10 _count_edges(num_relations) failed: %s", exc)
+        # Fallback: edges attribute (list / set).
+        try:
+            edges = getattr(ks, "edges", None)
+            if edges is not None:
+                return int(len(edges))
+        except Exception as exc:  # pragma: no cover - defensive
+            self._metrics["edge_count_failures"] = (
+                self._metrics.get("edge_count_failures", 0) + 1
+            )
+            logger.warning("G10 _count_edges(edges) failed: %s", exc)
+        return self._last_edge_count
 
     def _extract_user_params(self) -> Dict[str, Any]:
         """Find user_params from the config, tolerating dataclass / dict."""
