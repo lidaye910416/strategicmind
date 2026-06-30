@@ -180,6 +180,11 @@ export function makeSseHandlers() {
               new_entities: evtData.new_entities,
               new_relations: evtData.new_relations,
               ts: Date.now(),
+              // mirofish-time-evolution Bug 2: 同步 SSE payload 的 round-level
+              // 元数据到 simRounds[i], 这样 RoundTimeline 的 inline 摘要
+              // (R{...} · {label} · {N} acts · +{M} nodes) 不再是空 label.
+              simulated_label: (evtData as any).simulated_label,
+              nodes_added: (evtData as any).nodes_added,
             } as SimRound)
             // G10: 写 worldState (Task 5 useRoundStream 派生用)
             try {
