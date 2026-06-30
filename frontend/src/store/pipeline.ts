@@ -245,7 +245,7 @@ export const usePipelineStore = createWithEqualityFn<PipelineState>((set, get) =
     resetGraphStream: () => {
       g.resetGraphStream()
       s.resetSimSlice()
-      set({ reportRisks: [], worldState: null } as any)
+      set({ reportRisks: [], worldState: null })
     },
   }
 })
