@@ -20,22 +20,22 @@
 ### 后端
 | 文件 | 行数 | 说明 |
 |------|------|------|
-| `backend/models/department_agent.py` | 246 | 部门级 Agent + KPI 权重 + 立场计算 |
-| `backend/models/business_model.py` | 291 | 8 种经营模式画像 + 部门话语权修正 |
+| `backend/models/department_agent.py` | 243 | 部门级 Agent + KPI 权重 + 立场计算 |
+| `backend/models/business_model.py` | 286 | 8 种经营模式画像 + 部门话语权修正 |
 | `backend/models/market_environment.py` | 219 | 持续市场环境 Agent + 季度演化 |
 | `backend/models/market_actor.py` | 215 | 客户 Agent + 竞品 Agent |
 | `backend/services/inter_department_resolver.py` | 261 | 部门立场 → 加权议价 → 公司决议 |
 | `backend/services/company_orchestrator.py` | 184 | 公司编排器：部门 + 经营 + 市场 + 客户/竞品 |
 | `backend/services/dept_aware_config_generator.py` | 290 | 部门感知的仿真配置生成器 |
-| `backend/app/api/company.py` | 540 | 公司级 API 端点（8 个 + P1/P2 增量） |
+| `backend/app/api/company.py` | 221 | 公司级 API 端点（8 个） |
 | `backend/app/__init__.py` | +5 | 注册 company blueprint |
-| `backend/tests/test_company_orchestration.py` | 322 | 35 个测试用例 |
+| `backend/tests/test_company_orchestration.py` | 322 | 26 个测试用例 |
 
 ### 前端
 | 文件 | 行数 | 说明 |
 |------|------|------|
-| `frontend/src/services/companyApi.ts` | 164 | 公司编排 API 客户端 |
-| `frontend/src/views/Workbench.tsx` | 452 | **多视角推演工作台** |
+| `frontend/src/services/companyApi.ts` | 163 | 公司编排 API 客户端 |
+| `frontend/src/views/Workbench.tsx` | 475 | **多视角推演工作台** |
 | `frontend/src/router/index.tsx` | +3 | 添加 `/workbench` 路由 |
 | `frontend/src/i18n/zh.ts` | +27 | 添加 WORKBENCH 中文 i18n |
 | `frontend/src/views/Dashboard.tsx` | +5 | 添加"推演工作台"入口 |
@@ -77,22 +77,18 @@ POST   /api/company/<id>/add-customers      添加客户群
 | 平台型 | 0.7× | **1.5×** | 0.6× | 55% |
 | 国资导向 | 0.7× | 0.8× | **1.3×** | 20% |
 
-## 接下来读什么
+### 3. 部门冲突解决
+- 每个部门给出 -1 到 +1 的立场
+- 立场 × 决策权 × 经营模式修正 = 投票权重
+- 加权平均得到公司级立场
+- 根据立场强度 + 分歧度决定结果：采纳/拒绝/妥协/暂缓
 
-本文档描述 P0-P3 增强的实施. 当前正在推进的修复与新功能见 `docs/features/`:
+### 4. 持续市场环境
+- 行业增速、政策立场、资金可获得性、消费者信心等持续指标
+- 季度推进时按高斯分布演化
+- 部门决策时考虑市场环境（高增长期销售激进、低增长期财务保守）
 
-- KG 节点爆炸修复 → [`docs/features/knowledge-graph-quality.md`](./docs/features/knowledge-graph-quality.md)
-- 推演不真实修复 → [`docs/features/simulation-realism.md`](./docs/features/simulation-realism.md)
-- 跨页面内容不一致修复 → [`docs/features/shared-components.md`](./docs/features/shared-components.md)
-
-完整文档索引见 [`docs/README.md`](./docs/README.md).
-
-最近 3 P0 bug 修复 + N1-N7 新发现 (2026-06-23 workflow):
-见 `docs/bugs/README.md` + `docs/features/`. git: `db10a153` (KG) → `e82f79c6` (Frontend) → `8959f80a` (Simulation).
-
----
-
-## 一、实施概览
+## 五、前端工作台（Workbench）
 
 工作台设计:
 - **顶部**：7 步流水线 Dashboard（复用现有组件）
@@ -167,7 +163,7 @@ cd frontend && npm run dev
 
 | 文件 | 行数 | 说明 |
 |------|------|------|
-| `backend/services/company_aware_simulation.py` | 411 | 公司感知仿真引擎（每回合先部门博弈决议） |
+| `backend/services/company_aware_simulation.py` | 316 | 公司感知仿真引擎（每回合先部门博弈决议） |
 | `frontend/src/components/DepartmentGraph.tsx` | 410 | 部门关系图（力导向 D3-style） |
 | `backend/app/api/company.py` | +120 | 新增 `/simulate` + `/department-distribution` |
 
@@ -295,7 +291,7 @@ API 端点: 10 (P0) + 2 (P1) + 2 (P2) = 14 个
 | 文件 | 行数 | 说明 |
 |------|------|------|
 | `backend/services/agent_interview.py` | 274 | 智能体采访服务 (对话式收集部门立场) |
-| `frontend/src/components/AgentInterview.tsx` | 345 | 智能体采访 UI（对话界面） |
+| `frontend/src/components/AgentInterview.tsx` | 318 | 智能体采访 UI（对话界面） |
 | `backend/data/seed_examples/*.md` | - | 4 个内置战略场景（金融/制造/SaaS/政务） |
 | `backend/app/api/company.py` | +130 | 新增 3 个采访端点 |
 
@@ -303,7 +299,7 @@ API 端点: 10 (P0) + 2 (P1) + 2 (P2) = 14 个
 
 | 能力 | 通用社交模拟 | 升级前 StrategicMind | 升级后 StrategicMind |
 |------|----------|----------------------|----------------------|
-| 多智能体采访 | ✅ Step5 完整 | ❌ 无 | ✅ AgentInterview 345 行 |
+| 多智能体采访 | ✅ Step5 完整 | ❌ 无 | ✅ AgentInterview 318 行 |
 | 场景种子库 | ✅ seed_examples/ | ⚠️ 1 个内嵌 | ✅ 4 个结构化场景 |
 | ReportAgent 工具 | ✅ 4 工具（insight_forge/panorama/quick/interview） | ⚠️ 1 工具 | ✅ 采访已实现 |
 | i18n 覆盖 | ✅ 629 键 | 216 键 | 216 键（待增强） |
@@ -349,7 +345,7 @@ API 端点: 10 (P0) + 2 (P1) + 2 (P2) = 14 个
 | 部门建模 | ❌ | ✅ 10 种 + KPI |
 | 经营模式 | ❌ | ✅ 8 种 + 修正 |
 | 部门冲突 | ❌ | ✅ 加权议价 |
-| 智能体采访 | ✅ Step5 | ✅ AgentInterview 345 行 |
+| 智能体采访 | ✅ Step5 | ✅ AgentInterview |
 | 场景种子库 | ✅ | ✅ 4 个场景 |
 | 推演合理性 | ⚠️ 通用 | ✅ 高度定制 |
 | 中文支持 | ✅ | ✅ 全中文 |
