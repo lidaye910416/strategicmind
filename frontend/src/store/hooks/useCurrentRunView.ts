@@ -143,22 +143,14 @@ export function useCurrentGraph(): GraphSlice {
   const liveProgress = useGraphProgress()
   const setGraphSnapshot = usePipelineStore((s) => s.setGraphSnapshot)
 
-  // ---- Step 1: live path (store 有数据) ----
-  const liveSlice: GraphSlice | null = useMemo(() => {
-    if (!runId) return null
-    if (liveNodes.length === 0 && liveEdges.length === 0) return null
-    return {
-      nodes: liveNodes,
-      edges: liveEdges,
-      source: 'live',
-      progress: liveProgress,
-    }
-  }, [runId, liveNodes, liveEdges, liveProgress])
-
-  if (liveSlice) return liveSlice
-
   // ---- Step 2: REST fallback — 唯一允许拉 snapshot 的入口 (N7) ----
-  // 只在 runId 为 null 时启用
+  // Only fire when runId is null. The hook list below is INVARIANT across
+  // renders — never gate a useState/useRef/useEffect with an early return
+  // above it. React's Rules-of-Hooks demand the same hook count every
+  // render; if `liveSlice` returned early and SSE then pushed data, the
+  // render would have a different hook count than the first render and
+  // React throws "Rendered fewer hooks than expected". The branching is
+  // expressed inside the final useMemo.
   const [fallback, setFallback] = useState<{
     nodes: GraphNodeData[]
     edges: GraphEdgeData[]
@@ -187,17 +179,29 @@ export function useCurrentGraph(): GraphSlice {
     }
   }, [runId, setGraphSnapshot])
 
-  if (runId === null && fallback) {
-    return {
-      nodes: fallback.nodes,
-      edges: fallback.edges,
-      source: 'snapshot',
-      progress: liveProgress,
+  // ---- Step 1+3: derived slice via useMemo ----
+  // Branching now expressed inside the memo body so React sees a stable
+  // hook list and a single return value.
+  return useMemo((): GraphSlice => {
+    const hasLive = !!runId && (liveNodes.length > 0 || liveEdges.length > 0)
+    if (hasLive) {
+      return {
+        nodes: liveNodes,
+        edges: liveEdges,
+        source: 'live',
+        progress: liveProgress,
+      }
     }
-  }
-
-  // ---- Step 3: empty ----
-  return { nodes: [], edges: [], source: 'empty', progress: null }
+    if (runId === null && fallback) {
+      return {
+        nodes: fallback.nodes,
+        edges: fallback.edges,
+        source: 'snapshot',
+        progress: liveProgress,
+      }
+    }
+    return { nodes: [], edges: [], source: 'empty', progress: null }
+  }, [runId, liveNodes, liveEdges, liveProgress, fallback])
 }
 
 /**

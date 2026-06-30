@@ -145,3 +145,44 @@ describe('useCurrentTimeline', () => {
     expect(result.current[0].summary).toContain('Round 1')
   })
 })
+
+describe('useCurrentGraph — Rules of Hooks invariant', () => {
+  /**
+   * Regression: a prior implementation of `useCurrentGraph()` had
+   *   `if (liveSlice) return liveSlice`
+   * followed by `useState` + `useRef` + `useEffect`. When SSE pushed a
+   * first graph node mid-session, React saw a smaller hook count and
+   * threw "Rendered fewer hooks than expected.", blanking the Workbench.
+   *
+   * This test walks the three source states in sequence and asserts no
+   * React-hook-related console error escapes.
+   */
+  it('keeps hook count invariant across empty → live → empty transitions', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { result, rerender } = renderHook(() => useCurrentGraph())
+    expect(result.current.source).toBe('empty')
+
+    // Live data arrives via store mutation (simulates SSE push).
+    usePipelineStore.setState({
+      runId: 'r1',
+      graphNodes: [{ id: 'n1' } as GraphNodeData],
+      graphEdges: [{ id: 'e1', source: 'a', target: 'b' } as GraphEdgeData],
+    })
+    rerender()
+    expect(result.current.source).toBe('live')
+    expect(result.current.nodes).toHaveLength(1)
+
+    // Live data clears again — null runId + empty lists.
+    usePipelineStore.setState({ graphNodes: [], graphEdges: [], runId: null })
+    rerender()
+    expect(result.current.source).toBe('empty')
+
+    const offenders = consoleErrorSpy.mock.calls.filter((args) => {
+      const msg = args.map(String).join(' ')
+      return /Rendered (?:fewer|more) hooks|accidental early return|Rules of Hooks/.test(msg)
+    })
+    expect(offenders).toEqual([])
+    consoleErrorSpy.mockRestore()
+  })
+})
