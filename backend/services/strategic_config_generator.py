@@ -8,11 +8,14 @@ P2-G3 升级：接受 user_params 派生 max_rounds / n_stakeholders / 部门列
 保留旧 _define_metrics 作为 user_params 缺失时的 fallback。
 """
 
+import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 
 from ..models.seed_document import SeedDocument
 from ..models.strategic_agent import AgentType
+
+logger = logging.getLogger(__name__)
 
 
 # 时间步长 → 每多少回合代表 1 年的映射（与 frontend/src/types/simulationConfig.ts 同步）
@@ -20,6 +23,17 @@ _TIME_STEP_PER_YEAR: Dict[str, int] = {
     "year": 1,
     "quarter": 4,
     "month": 12,
+}
+
+# 时间步长 → 每回合推进多少"模拟小时"。Round N 真实经过 N * hours_per_round 小时。
+# 让 Round 3 = Month 3 (3 * 720h = 90 天) / Q3 Year 1 (3 * 2160h = 270 天) 等真实可读时间。
+# 修复 CLAUDE.md 坑 #5: 派生参数未生效。
+_TIME_STEP_HOURS: Dict[str, int] = {
+    "day": 24,
+    "week": 168,
+    "month": 720,
+    "quarter": 2160,
+    "year": 8760,
 }
 
 # 默认派生值（与 frontend DEFAULT_USER_PARAMS 保持一致）
@@ -57,6 +71,9 @@ class SimulationConfig:
     convergence_policy: str = "auto_extend"
     time_step: str = _DEFAULT_TIME_STEP
     years: int = _DEFAULT_YEARS
+    # MiroFish time-evolution：每回合推进的"模拟小时"。派生自 time_step。
+    # 默认 month (720h) 让 Round 3 = 90 天，符合真实日历。
+    hours_per_round: int = _TIME_STEP_HOURS[_DEFAULT_TIME_STEP]
 
 
 class StrategicConfigGenerator:
@@ -100,6 +117,7 @@ class StrategicConfigGenerator:
         agents = self._identify_stakeholders(seed_doc)
         topics = self._map_claims_to_topics(seed_doc, agents)
         metrics = self._define_metrics(requirement)
+        # 默认 time_step = month → hours_per_round = 720（_TIME_STEP_HOURS 默认）
         return SimulationConfig(
             seed_doc_id=seed_doc.doc_id,
             agents=agents,
@@ -107,6 +125,9 @@ class StrategicConfigGenerator:
             simulated_hours=self.config.get("simulated_hours", 72),
             metrics=metrics,
             topics=topics,
+            hours_per_round=self.config.get(
+                "hours_per_round", _TIME_STEP_HOURS["month"]
+            ),
         )
 
     # ---------- P2-G3 主路径 ----------
@@ -122,6 +143,15 @@ class StrategicConfigGenerator:
         time_step = str(user_params.get("time_step", _DEFAULT_TIME_STEP) or _DEFAULT_TIME_STEP)
         per_year = _TIME_STEP_PER_YEAR.get(time_step, 4)
         max_rounds = years * per_year
+
+        # 1b) 派生 hours_per_round（CLAUDE.md 坑 #5 修复）：让 Round N 真实推进 N * hours_per_round 小时
+        hours_per_round = _TIME_STEP_HOURS.get(time_step, _TIME_STEP_HOURS["month"])
+        if time_step not in _TIME_STEP_HOURS:
+            logger.warning(
+                "Unknown time_step=%s, fallback to month (%dh/round)",
+                time_step,
+                _TIME_STEP_HOURS["month"],
+            )
 
         # 2) 派生 n_stakeholders（6..24，与前端 input min/max 对齐）
         n_stakeholders_raw = self._coerce_int(
@@ -186,6 +216,7 @@ class StrategicConfigGenerator:
             convergence_policy=convergence_policy,
             time_step=time_step,
             years=years,
+            hours_per_round=hours_per_round,
         )
 
     # ---------- 保留的旧方法（fallback 仍调用） ----------
