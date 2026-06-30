@@ -288,7 +288,13 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
               <div className="absolute left-2.5 top-0 bottom-0 w-px bg-gradient-to-b from-brand-300 via-accent-300 to-transparent dark:from-brand-700 dark:via-accent-700" />
               <div className="space-y-2.5">
                 {currentRound.actions.map((a, i) => (
-                  <ActionCard key={a.metadata?.id || `${a.actor_id}-${a.action_type}-${a.timestamp}-${i}`} action={a} idx={i} />
+                  <div key={a.metadata?.id || `${a.actor_id}-${a.action_type}-${a.timestamp}-${i}`}>
+                    <ActionCard action={a} idx={i} />
+                    {/* MiroFish 时间演化的 inline 摘要：每行尾部 R{n} · label · acts · nodes */}
+                    <span className="ml-10 mt-1 inline-block text-[10px] text-ink-400 dark:text-ink-500 font-mono">
+                      R{currentRound.round_num} · {a.metadata?.simulated_label ?? ''} · {currentRound.actions.length} acts · +{(a.metadata?.nodes_added ?? 0)} nodes
+                    </span>
+                  </div>
                 ))}
               </div>
             </div>
