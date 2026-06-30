@@ -110,3 +110,15 @@ export default function LiveRunPanel(props: Props) {
     </div>
   )
 }
+
+/**
+ * Named re-exports for the new sub-component API.
+ *
+ * 旧 LiveRunPanel.tsx 路径仍存在 (1 release deprecation shim), 但调用方现在 import:
+ *   import { Graph, Network, Stages } from '../LiveRunPanel'  ← 新 API, 不打 warning
+ * 这里 re-export 让 shim 路径与新目录路径 (`./LiveRunPanel/index`) 行为一致。
+ * 子组件是 default export, 用 `default as X` 重命名后 named re-export。
+ */
+export { default as Graph } from './LiveRunPanel/Graph'
+export { default as Network } from './LiveRunPanel/Network'
+export { default as Stages } from './LiveRunPanel/Stages'

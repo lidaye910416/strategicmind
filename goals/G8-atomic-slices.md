@@ -1,6 +1,6 @@
 # Goal G8 — Workbench atomic-selector slices (kill prop-drilling, fix RoundTimeline)
 
-> Status: PENDING · Owner: claude (autonomous) · Depends on: G6 · Blocks: G9
+> Status: ✅ DONE (commit `2cd37e1f`) · Owner: claude (autonomous) · Depends on: G6 · Blocks: G9
 
 ## What this goal proves
 

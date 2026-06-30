@@ -1,5 +1,9 @@
 # Workbench 内容补全 + 步骤进度可见化
 
+> **状态**: ⏳ **PLANNED** (spec 完成, 实施未启动, 2026-06-09)
+> **关联 spec**: [`../superpowers/specs/loop-engine-v2-implementation.md`](../superpowers/specs/loop-engine-v2-implementation.md) §Phase 2 / T2.6
+> **关联 ADR**: 暂无 (实施时若有非显然决策, 再写 ADR-008+)
+
 **日期**: 2026-06-09
 **作者**: Claude (brainstorming + spec)
 **状态**: Approved (pending user review)

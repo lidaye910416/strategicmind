@@ -20,6 +20,8 @@ import WorkbenchSubnav from '../components/WorkbenchSubnav'
 import WorkbenchLayout from '../components/Workbench/WorkbenchLayout'
 import SystemLogs from '../components/SystemLogs'
 import InnerWorkbenchContent from '../components/Workbench/InnerWorkbenchContent'
+import { CompanyProvider } from '../components/Workbench/CompanyContext'
+import { DebateProvider } from '../components/Workbench/DebateContext'
 import MarketEventTicker from '../components/MarketEventTicker'
 import ShockToast from '../components/ShockToast'
 import YearAdvancedBanner from '../components/YearAdvancedBanner'
@@ -33,10 +35,8 @@ import {
 } from '../i18n/zh'
 import { fadeUp, stagger } from '../lib/motion'
 import {
-  usePipelineStore, useRunId, useStatus, useStage, useLastRunConfig,
-  useGraphNodes, useGraphProgress, useSimRounds, useNetworkFrames,
+  usePipelineStore, useRunId, useStatus, useLastRunConfig,
   useMarketEvents, useRecentShocks, useYearAdvanced,
-  useReportRisks,
 } from '../store/pipeline'
 
 // ---- P5: 7 步流水线定义已迁至 components/Workbench/StageProgressStrip.tsx 与 store/pipeline.ts ----
@@ -52,7 +52,6 @@ export default function Workbench() {
   // P1-19: 阶段/进度/状态全部由 store 派生（SSE 自动推），不再用 local state + 2s 轮询
   const runId = useRunId()
   const status = useStatus()
-  const stage = useStage()
   const startPipeline = usePipelineStore((s) => s.startPipeline)
   const pausePipeline = usePipelineStore((s) => s.pause)
   const resumePipeline = usePipelineStore((s) => s.resume)
@@ -75,21 +74,10 @@ export default function Workbench() {
   const [resolving, setResolving] = useState(false)
   const [simulating, setSimulating] = useState(false)
   const [simResult, setSimResult] = useState<any>(null)
-  // ---- P3: 实时图谱数据直接从 store 派生（与 hydrateFromRunId / SSE 增量共用同一数据源） ----
-  const graphNodes = useGraphNodes()
-  const graphProgress = useGraphProgress()
-  const simRounds = useSimRounds()
-  const networkFrames = useNetworkFrames()
   // must-tier v2: 三个 SSE 事件队列（market_event / shock_injected / year_advanced）
   const marketEvents = useMarketEvents()
   const recentShocks = useRecentShocks()
   const yearAdvanced = useYearAdvanced()
-  // must-tier v1: 风险矩阵派生
-  const reportRisks = useReportRisks()
-
-  // ---- tier-1: 30s 轮询 toggle (SSE 断线兜底) ----
-  // 0 = 关闭 (默认), 30000 = 开启
-  const [graphRefreshIntervalMs, setGraphRefreshIntervalMs] = useState<number>(0)
 
   // ---- P1-14: URL ?prefill= 预填议题（由 Report 派生或 AgentInterview 跳转而来） ----
   useEffect(() => {
@@ -410,32 +398,21 @@ export default function Workbench() {
         {runId && (
           <motion.div variants={fadeUp} className="px-0 md:px-2">
             <WorkbenchLayout>
-              <InnerWorkbenchContent
-                company={company}
-                companyId={companyId}
-                runId={runId}
-                status={status}
-                stage={stage}
-                topicInput={topicInput}
-                setTopicInput={setTopicInput}
-                resolution={resolution}
-                resolving={resolving}
-                resolveTopic={resolveTopic}
-                runCompanySimulation={runCompanySimulation}
-                simResult={simResult}
-                simulating={simulating}
-                simulatingRound={simulatingRound}
-                simulatingPct={simulatingPct}
-                downloadCompanyReport={downloadCompanyReport}
-                handleStartPipeline={handleStartPipeline}
-                graphNodes={graphNodes}
-                graphProgress={graphProgress}
-                simRounds={simRounds}
-                networkFrames={networkFrames}
-                reportRisks={reportRisks}
-                graphRefreshIntervalMs={graphRefreshIntervalMs}
-                setGraphRefreshIntervalMs={setGraphRefreshIntervalMs}
-              />
+              <CompanyProvider value={{ company, companyId }}>
+                <DebateProvider
+                  value={{
+                    topicInput, setTopicInput,
+                    resolution, resolving, resolveTopic,
+                    runCompanySimulation,
+                    simResult, simulating, simulatingRound, simulatingPct,
+                    downloadCompanyReport, handleStartPipeline,
+                  }}
+                >
+                  {/* G8: prop bag shrunk from 22 → 0 (slice subscriptions +
+                      CompanyProvider + DebateProvider take over). */}
+                  <InnerWorkbenchContent />
+                </DebateProvider>
+              </CompanyProvider>
             </WorkbenchLayout>
           </motion.div>
         )}

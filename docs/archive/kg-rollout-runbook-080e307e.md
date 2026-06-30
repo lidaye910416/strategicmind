@@ -1,3 +1,15 @@
+# ⚠️ ARCHIVED — 2026-06-23
+
+> **This runbook is for commit `080e307e` (an older KG optimization).**
+> **It has been SUPERSEDED by:**
+> - [docs/features/knowledge-graph-quality.md](../features/knowledge-graph-quality.md) — new spec with `STRATEGICMIND_KG_GLOBAL_TARGET` (default 200)
+> - [docs/decisions/ADR-001-kg-eviction-signal-density.md](../decisions/ADR-001-kg-eviction-signal-density.md) — eviction strategy
+> - [docs/runs/2026-06-23-p0-bug-fix.md](../runs/2026-06-23-p0-bug-fix.md) — commit `db10a153`
+>
+> **Do NOT use this runbook for the current codebase. The env flag names and behavior have changed.**
+
+---
+
 # KG Optimization 灰度发布 Runbook (P2-3)
 
 > 任务: 080e307e `perf(knowledge-graph): 收敛 strategicmind 每轮节点至 MiroFish 量级` 的 staging / production 灰度发布流程.
