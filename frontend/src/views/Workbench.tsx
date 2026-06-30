@@ -105,15 +105,22 @@ export default function Workbench() {
     }
     return deltas
   }, [simRounds])
-  // 派生 simulated labels: 历史轮用 generic 'Round N', 当前轮用 worldState.simulated_label
+  // 派生 simulated labels: 历史轮用 simRounds 上 stamp 的 simulated_label,
+// 当前轮优先用 worldState 的 simulated_label (始终最新, 兜底 'Round N')
   const simulatedLabels = useMemo(() => {
     return Array.from({ length: roundStream.totalRounds }, (_, i) => {
-      const idx = i + 1
-      const r = (simRounds ?? []).find((x) => x.round === idx)
-      // 历史 round 没有 stored label → 退化 'Round N'
-      return r ? `Round ${idx}` : `Round ${idx}`
+      const round = i + 1
+      const r = (simRounds ?? []).find((x) => x.round === round)
+      // 当前轮优先用 worldState.simulated_label (UI 显示的实时值,
+      // 旧字段可能 stale); 历史轮从 simRounds[i].simulated_label 读,
+      // 都没就退化 'Round N'.
+      if (round === roundStream.currentRound && roundStream.simulatedLabel) {
+        return roundStream.simulatedLabel
+      }
+      const stored = (r as any)?.simulated_label
+      return stored || `Round ${round}`
     })
-  }, [simRounds, roundStream.totalRounds])
+  }, [simRounds, roundStream.totalRounds, roundStream.currentRound, roundStream.simulatedLabel])
 
   // ---- tier-1: 30s 轮询 toggle (SSE 断线兜底) ----
   // 0 = 关闭 (默认), 30000 = 开启
