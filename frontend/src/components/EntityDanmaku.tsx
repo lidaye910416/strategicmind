@@ -32,6 +32,8 @@ interface DanmakuItem {
   ts: number
   /** 该条加入时的 store 节点总数 (用于显示 "已 X 节点") */
   totalCount: number
+  /** 实体涌现轮次 (来自 GraphNodeData.emerged_round / round) */
+  emergedRound?: number
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -81,6 +83,7 @@ export default function EntityDanmaku() {
         type: String(n.type ?? 'DEFAULT'),
         ts: now,
         totalCount: graphNodes.length,
+        emergedRound: (n as any).emerged_round ?? (n as any).round,
       })
     }
     if (newcomers.length === 0) return
@@ -159,6 +162,13 @@ export default function EntityDanmaku() {
               >
                 <X size={10} />
               </button>
+              {/* 涌现轮次 badge (右上角) — 用户立即看到 entity 在哪一轮出现 */}
+              <span
+                data-testid="entity-round-badge"
+                className="absolute top-1 right-7 text-[9px] px-1.5 py-0.5 rounded bg-white/30 text-white font-mono"
+              >
+                📍 R{it.emergedRound ?? '?'}
+              </span>
             </div>
             <div className="mt-0.5 text-sm font-semibold leading-tight truncate">
               {it.label}

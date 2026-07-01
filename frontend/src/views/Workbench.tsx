@@ -7,7 +7,7 @@
  *
  * Implements: US-208 推演工作台
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Link, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -26,6 +26,8 @@ import YearAdvancedBanner from '../components/YearAdvancedBanner'
 import ShockBanner from '../components/ShockBanner'
 import RoundStartedBanner from '../components/RoundStartedBanner'
 import EntityDanmaku from '../components/EntityDanmaku'
+import { RoundTimelineStrip } from '../components/RoundTimelineStrip'
+import { useRoundStream } from '../store/hooks/useRoundStream'
 
 import Hero from '../components/layout/Hero'
 import {
@@ -86,6 +88,39 @@ export default function Workbench() {
   const yearAdvanced = useYearAdvanced()
   // must-tier v1: 风险矩阵派生
   const reportRisks = useReportRisks()
+
+  // ---- G10: round 时间演化 (MiroFish-style 顶部 strip) ----
+  // useRoundStream 提供 currentRound/totalRounds + current sim label
+  const roundStream = useRoundStream()
+  // 派生 per-round deltas: 从 simRounds 历史 (每轮 new_entities/new_relations) 累加
+  const roundDeltas = useMemo(() => {
+    const deltas: Record<number, { nodes: number; edges: number }> = {}
+    for (const r of simRounds ?? []) {
+      const round = r.round ?? 0
+      if (!round) continue
+      deltas[round] = {
+        nodes: Array.isArray(r.new_entities) ? r.new_entities.length : 0,
+        edges: Array.isArray(r.new_relations) ? r.new_relations.length : 0,
+      }
+    }
+    return deltas
+  }, [simRounds])
+  // 派生 simulated labels: 历史轮用 simRounds 上 stamp 的 simulated_label,
+// 当前轮优先用 worldState 的 simulated_label (始终最新, 兜底 'Round N')
+  const simulatedLabels = useMemo(() => {
+    return Array.from({ length: roundStream.totalRounds }, (_, i) => {
+      const round = i + 1
+      const r = (simRounds ?? []).find((x) => x.round === round)
+      // 当前轮优先用 worldState.simulated_label (UI 显示的实时值,
+      // 旧字段可能 stale); 历史轮从 simRounds[i].simulated_label 读,
+      // 都没就退化 'Round N'.
+      if (round === roundStream.currentRound && roundStream.simulatedLabel) {
+        return roundStream.simulatedLabel
+      }
+      const stored = (r as any)?.simulated_label
+      return stored || `Round ${round}`
+    })
+  }, [simRounds, roundStream.totalRounds, roundStream.currentRound, roundStream.simulatedLabel])
 
   // ---- tier-1: 30s 轮询 toggle (SSE 断线兜底) ----
   // 0 = 关闭 (默认), 30000 = 开启
@@ -397,6 +432,18 @@ export default function Workbench() {
         )}
 
         {/* ===== P5: 7 步流水线状态条由 WorkbenchLayout 内部渲染 (T2.2) ===== */}
+
+        {/* ===== G10: 顶部 round 时间演化 strip (MiroFish-style N pills) ===== */}
+        {runId && roundStream.totalRounds > 0 && (
+          <motion.div variants={fadeUp}>
+            <RoundTimelineStrip
+              totalRounds={roundStream.totalRounds}
+              currentRound={roundStream.currentRound}
+              deltas={roundDeltas}
+              simulatedLabels={simulatedLabels}
+            />
+          </motion.div>
+        )}
 
         {/* ===== sticky 子导航（4 锚点 + scroll-spy + 心跳） PR-2 P1-1/2 ===== */}
         <motion.div variants={fadeUp}>

@@ -37,6 +37,11 @@ interface RoundData {
   start_time?: string
   end_time?: string
   ts?: number
+  // mirofish-time-evolution Bug 2: round-level 元数据 (SimRound payload 直接
+  // 携带; per-action metadata 永远不会被 backend stamp). 原本从 a.metadata
+  // 读 simulated_label / nodes_added 永远空.
+  simulated_label?: string
+  nodes_added?: number
 }
 
 interface Props { simulationId?: string }
@@ -67,6 +72,16 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
       belief_updates: r.belief_updates ?? [],
       propagation_events: r.propagation_events ?? [],
       ts: r.ts,
+      // mirofish-time-evolution Bug 2: round-level 元数据从 SimRound payload 派生
+      // (注意: appendSimRound 当前不复制 simulated_label / nodes_added 到 SimRound,
+      // 仅写 worldState; 这里用 heuristic, 缺字段就退到 fallback, 不破 UI).
+      simulated_label:
+        (r as any).simulated_label ??
+        // 老 fall-back: 兼容 uiSlice.worldState 写入的旧字段
+        undefined,
+      nodes_added:
+        (r as any).nodes_added ??
+        (Array.isArray(r.new_entities) ? r.new_entities.length : 0),
     }))
     const total_rounds = rounds.length
     return {
@@ -288,7 +303,15 @@ export default function RoundTimeline({ simulationId: _simulationId }: Props = {
               <div className="absolute left-2.5 top-0 bottom-0 w-px bg-gradient-to-b from-brand-300 via-accent-300 to-transparent dark:from-brand-700 dark:via-accent-700" />
               <div className="space-y-2.5">
                 {currentRound.actions.map((a, i) => (
-                  <ActionCard key={a.metadata?.id || `${a.actor_id}-${a.action_type}-${a.timestamp}-${i}`} action={a} idx={i} />
+                  <div key={a.metadata?.id || `${a.actor_id}-${a.action_type}-${a.timestamp}-${i}`}>
+                    <ActionCard action={a} idx={i} />
+                    {/* mirofish-time-evolution Bug 2: 读 round-level (currentRound)
+                        而不是 per-action metadata (backend 从不在 action.metadata
+                        里 stamp). 这样 label / nodes_added 不再是空. */}
+                    <span className="ml-10 mt-1 inline-block text-[10px] text-ink-400 dark:text-ink-500 font-mono">
+                      R{currentRound.round_num} · {currentRound.simulated_label ?? ''} · {currentRound.actions.length} acts · +{(currentRound.nodes_added ?? 0)} nodes
+                    </span>
+                  </div>
                 ))}
               </div>
             </div>

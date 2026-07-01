@@ -208,6 +208,21 @@ class SimClock:
     # ------------------------------------------------------------------
     # Display
     # ------------------------------------------------------------------
+    def simulated_label(self, round_num: int, time_step: str) -> str:
+        """把 round_num + time_step 转成人类可读 label (Month 3 / Q2 Year 1 / Day 90 等)."""
+        if time_step == "day":
+            return f"Day {round_num}"
+        if time_step == "week":
+            return f"Week {round_num}"
+        if time_step == "month":
+            return f"Month {round_num}"
+        if time_step == "quarter":
+            year_offset, q = divmod(round_num - 1, 4)
+            return f"Q{q + 1} Year {year_offset + 1}"
+        if time_step == "year":
+            return f"Year {round_num}"
+        return f"Round {round_num}"
+
     def describe(self) -> dict:
         """Snapshot of the clock — used by SSE payloads and tests."""
         return {

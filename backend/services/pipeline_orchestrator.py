@@ -775,6 +775,7 @@ class PipelineOrchestrator:
         # P4 LOOP: 多年推演需要保证 simulated_hours >= max_rounds * hours_per_round
         # 默认 hours_per_round=6，max_rounds=36 (3年×12月) → simulated_hours 至少 216
         hours_per_round = 6  # 与 SimulationLoop 默认一致
+        time_step = "month"  # 与 SimClock 默认一致
         min_sim_hours = max_rounds * hours_per_round
         sim_hours_cfg = int(run.config.get("simulated_hours", 72))
         sim_config: Dict[str, Any] = {
@@ -782,6 +783,11 @@ class PipelineOrchestrator:
             "max_rounds": max_rounds,
             "simulated_hours": max(sim_hours_cfg, min_sim_hours),
             "user_params": user_params,  # 透传给下游
+            # CLAUDE.md #5 / mirofish-time-evolution Bug 1: 透传 hours_per_round +
+            # time_step 给 LoopEngine, 否则 __post_init__ 会沿用 dataclass default
+            # hours_per_round=24 (而不是派生值 720).
+            "hours_per_round": hours_per_round,
+            "time_step": time_step,
         }
         # Best-effort use of StrategicConfigGenerator on a synthesized seed doc
         try:
@@ -799,6 +805,15 @@ class PipelineOrchestrator:
                 # P2-G3 关键：把派生 max_rounds / agents 写回 sim_config
                 if cfg.max_rounds and cfg.max_rounds > sim_config.get("max_rounds", 0):
                     sim_config["max_rounds"] = cfg.max_rounds
+                # mirofish-time-evolution Bug 1: StrategicConfigGenerator 派生
+                # hours_per_round / time_step 后, 把它们写回 sim_config, 让下游
+                # LoopEngine 真正吃到 (默认 24h 不可接受).
+                derived_hpr = getattr(cfg, "hours_per_round", None)
+                if derived_hpr:
+                    sim_config["hours_per_round"] = derived_hpr
+                derived_ts = getattr(cfg, "time_step", None)
+                if derived_ts:
+                    sim_config["time_step"] = derived_ts
                 if cfg.agents:
                     sim_config["agents"] = [
                         a if isinstance(a, dict) else {
@@ -872,6 +887,11 @@ class PipelineOrchestrator:
                 llm_client=llm_client,
                 scheduler=scheduler,
                 memory_writer=pre_wired_writer,
+                # mirofish-time-evolution Bug 1: 显式传 hours_per_round +
+                # time_step, 否则 LoopEngine.__post_init__ 用 dataclass default
+                # hours_per_round=24, simulated_label 也会错 (例如 "Round 1"
+                # 而不是 "Month 1").
+                hours_per_round=int(sim_config.get("hours_per_round") or 6),
                 total_rounds=int(sim_config.get("max_rounds") or 12),
             )
             scheduler.bind_to_loop(loop_engine)

@@ -95,6 +95,8 @@ export interface GraphNodeData {
   source?: string
   /** 涌现轮次（仅 emergence 来源的节点用） */
   round?: number
+  /** 涌现轮次 (SSE handler 在 appendGraphNode 时从 worldState.round_num 戳入) */
+  emerged_round?: number
   properties?: Record<string, any>
   // 布局位置（d3-force 自实现力布局 / 自实现 rAF 布局 维护）
   x?: number
@@ -245,7 +247,7 @@ export const usePipelineStore = createWithEqualityFn<PipelineState>((set, get) =
     resetGraphStream: () => {
       g.resetGraphStream()
       s.resetSimSlice()
-      set({ reportRisks: [] } as any)
+      set({ reportRisks: [], worldState: null })
     },
   }
 })
