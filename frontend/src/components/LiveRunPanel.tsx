@@ -17,6 +17,9 @@ import Graph from './LiveRunPanel/Graph'
 import NetworkPanel from './LiveRunPanel/Network'
 import Stages from './LiveRunPanel/Stages'
 
+// 命名导出 (G6 shim: 让 LiveSnapshotSection 等 consumer 用 `import { Graph, Network } from '../LiveRunPanel'`)
+export { Graph, NetworkPanel as Network, Stages }
+
 interface Props {
   runId?: string | null
   compact?: boolean
